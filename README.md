@@ -58,8 +58,8 @@ Select text in any app and an instant floating bar offers translate / explain / 
 
 ```bash
 # Clone and install dependencies
-git clone https://github.com/<your-org>/shici.git
-cd shici
+git clone https://github.com/demo007x/Magpie.git
+cd Magpie
 pnpm install
 
 # Run in development mode (starts vite on :5173)

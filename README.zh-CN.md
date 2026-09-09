@@ -61,8 +61,8 @@
 
 ```bash
 # 克隆并安装依赖
-git clone https://github.com/<your-org>/shici.git
-cd shici
+git clone https://github.com/demo007x/Magpie.git
+cd Magpie
 pnpm install
 
 # 开发运行（自动启动 vite :5173）
