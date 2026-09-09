@@ -26,17 +26,14 @@ Select text in any app and an instant floating bar offers translate / explain / 
 
 ## Screenshots
 
-<!-- 📷 Screenshot slot 1: core experience (select → floating bar → streaming result) at docs/images/hero.png, then uncomment -->
-![Magpie in action](docs/images/hero.png)
+![Magpie in action: select text anywhere → floating bar → streaming result](docs/images/hero.png)
 
-> 📷 Core experience: floating bar + streaming result 
+![Main window · model settings](docs/images/settings.png)
 
-<!-- 📷 Screenshot slot 2: settings window at docs/images/settings.png -->
-<!-- ![Settings](docs/images/settings.png) -->
-![Settings](docs/images/settings.png)
-![Settings](docs/images/settings_search.png)
-![Settings](docs/images/settings_trans.png)
-> 📷 Main window · Settings (providers / translate / search / blocklist) 
+<p align="center">
+  <img src="docs/images/settings_trans.png" width="49%" alt="Main window · translate settings" />
+  <img src="docs/images/settings_search.png" width="49%" alt="Main window · search settings" />
+</p>
 
 ## Implemented Features (M1 / MVP)
 

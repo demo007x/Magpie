@@ -28,16 +28,14 @@
 
 ## 截图
 
-<!-- 📷 截图占位 1：核心体验（划词 → 浮动条 → 流式结果），建议放 docs/images/hero.png，然后取消下行注释 -->
-![拾趣核心体验](docs/images/hero.png)
+![拾趣核心体验：划词弹出浮动条，流式输出结果](docs/images/hero.png)
 
-> 📷 核心体验：划词弹出浮动条 + 流式结果面板
+![主窗口 · 模型设置页](docs/images/settings.png)
 
-<!-- 📷 截图占位 2：主窗口设置页 -->
-![主窗口设置](docs/images/settings.png)
-![主窗口设置](docs/images/settings_search.png)
-![主窗口设置](docs/images/settings_trans.png)
-> 📷 主窗口 · 设置页（Provider / 翻译 / 搜索 / 黑名单）
+<p align="center">
+  <img src="docs/images/settings_trans.png" width="49%" alt="主窗口 · 翻译设置" />
+  <img src="docs/images/settings_search.png" width="49%" alt="主窗口 · 搜索设置" />
+</p>
 
 
 ## 已实现功能（M1 / MVP）
