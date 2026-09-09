@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- 拾趣 Magpie · 应用内品牌标（满幅版：无外边距，圆角撑满） -->
+  <rect width="512" height="512" rx="115" fill="#f5f5f7"/>
+
+  <g transform="translate(-10,16)">
+    <!-- 枝与一片叶 -->
+    <path d="M146 374 C 224 362, 336 358, 400 366" stroke="#b6b6bc" stroke-width="11" stroke-linecap="round" fill="none"/>
+    <ellipse cx="158" cy="366" rx="17" ry="7" fill="#b6b6bc" transform="rotate(-28 158 366)"/>
+
+    <!-- 腿 -->
+    <path d="M266 316 L 262 366" stroke="#1d1d1f" stroke-width="7" stroke-linecap="round"/>
+    <path d="M294 312 L 298 362" stroke="#1d1d1f" stroke-width="7" stroke-linecap="round"/>
+
+    <!-- 长尾（弧线扫尾） -->
+    <path d="M252 254
+             C 212 212, 172 152, 132 92
+             L 170 82
+             C 198 142, 234 202, 272 238
+             Z" fill="#1d1d1f"/>
+
+    <!-- 身 + 翼上白斑 -->
+    <g transform="rotate(-16 278 262)">
+      <ellipse cx="278" cy="262" rx="90" ry="62" fill="#1d1d1f"/>
+      <ellipse cx="270" cy="252" rx="42" ry="22" fill="#f5f5f7"/>
+    </g>
+
+    <!-- 颈部融合 -->
+    <circle cx="312" cy="208" r="38" fill="#1d1d1f"/>
+
+    <!-- 头 -->
+    <circle cx="338" cy="170" r="45" fill="#1d1d1f"/>
+
+    <!-- 喙 -->
+    <path d="M376 156 L 424 172 L 376 188 Z" fill="#1d1d1f"/>
+
+    <!-- 眼（品牌蓝） -->
+    <circle cx="352" cy="160" r="8" fill="#0a7aff"/>
+  </g>
+</svg>

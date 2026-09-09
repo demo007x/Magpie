@@ -1,0 +1,413 @@
+/* 浮动条：实心原生面板（macOS popover 质感），随系统明暗。
+   双色极简与主窗口同构：墨阶为骨、系统蓝为交互强调色。窗口尺寸由内容测量决定。 */
+:root {
+  --surf: #ffffff;
+  --text: #1d1d1f;
+  --sec: #86868b;
+  --line: rgba(0, 0, 0, 0.1);
+  --hov: rgba(0, 0, 0, 0.055);
+  --press: rgba(0, 0, 0, 0.1);
+  --accent: #0a7aff;
+  --err: #d92f2f;
+  --shadow: 0 5px 18px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surf: #232327;
+    --text: #f2f2f5;
+    --sec: #98989f;
+    --line: rgba(255, 255, 255, 0.1);
+    --hov: rgba(255, 255, 255, 0.08);
+    --press: rgba(255, 255, 255, 0.14);
+    --accent: #3f8cff;
+    --err: #ff6b61;
+    --shadow: 0 5px 18px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.25);
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* 滚动条完全隐藏（结果面板流式内容靠滚轮/触控板滚动） */
+::-webkit-scrollbar {
+  display: none;
+}
+
+html,
+body,
+#root {
+  background: transparent;
+  overflow: hidden;
+}
+
+.stage {
+  width: max-content; /* 动作条自适应内容；二级菜单/结果面板见各自规则 */
+  max-width: 640px; /* 上限兜底：仅二级菜单单行展开可能触及；超限时折行 */
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+  font-size: 13px;
+  /* 注意：不要在此层加 transform/opacity 动画——WebKit 透明窗口下会合成出黑色浮层 */
+}
+
+/* ---- 动作条 ---- */
+.bar {
+  align-self: flex-start; /* 贴自身内容：永远不被二级菜单/结果面板拉伸（一级二级各有各的长度） */
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap; /* 动作多时折行，窗口尺寸随测量自适应 */
+  gap: 1px;
+  padding: 3px;
+  background: var(--surf);
+  border: 0.5px solid var(--line);
+  border-radius: 11px;
+  box-shadow: var(--shadow);
+}
+
+.action-slot {
+  display: inline-flex;
+  align-items: center;
+}
+
+.chev {
+  width: 18px;
+  height: 32px;
+  margin-left: -5px; /* 贴近动作文字（吃掉按钮右 padding），保留 18px 命中区 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sec);
+  cursor: pointer;
+}
+
+.chev:hover {
+  background: var(--hov);
+  color: var(--text);
+}
+
+.chev-svg {
+  transition: transform 150ms;
+}
+
+.chev-svg.open {
+  transform: rotate(180deg);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 480;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.action .ic {
+  display: inline-flex;
+  color: var(--sec);
+  transition: color 120ms;
+}
+
+.action:hover {
+  background: var(--hov);
+}
+
+.action:hover .ic {
+  color: var(--accent);
+}
+
+.action:active {
+  background: var(--press);
+}
+
+/* ---- 引擎/翻译服务选择行 ---- */
+.chips {
+  /* 方案：允许二级比一级宽——单行按自然宽度完整展开（窗口随之临时加宽，关闭即缩回）；
+     窄于主条时贴内容；超过窗口上限（.stage max-width）才折行兜底 */
+  align-self: flex-start;
+  max-width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surf);
+  border: 0.5px solid var(--line);
+  border-radius: 11px;
+  box-shadow: var(--shadow);
+}
+
+.chip {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 9px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chip:hover {
+  background: var(--hov);
+}
+
+.chip.primary {
+  color: var(--accent);
+  font-weight: 590;
+}
+
+/* 相邻项之间的小分隔线：短、居中，画在 gap 里不占布局 */
+.chip + .chip {
+  position: relative;
+}
+
+.chip + .chip::before {
+  content: "";
+  position: absolute;
+  left: -1.5px; /* gap 2px 的中点 */
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px; /* 1px 而非 0.5px：半像素线在分数坐标下会被抗锯齿稀释到不可见 */
+  height: 11px;
+  background: var(--line);
+}
+
+/* ---- 结果面板 ---- */
+.panel {
+  width: 396px; /* 固定宽：文本折行、超高滚动，窗口不随内容横向膨胀 */
+  display: flex;
+  flex-direction: column;
+  background: var(--surf);
+  border: 0.5px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 8px 13px;
+  border-bottom: 0.5px solid var(--line);
+}
+
+.panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 590;
+}
+
+.panel-title .ic {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.panel-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: blink 0.9s ease-in-out infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sec);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.tool:hover {
+  background: var(--hov);
+  color: var(--text);
+}
+
+/* 复制成功反馈：图标短暂变对勾（强调色） */
+.tool .ok {
+  color: var(--accent);
+}
+
+.panel-body {
+  padding: 11px 13px 12px;
+  overflow-y: auto;
+  max-height: 268px;
+  user-select: text;
+  cursor: auto;
+}
+
+.output {
+  font: inherit;
+  width: 100%; /* 折行：继承面板宽度，不撑开 */
+  line-height: 1.7;
+}
+
+/* ---- markdown 排版层（AI 输出统一走此样式） ---- */
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.md p {
+  margin: 0 0 8px;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  font-size: 13.5px;
+  font-weight: 640;
+  margin: 12px 0 6px;
+}
+
+.md ul,
+.md ol {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.md li {
+  margin: 2px 0;
+}
+
+.md strong {
+  font-weight: 640;
+}
+
+.md code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  background: var(--hov);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
+.md pre {
+  background: var(--hov);
+  border: 0.5px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  overflow-x: auto;
+  margin: 0 0 8px;
+}
+
+.md pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.md table {
+  border-collapse: collapse;
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.md th,
+.md td {
+  border: 0.5px solid var(--line);
+  padding: 4px 8px;
+}
+
+.md blockquote {
+  margin: 0 0 8px;
+  padding: 2px 10px;
+  border-left: 2px solid var(--line);
+  color: var(--sec);
+}
+
+.md hr {
+  border: 0;
+  border-top: 0.5px solid var(--line);
+  margin: 10px 0;
+}
+
+.md a {
+  color: var(--accent);
+}
+
+/* 翻译要点：次要信息区（小字弱色），不参与复制 */
+.notes {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--line);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--sec);
+  word-break: break-word;
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+.placeholder {
+  color: var(--sec);
+}
+
+.error p {
+  color: var(--err);
+  line-height: 1.55;
+  margin-bottom: 9px;
+  word-break: break-all;
+}
+
+.retry {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 7px;
+  border: 0;
+  background: var(--hov);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.retry:hover {
+  background: var(--press);
+}

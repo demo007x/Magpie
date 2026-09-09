@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>拾趣 Magpie · 图标草图预览</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    background: #ececed; color: #1d1d1f; padding: 40px 48px;
+  }
+  h1 { font-size: 18px; font-weight: 650; margin-bottom: 4px; }
+  .sub { color: #6e6e73; font-size: 13px; margin-bottom: 28px; }
+  .row {
+    border-radius: 14px; padding: 32px; display: flex;
+    align-items: flex-end; gap: 36px; margin-bottom: 20px;
+  }
+  .row.light { background: #f5f5f7; box-shadow: 0 0 0 0.5px rgba(0,0,0,.08); }
+  .row.dark  { background: #1c1c1e; color: #f5f5f7; }
+  .cell { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .cell span { font-size: 11px; color: #86868b; }
+  img { display: block; }
+  .note { color: #6e6e73; font-size: 12.5px; line-height: 1.8; margin-top: 20px; }
+</style>
+</head>
+<body>
+  <h1>拾趣 Magpie · 应用图标草图 v2</h1>
+  <p class="sub">墨鹊栖枝 · 弧线长尾 · 蓝眼点睛 —— 上排浅色 Dock，下排深色 Dock；右到左检验 16px 可读性</p>
+
+  <div class="row light">
+    <div class="cell"><img src="./app-icon-magpie.svg" width="256" height="256" alt=""><span>256</span></div>
+    <div class="cell"><img src="./app-icon-magpie.svg" width="128" height="128" alt=""><span>128</span></div>
+    <div class="cell"><img src="./app-icon-magpie.svg" width="64" height="64" alt=""><span>64</span></div>
+    <div class="cell"><img src="./app-icon-magpie.svg" width="32" height="32" alt=""><span>32</span></div>
+    <div class="cell"><img src="./app-icon-magpie.svg" width="16" height="16" alt=""><span>16</span></div>
+  </div>
+
+  <div class="row dark">
+    <div class="cell"><img src="./app-icon-magpie.svg" width="256" height="256" alt=""><span>256</span></div>
+    <div class="cell"><img src="./app-icon-magpie.svg" width="128" height="128" alt=""><span>128</span></div>
+    <div class="cell"><img src="./app-icon-magpie.svg" width="64" height="64" alt=""><span>64</span></div>
+    <div class="cell"><img src="./app-icon-magpie.svg" width="32" height="32" alt=""><span>32</span></div>
+    <div class="cell"><img src="./app-icon-magpie.svg" width="16" height="16" alt=""><span>16</span></div>
+  </div>
+
+  <p class="note">
+    观察点：① 长尾弧线的走势是否优雅（鹊形的身份所在）② 16px 时轮廓是否仍然可读
+    ③ 蓝眼在 32px 以下会缩成一个点——是否有存在的必要 ④ 翼上白斑的大小与位置。
+    满意后执行 <code>pnpm tauri icon design/app-icon-magpie.svg</code> 生成全套。
+  </p>
+</body>
+</html>

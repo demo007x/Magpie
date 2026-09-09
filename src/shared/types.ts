@@ -1,0 +1,65 @@
+// 与 src-tauri/src/settings.rs 的 Settings 保持一致（serde camelCase）
+export interface Provider {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+export interface ActionFlags {
+  translate: boolean;
+  explain: boolean;
+  summarize: boolean;
+  copy: boolean;
+  search: boolean;
+}
+
+export interface SearchEngine {
+  name: string;
+  /** 链接模板，{q} 为选中文本 */
+  url: string;
+  enabled: boolean;
+}
+
+export interface TranslateConfig {
+  /** 启用的翻译服务（多选，浮动条「翻译」展开列表）：["ai", "baidu", "deepl"] */
+  enabled: string[];
+  /** 默认服务（浮动条「翻译」单击直达） */
+  default: string;
+  /** 服务展示顺序（设置页行序与浮动条展开顺序）；缺省 id 按注册表顺序追加 */
+  order: string[];
+  /** 百度翻译开放平台凭据 */
+  appId: string;
+  appKey: string;
+  /** DeepL Authentication Key（Free 密钥以 :fx 结尾） */
+  deeplKey: string;
+}
+
+export interface Settings {
+  providers: Provider[];
+  defaultProviderId: string;
+  actions: ActionFlags;
+  /** 动作展示顺序（浮动条按此渲染）；缺省 id 追加在末尾 */
+  actionOrder: string[];
+  /** 搜索引擎列表（浮动条「搜索」使用；defaultSearch 为单击直达的引擎） */
+  searchEngines: SearchEngine[];
+  defaultSearch: string;
+  /** 翻译动作的服务配置 */
+  translate: TranslateConfig;
+  /** 是否在 macOS Dock 显示图标（关 = 纯菜单栏常驻模式） */
+  showDockIcon: boolean;
+  appBlacklist: string[];
+  debounceMs: number;
+}
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+// ai_chat Channel 流消息（对应 src-tauri/src/ai.rs AiEvent）
+export type AiEvent =
+  | { type: "delta"; content: string }
+  | { type: "done" }
+  | { type: "error"; message: string };
