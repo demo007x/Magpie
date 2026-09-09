@@ -27,19 +27,16 @@ Select text in any app and an instant floating bar offers translate / explain / 
 ## Screenshots
 
 <!-- 📷 Screenshot slot 1: core experience (select → floating bar → streaming result) at docs/images/hero.png, then uncomment -->
-<!-- ![Magpie in action](docs/images/hero.png) -->
+![Magpie in action](docs/images/hero.png)
 
-> 📷 Core experience: floating bar + streaming result — *pending*
+> 📷 Core experience: floating bar + streaming result 
 
 <!-- 📷 Screenshot slot 2: settings window at docs/images/settings.png -->
 <!-- ![Settings](docs/images/settings.png) -->
-
-> 📷 Main window · Settings (providers / translate / search / blocklist) — *pending*
-
-<!-- 📷 Screenshot slot 3: capture self-check at docs/images/capture-check.png -->
-<!-- ![Capture self-check](docs/images/capture-check.png) -->
-
-> 📷 Main window · Capture self-check — *pending*
+![Settings](docs/images/settings.png)
+![Settings](docs/images/settings_search.png)
+![Settings](docs/images/settings_trans.png)
+> 📷 Main window · Settings (providers / translate / search / blocklist) 
 
 ## Implemented Features (M1 / MVP)
 
@@ -137,15 +134,15 @@ Data flow: CGEventTap (mouse) → detect thread (debounce / AX query) → filter
 
 Design documents are written in Simplified Chinese:
 
-| Doc | Content |
-|---|---|
-| [docs/01-PRD-MVP.md](docs/01-PRD-MVP.md) | Product requirements, scope, acceptance criteria |
-| [docs/02-架构设计.md](docs/02-架构设计.md) | Layered architecture, data flow, protocol, evolution |
-| [docs/03-模块设计-划词捕获.md](docs/03-模块设计-划词捕获.md) | Highest-risk module: CGEventTap + AX |
-| [docs/04-模块设计-窗口与交互.md](docs/04-模块设计-窗口与交互.md) | Floating bar / main window specs |
-| [docs/05-模块设计-AI服务层.md](docs/05-模块设计-AI服务层.md) | Action registry, prompts, streaming protocol |
-| [docs/06-技术选型.md](docs/06-技术选型.md) | ADR decision records |
-| [docs/07-MVP执行计划.md](docs/07-MVP执行计划.md) | Task breakdown & acceptance status |
+| Doc                                                              | Content                                              |
+| ---------------------------------------------------------------- | ---------------------------------------------------- |
+| [docs/01-PRD-MVP.md](docs/01-PRD-MVP.md)                         | Product requirements, scope, acceptance criteria     |
+| [docs/02-架构设计.md](docs/02-架构设计.md)                       | Layered architecture, data flow, protocol, evolution |
+| [docs/03-模块设计-划词捕获.md](docs/03-模块设计-划词捕获.md)     | Highest-risk module: CGEventTap + AX                 |
+| [docs/04-模块设计-窗口与交互.md](docs/04-模块设计-窗口与交互.md) | Floating bar / main window specs                     |
+| [docs/05-模块设计-AI服务层.md](docs/05-模块设计-AI服务层.md)     | Action registry, prompts, streaming protocol         |
+| [docs/06-技术选型.md](docs/06-技术选型.md)                       | ADR decision records                                 |
+| [docs/07-MVP执行计划.md](docs/07-MVP执行计划.md)                 | Task breakdown & acceptance status                   |
 
 ## License
 

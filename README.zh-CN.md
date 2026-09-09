@@ -29,19 +29,16 @@
 ## 截图
 
 <!-- 📷 截图占位 1：核心体验（划词 → 浮动条 → 流式结果），建议放 docs/images/hero.png，然后取消下行注释 -->
-<!-- ![拾趣核心体验](docs/images/hero.png) -->
+![拾趣核心体验](docs/images/hero.png)
 
-> 📷 核心体验：划词弹出浮动条 + 流式结果面板 —— *待补充*
+> 📷 核心体验：划词弹出浮动条 + 流式结果面板
 
 <!-- 📷 截图占位 2：主窗口设置页 -->
-<!-- ![主窗口设置](docs/images/settings.png) -->
+![主窗口设置](docs/images/settings.png)
+![主窗口设置](docs/images/settings_search.png)
+![主窗口设置](docs/images/settings_trans.png)
+> 📷 主窗口 · 设置页（Provider / 翻译 / 搜索 / 黑名单）
 
-> 📷 主窗口 · 设置页（Provider / 翻译 / 搜索 / 黑名单）—— *待补充*
-
-<!-- 📷 截图占位 3：划词自检页 -->
-<!-- ![划词自检](docs/images/capture-check.png) -->
-
-> 📷 主窗口 · 划词自检页 —— *待补充*
 
 ## 已实现功能（M1 / MVP）
 
@@ -137,15 +134,15 @@ TS (WebView × 2)                        Rust 核心进程
 
 ## 文档
 
-| 文档 | 内容 |
-|---|---|
-| [docs/01-PRD-MVP.md](docs/01-PRD-MVP.md) | 产品需求、范围、验收标准 |
-| [docs/02-架构设计.md](docs/02-架构设计.md) | 分层架构、数据流、协议、演进路线 |
-| [docs/03-模块设计-划词捕获.md](docs/03-模块设计-划词捕获.md) | 最高风险模块：CGEventTap + AX |
-| [docs/04-模块设计-窗口与交互.md](docs/04-模块设计-窗口与交互.md) | 浮动条/主窗口规格 |
-| [docs/05-模块设计-AI服务层.md](docs/05-模块设计-AI服务层.md) | 动作注册表、prompt、流式协议 |
-| [docs/06-技术选型.md](docs/06-技术选型.md) | ADR 决策记录 |
-| [docs/07-MVP执行计划.md](docs/07-MVP执行计划.md) | 任务分解与验收状态 |
+| 文档                                                             | 内容                             |
+| ---------------------------------------------------------------- | -------------------------------- |
+| [docs/01-PRD-MVP.md](docs/01-PRD-MVP.md)                         | 产品需求、范围、验收标准         |
+| [docs/02-架构设计.md](docs/02-架构设计.md)                       | 分层架构、数据流、协议、演进路线 |
+| [docs/03-模块设计-划词捕获.md](docs/03-模块设计-划词捕获.md)     | 最高风险模块：CGEventTap + AX    |
+| [docs/04-模块设计-窗口与交互.md](docs/04-模块设计-窗口与交互.md) | 浮动条/主窗口规格                |
+| [docs/05-模块设计-AI服务层.md](docs/05-模块设计-AI服务层.md)     | 动作注册表、prompt、流式协议     |
+| [docs/06-技术选型.md](docs/06-技术选型.md)                       | ADR 决策记录                     |
+| [docs/07-MVP执行计划.md](docs/07-MVP执行计划.md)                 | 任务分解与验收状态               |
 
 ## License
 
