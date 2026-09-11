@@ -28,9 +28,12 @@ mod macos;
 pub use macos::start;
 #[cfg(target_os = "macos")]
 use macos::{
+    ax_service_probe as platform_ax_service_probe,
     is_accessibility_granted,
+    listen_event_access as platform_listen_event_access,
     open_accessibility_settings as open_platform_settings,
     prompt_accessibility as prompt_platform_accessibility,
+    request_listen_access as platform_request_listen_access,
 };
 
 #[cfg(not(target_os = "macos"))]
@@ -39,7 +42,9 @@ mod other;
 pub use other::start;
 #[cfg(not(target_os = "macos"))]
 use other::{
+    ax_service_probe as platform_ax_service_probe,
     is_accessibility_granted,
+    listen_event_access as platform_listen_event_access,
     open_accessibility_settings as open_platform_settings,
 };
 
@@ -61,14 +66,34 @@ pub(crate) fn debug_log(msg: impl std::fmt::Display) {
 #[serde(rename_all = "camelCase")]
 pub struct CaptureStatus {
     pub granted: bool,
+    /// AX 服务实测可用（TCC 信任 ≠ AX 放行，缓存异常时割裂）
+    pub ax_service_ok: bool,
+    /// 输入监控权限（缺失时事件 tap 收不到其他应用的事件，浮动条不弹）
+    pub listen_event_access: bool,
     pub platform: String,
 }
 
 #[tauri::command]
 pub fn capture_status(app: AppHandle) -> CaptureStatus {
     let granted = is_accessibility_granted();
+    let status = CaptureStatus {
+        granted,
+        ax_service_ok: platform_ax_service_probe(),
+        listen_event_access: platform_listen_event_access(),
+        platform: std::env::consts::OS.to_string(),
+    };
     let _ = app.emit("capture://permission", json!({ "granted": granted }));
-    CaptureStatus { granted, platform: std::env::consts::OS.to_string() }
+    status
+}
+
+/// 发起输入监控授权请求（macOS）：系统自动注册当前二进制进「输入监控」列表；
+/// 未通过时代开设置面板。非 macOS 恒 true（无该权限开关）
+#[tauri::command]
+pub fn request_listen_access() -> bool {
+    #[cfg(target_os = "macos")]
+    return platform_request_listen_access();
+    #[cfg(not(target_os = "macos"))]
+    return true;
 }
 
 #[tauri::command]

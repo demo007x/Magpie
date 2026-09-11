@@ -83,6 +83,27 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<number | undefined>(undefined);
   const flashTimerRef = useRef<number | undefined>(undefined);
+  // 流式输出跟随：默认贴底自动滚动；用户向上滚动离开底部则冻结，滚回底部恢复
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const stickRef = useRef(true);
+  const [stick, setStick] = useState(true);
+
+  const onBodyScroll = () => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+    stickRef.current = atBottom;
+    setStick(atBottom);
+  };
+
+  const jumpToBottom = () => {
+    const el = bodyRef.current;
+    if (!el) return;
+    stickRef.current = true;
+    setStick(true);
+    // 平滑滚动到底（跟随期间的增量滚动保持瞬时，避免追逐感）
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
 
   const enabledEngines = engines.filter((e) => e.enabled);
   const defaultEngine =
@@ -105,6 +126,19 @@ export default function App() {
       .catch(() => flash("search", "打开失败"));
   };
   const [phase, setPhase] = useState<Phase>({ kind: "bar" });
+  // 流式增量渲染后：贴底状态才跟随滚动（用户上翻阅读时不打扰）；新一轮结果从贴底开始跟随
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase.kind === "result" && phase.output === "") {
+      stickRef.current = true;
+      setStick(true);
+    }
+  }, [phase]);
+
   const stageRef = useRef<HTMLDivElement>(null);
   const runIdRef = useRef(0);
   const streamingRef = useRef(false);
@@ -494,7 +528,12 @@ export default function App() {
               </button>
             </span>
           </header>
-          <div className="panel-body">
+          {phase.kind === "result" && phase.streaming && !stick && (
+            <button className="jump-down" onClick={guarded(jumpToBottom)} title="回到底部">
+              <ChevronDown size={13} strokeWidth={2} />
+            </button>
+          )}
+          <div className="panel-body" ref={bodyRef} onScroll={onBodyScroll}>
             {phase.output ? (
               <>
                 <div className="md output">

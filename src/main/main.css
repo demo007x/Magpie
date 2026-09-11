@@ -289,6 +289,12 @@ input[type="radio"] {
   margin-top: 14px;
 }
 
+/* 左侧说明文字弹性收缩，右侧控件（pill/开关）不被挤压变形 */
+.row-between > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
 .row-title {
   font-weight: 500;
   display: flex;
@@ -519,6 +525,8 @@ input[type="radio"] {
   border-radius: 99px;
   background: var(--hov);
   color: var(--sec);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .pill.ok {

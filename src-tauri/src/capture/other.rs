@@ -13,6 +13,14 @@ pub fn is_accessibility_granted() -> bool {
     true // Windows UIA 无系统级权限开关；占位
 }
 
+pub fn ax_service_probe() -> bool {
+    true
+}
+
+pub fn listen_event_access() -> bool {
+    true
+}
+
 pub fn open_accessibility_settings() {}
 
 pub fn prompt_accessibility() -> bool {

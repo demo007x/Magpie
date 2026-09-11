@@ -24,11 +24,7 @@ fn pick_provider<'a>(
     id: Option<&str>,
 ) -> Option<&'a settings::Provider> {
     id.and_then(|i| s.providers.iter().find(|p| p.id == i))
-        .or_else(|| {
-            s.providers
-                .iter()
-                .find(|p| p.id == s.default_provider_id)
-        })
+        .or_else(|| s.providers.iter().find(|p| p.id == s.default_provider_id))
         .or_else(|| s.providers.first())
 }
 
@@ -89,7 +85,10 @@ pub async fn baidu_translate(app: AppHandle, text: String, to: String) -> Result
         .await
         .map_err(|e| format!("网络请求失败：{e}"))?;
 
-    let v: BaiduTransResp = resp.json().await.map_err(|e| format!("响应解析失败：{e}"))?;
+    let v: BaiduTransResp = resp
+        .json()
+        .await
+        .map_err(|e| format!("响应解析失败：{e}"))?;
     if let Some(code) = v.error_code {
         return Err(format!(
             "百度翻译错误 {}：{}",
@@ -167,15 +166,17 @@ pub async fn deepl_translate(app: AppHandle, text: String, to: String) -> Result
         .await
         .map_err(|e| format!("响应解析失败（HTTP {status}）：{e}"))?;
     if !status.is_success() {
-        return Err(format!("DeepL 错误 HTTP {status}：{}", v.message.unwrap_or_default()));
+        return Err(format!(
+            "DeepL 错误 HTTP {status}：{}",
+            v.message.unwrap_or_default()
+        ));
     }
 
     // 只输出译文：原文用户屏幕上就有，语言检测结果属冗余
     if v.translations.is_empty() {
         return Err("翻译结果为空".into());
     }
-    Ok(v
-        .translations
+    Ok(v.translations
         .into_iter()
         .map(|t| t.text)
         .collect::<Vec<_>>()
@@ -196,7 +197,10 @@ pub async fn ai_chat(
         return Err("API Key 为空，请到「设置」页填写".to_string());
     }
 
-    let url = format!("{}/chat/completions", provider.base_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/chat/completions",
+        provider.base_url.trim_end_matches('/')
+    );
     let body = json!({ "model": provider.model, "messages": messages, "stream": true });
 
     let client = reqwest::Client::builder()

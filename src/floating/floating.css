@@ -52,7 +52,7 @@ body,
   flex-direction: column;
   gap: 6px;
   user-select: none;
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
   font-size: 13px;
   /* 注意：不要在此层加 transform/opacity 动画——WebKit 透明窗口下会合成出黑色浮层 */
 }
@@ -193,6 +193,7 @@ body,
 
 /* ---- 结果面板 ---- */
 .panel {
+  position: relative; /* 跟随指示（回到底部按钮）的定位基准 */
   width: 396px; /* 固定宽：文本折行、超高滚动，窗口不随内容横向膨胀 */
   display: flex;
   flex-direction: column;
@@ -272,14 +273,36 @@ body,
   padding: 11px 13px 12px;
   overflow-y: auto;
   max-height: 268px;
+  overscroll-behavior: contain; /* 滚到边界不外溢，避免带动窗口抖动 */
+  will-change: scroll-position; /* 提升为合成层滚动，跟手丝滑 */
   user-select: text;
   cursor: auto;
+}
+
+/* 流式输出 + 用户上翻阅读时出现的「回到底部」按钮 */
+.jump-down {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0.5px solid var(--line);
+  border-radius: 50%;
+  background: var(--surf);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 
 .output {
   font: inherit;
   width: 100%; /* 折行：继承面板宽度，不撑开 */
-  line-height: 1.7;
+  line-height: 1.85;
+  letter-spacing: 0.015em;
 }
 
 /* ---- markdown 排版层（AI 输出统一走此样式） ---- */
@@ -292,7 +315,7 @@ body,
 }
 
 .md p {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
 }
 
 .md h1,
@@ -306,16 +329,17 @@ body,
 
 .md ul,
 .md ol {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   padding-left: 18px;
 }
 
 .md li {
-  margin: 2px 0;
+  margin: 3px 0;
 }
 
 .md strong {
-  font-weight: 640;
+  /* 正文不刻意加粗：模型输出常滥用 **加粗** 标记，压回中等偏轻字重（苹方取整为 Medium） */
+  font-weight: 550;
 }
 
 .md code {
@@ -375,7 +399,7 @@ body,
   padding-top: 8px;
   border-top: 0.5px solid var(--line);
   font-size: 12px;
-  line-height: 1.7;
+  line-height: 1.8;
   color: var(--sec);
   word-break: break-word;
 }

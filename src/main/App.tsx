@@ -66,6 +66,8 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saved, setSaved] = useState(false);
   const [granted, setGranted] = useState<boolean | null>(null);
+  const [listenAccess, setListenAccess] = useState<boolean | null>(null);
+  const [axServiceOk, setAxServiceOk] = useState<boolean | null>(null);
 
   useEffect(() => {
     invoke<Settings>("get_settings").then(setSettings).catch(() => undefined);
@@ -87,8 +89,17 @@ export default function App() {
     if (page !== "capture") return;
     let stop = false;
     const poll = () => {
-      invoke<{ granted: boolean }>("capture_status")
-        .then((s) => !stop && setGranted(s.granted))
+      invoke<{
+        granted: boolean;
+        axServiceOk: boolean;
+        listenEventAccess: boolean;
+      }>("capture_status")
+        .then((s) => {
+          if (stop) return;
+          setGranted(s.granted);
+          setAxServiceOk(s.axServiceOk);
+          setListenAccess(s.listenEventAccess);
+        })
         .catch(() => undefined);
     };
     poll();
@@ -372,7 +383,8 @@ export default function App() {
           <>
             <h1>模型服务</h1>
             <p className="page-hint">
-              配置 OpenAI 协议兼容的模型服务，可添加多个并设为默认；密钥只保存在本机，请求仅发往你填写的地址。修改后点击「保存更改」生效。
+              翻译、解释、总结都由你选择的大模型驱动：添加任意 OpenAI
+              协议兼容的服务并设为默认，密钥只保存在本机，请求仅发往你填写的地址。修改后点击「保存更改」生效。
             </p>
 
             <h2 className="sec">服务</h2>
@@ -456,8 +468,7 @@ export default function App() {
           <>
             <h1>划词</h1>
             <p className="page-hint">
-              授权辅助功能后，即可在其他应用中划词呼出浮动条；此处管理动作开关与顺序——带 AI
-              标记的动作调用模型服务，其余离线可用。保存更改后生效。
+              在任意应用中选中文字，浮动条即刻提供翻译、解释、总结等动作。本页管理划词所需权限与浮动条动作，改动点击「保存更改」后生效。
             </p>
 
             <h2 className="sec">权限</h2>
@@ -465,7 +476,9 @@ export default function App() {
               <div className="row-between">
                 <div>
                   <div className="row-title">辅助功能</div>
-                  <div className="row-sub">读取你在其他应用中选中的文字，全程不使用剪贴板。</div>
+                  <div className="row-sub">
+                    划词的根基：读取你在任何应用中选中的文字。未授权时点下方「授权划词」开启。
+                  </div>
                 </div>
                 <span className={`pill ${granted ? "ok" : granted === false ? "bad" : ""}`}>
                   {granted === null ? "检测中" : granted ? "已授权" : "未授权"}
@@ -490,6 +503,38 @@ export default function App() {
                   </button>
                 </div>
               )}
+              <div className="row-between sep">
+                <div>
+                  <div className="row-title">输入监控</div>
+                  <div className="row-sub">
+                    让拾趣感知你的划词动作，缺失时浮动条不会弹出。未授权时点下方「授权输入监控」开启。
+                  </div>
+                </div>
+                <span className={`pill ${listenAccess ? "ok" : listenAccess === false ? "bad" : ""}`}>
+                  {listenAccess === null ? "检测中" : listenAccess ? "已授权" : "未授权"}
+                </span>
+              </div>
+              {listenAccess === false && (
+                <div className="card-foot">
+                  <button
+                    className="btn primary"
+                    onClick={() => invoke<boolean>("request_listen_access").catch(() => undefined)}
+                  >
+                    授权输入监控
+                  </button>
+                </div>
+              )}
+              <div className="row-between sep">
+                <div>
+                  <div className="row-title">AX 服务实测</div>
+                  <div className="row-sub">
+                    保障划词稳定的健康检查。若已授权仍显示异常：在系统设置「辅助功能」中取消再重新勾选拾趣，然后重启应用。
+                  </div>
+                </div>
+                <span className={`pill ${axServiceOk ? "ok" : axServiceOk === false ? "bad" : ""}`}>
+                  {axServiceOk === null ? "检测中" : axServiceOk ? "正常" : "异常"}
+                </span>
+              </div>
             </div>
 
             <h2 className="sec">动作</h2>
@@ -550,7 +595,7 @@ export default function App() {
           <>
             <h1>翻译</h1>
             <p className="page-hint">
-              拖动调整服务顺序，启用的服务会出现在浮动条「翻译」的展开列表中，单击「翻译」直达默认服务；方向自动识别：中文译英文，其他译中文。改动即时生效，「保存更改」持久化。
+              一个划词，多个译法随点随换：开关控制服务是否出现在「翻译」展开列表，拖动调整顺序，「默认」单击直达；方向自动识别（中文译英文，其他译中文）。改动即时生效，点「保存更改」持久化。
             </p>
 
             <h2 className="sec">服务</h2>
@@ -730,7 +775,7 @@ export default function App() {
           <>
             <h1>搜索引擎</h1>
             <p className="page-hint">
-              拖动调整引擎顺序，启用的引擎会出现在浮动条「搜索」的展开列表中，单击「搜索」直达默认引擎；引擎为内置项，仅可停用不可删除，可添加自定义引擎。改动即时生效，「保存更改」持久化。
+              选中文字，一键开搜：开关控制引擎是否出现在「搜索」展开列表，拖动调整顺序，「默认」单击直达；也支持添加自定义引擎，链接中的 {'{q}'} 会替换为选中文本。改动即时生效，点「保存更改」持久化。
             </p>
             <div className="card">
               {settings.searchEngines.map((eng, idx) => (
@@ -811,11 +856,11 @@ export default function App() {
           <>
             <h1>禁用应用</h1>
             <p className="page-hint">
-              列表中的应用（按进程名匹配）内划词不会触发浮动条，适合终端、密码管理器等敏感或易误触的场景；「保存更改」后立即生效。
+              让拾趣在敏感场景保持安静：黑名单应用（按进程名匹配）内划词不触发浮动条，适合终端、密码管理器等应用。保存后立即生效。
             </p>
             <div className="card">
               <div className="field wide">
-                <span>应用名列表（逗号分隔，匹配应用进程名）</span>
+                <span>应用名列表（逗号分隔）</span>
                 <input
                   value={settings.appBlacklist.join(", ")}
                   onChange={(e) =>
@@ -842,7 +887,7 @@ export default function App() {
           <>
             <h1>关于</h1>
             <p className="page-hint">
-              划词全程不读写剪贴板；选中的文字仅发送至你配置的模型服务，不收集任何数据。
+              选中的文字仅发送至你配置的服务，拾趣不收集任何数据。
             </p>
             <div className="card about-card">
               <img className="mark big" src={markIcon} alt="拾趣" />
@@ -858,7 +903,7 @@ export default function App() {
                 <div>
                   <div className="row-title">在程序坞中显示图标</div>
                   <div className="row-sub">
-                    关闭后仅保留菜单栏图标；点击主窗口关闭按钮只是隐藏窗口，划词服务仍在后台运行，可随时从菜单栏图标唤出。只有菜单栏菜单中的「退出应用」才会真正退出。
+                    拾趣默认以菜单栏形态常驻，划词随时可用；开启后在程序坞同时显示图标。关闭时点主窗口关闭按钮仅隐藏窗口，退出请用菜单栏右键「退出应用」。
                   </div>
                 </div>
                 <label className="switch">

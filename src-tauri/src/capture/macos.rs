@@ -48,6 +48,21 @@ extern "C" {
         attr: CFStringRef,
         value: *mut CFTypeRefC,
     ) -> c_int;
+    fn AXUIElementCopyParameterizedAttributeValue(
+        el: AXUIElementRef,
+        attr: CFStringRef,
+        param: CFTypeRefC,
+        value: *mut CFTypeRefC,
+    ) -> c_int;
+    // 坐标定位：Apple 文档明确为 top-left 原点屏幕坐标（与 CGEvent 同系，免转换）
+    fn AXUIElementCopyElementAtPosition(
+        el: AXUIElementRef,
+        x: f32,
+        y: f32,
+        value: *mut CFTypeRefC,
+    ) -> c_int;
+    fn AXValueCreate(value_type: usize, value: *const c_void) -> *mut c_void;
+    fn AXValueGetValue(value: CFTypeRefC, value_type: usize, into: *mut c_void) -> u8;
     fn AXUIElementSetAttributeValue(
         el: AXUIElementRef,
         attr: CFStringRef,
@@ -59,8 +74,13 @@ extern "C" {
 
 struct AxConsts {
     selected_text: CFStringRef,
+    selected_text_range: CFStringRef,
+    string_for_range: CFStringRef,
     focused_app: CFStringRef,
     focused_element: CFStringRef,
+    focused_window: CFStringRef,
+    children: CFStringRef,
+    parent: CFStringRef,
     trusted_prompt: CFStringRef,
     // Chromium/Electron 系应用默认不构建 AX 树，需置 true 才暴露接口
     enhanced_ui: CFStringRef,
@@ -78,8 +98,13 @@ fn ax_consts() -> &'static AxConsts {
     static CACHE: std::sync::OnceLock<AxConsts> = std::sync::OnceLock::new();
     CACHE.get_or_init(|| AxConsts {
         selected_text: ax_string("AXSelectedText"),
+        selected_text_range: ax_string("AXSelectedTextRange"),
+        string_for_range: ax_string("AXStringForRange"),
         focused_app: ax_string("AXFocusedApplication"),
         focused_element: ax_string("AXFocusedUIElement"),
+        focused_window: ax_string("AXFocusedWindow"),
+        children: ax_string("AXChildren"),
+        parent: ax_string("AXParent"),
         trusted_prompt: ax_string("AXTrustedCheckOptionPrompt"),
         enhanced_ui: ax_string("AXEnhancedUserInterface"),
         manual_accessibility: ax_string("AXManualAccessibility"),
@@ -110,6 +135,10 @@ extern "C" {
     fn CFRelease(cf: *mut c_void);
     fn CFGetTypeID(cf: CFTypeRefC) -> CFTypeID;
     static kCFRunLoopDefaultMode: CFStringRef;
+
+    // CFArray（AXChildren 遍历用）
+    fn CFArrayGetCount(arr: CFTypeRefC) -> isize;
+    fn CFArrayGetValueAtIndex(arr: CFTypeRefC, idx: isize) -> CFTypeRefC;
 }
 
 #[link(name = "CoreGraphics", kind = "framework")]
@@ -124,8 +153,14 @@ extern "C" {
         user: *mut c_void,
     ) -> CFMachPortRef;
     fn CGEventGetLocation(ev: CGEventRef) -> CGPoint;
+    // 键盘事件合成（兼容模式模拟 ⌘C）
+    fn CGEventCreateKeyboardEvent(source: *mut c_void, keycode: u16, keydown: u8) -> CGEventRef;
+    fn CGEventSetFlags(ev: CGEventRef, flags: u64);
+    fn CGEventPost(tap: u32, ev: CGEventRef);
     // 输入监控（Input Monitoring）权限探测：缺失时事件 tap 只能收到本进程的事件
     fn CGPreflightListenEventAccess() -> u8;
+    // 发起输入监控授权请求：系统把当前运行的二进制自动注册进「输入监控」列表
+    fn CGRequestListenEventAccess() -> u8;
 }
 
 extern "C" {
@@ -234,6 +269,43 @@ pub fn open_accessibility_settings() {
         .spawn();
 }
 
+/// AX 服务实测：system-wide 聚焦应用查询是否放行。
+/// 区分「AXIsProcessTrusted=true（TCC 信任）」与「AX 服务实际可用」——
+/// 权限数据库缓存异常/未签名二进制代持授权时，两者可能割裂。
+pub fn ax_service_probe() -> bool {
+    unsafe {
+        let sys = AXUIElementCreateSystemWide();
+        if sys.is_null() {
+            return false;
+        }
+        let mut app: CFTypeRefC = std::ptr::null();
+        let rc = AXUIElementCopyAttributeValue(sys, ax_consts().focused_app, &mut app);
+        let ok = rc == 0 && !app.is_null();
+        if ok {
+            CFRelease(app as *mut c_void);
+        }
+        CFRelease(sys as *mut c_void);
+        ok
+    }
+}
+
+/// 输入监控权限预检：false 时事件 tap 收不到其他应用的事件（划词死路）
+pub fn listen_event_access() -> bool {
+    unsafe { CGPreflightListenEventAccess() != 0 }
+}
+
+/// 发起输入监控授权请求（系统自动把当前二进制注册进「输入监控」列表）；
+/// 仍未通过时打开输入监控设置面板。返回当前是否已授权。
+pub fn request_listen_access() -> bool {
+    let granted = unsafe { CGRequestListenEventAccess() != 0 };
+    if !granted {
+        let _ = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+            .spawn();
+    }
+    granted
+}
+
 // ---------- tap / detect 线程 ----------
 
 fn tap_location() -> u32 {
@@ -308,40 +380,23 @@ fn tap_heartbeat() {
     }
 }
 
-/// 启动 AX 自检：在已授权上下文中立即实测 AX 服务是否放行，
-/// 区分「AXIsProcessTrusted=true（TCC 信任）」与「AX 服务实际可用」——
-/// 权限数据库缓存异常/未签名二进制代持授权时，两者可能割裂。
+/// 启动 AX 自检：立即实测 AX 服务与输入监控是否放行（结果同时供自检页展示）
 fn ax_self_test() {
     std::thread::sleep(Duration::from_secs(2));
-    unsafe {
-        let consts = ax_consts();
-        let sys = AXUIElementCreateSystemWide();
-        if sys.is_null() {
-            debug_log("AX 自检：system-wide 元素创建失败");
-            return;
-        }
-        let mut app: CFTypeRefC = std::ptr::null();
-        let rc = AXUIElementCopyAttributeValue(sys, consts.focused_app, &mut app);
-        if rc == 0 && !app.is_null() {
-            let mut pid: c_int = 0;
-            let _ = AXUIElementGetPid(app as AXUIElementRef, &mut pid);
-            debug_log(format!("AX 自检：通过 ✓（聚焦应用查询 rc=0，pid={pid}），AX 服务可用"));
-            CFRelease(app as *mut c_void);
-        } else {
-            debug_log(format!(
-                "AX 自检：失败 ✗ rc={rc} —— TCC 已授权但 AX 服务拒绝。修复：系统设置取消勾选辅助功能里的终端 → 等 5 秒 → 重新勾选 → 重启应用"
-            ));
-        }
+    if ax_service_probe() {
+        debug_log("AX 自检：通过 ✓（聚焦应用查询 rc=0），AX 服务可用");
+    } else {
+        debug_log(
+            "AX 自检：失败 ✗ —— TCC 已授权但 AX 服务拒绝。修复：系统设置取消勾选辅助功能里的应用 → 等 5 秒 → 重新勾选 → 重启应用",
+        );
+    }
 
-        let listen = CGPreflightListenEventAccess() != 0;
-        if listen {
-            debug_log("输入监控自检：通过 ✓（ListenEventAccess=true）");
-        } else {
-            debug_log(
-                "输入监控自检：缺失 ✗ —— 事件 tap 将收不到其他应用的事件！修复：系统设置 → 隐私与安全性 → 输入监控 → 勾选运行 dev 的终端 → 重启应用",
-            );
-        }
-        CFRelease(sys as *mut c_void);
+    if listen_event_access() {
+        debug_log("输入监控自检：通过 ✓（ListenEventAccess=true）");
+    } else {
+        debug_log(
+            "输入监控自检：缺失 ✗ —— 事件 tap 将收不到其他应用的事件！修复：系统设置 → 隐私与安全性 → 输入监控 → 勾选本应用 → 重启应用",
+        );
     }
 }
 
@@ -410,29 +465,54 @@ fn detect_loop(rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: 
                     ));
                     // 防抖：等应用完成选区更新
                     std::thread::sleep(Duration::from_millis(debounce_ms));
-                    if let Some((text, pid)) = unsafe { ax_selected_text() } {
-                        debug_log(format!("AX 捕获成功：pid={pid} len={}", text.len()));
-                        // 重复抑制：同文本 + 坐标相近（< 4px）
-                        let dup = last_emitted.as_ref().map_or(false, |(lt, lx, ly)| {
-                            *lt == text
-                                && ((lx - ev.x).powi(2) + (ly - ev.y).powi(2)).sqrt() < 4.0
-                        });
-                        if !dup {
-                            let app = proc_path(pid).unwrap_or_default();
-                            debug_log(format!("判定通过 → 交 worker：app={app}"));
-                            let _ = tx.send(CaptureEvent::Selection {
-                                text: text.clone(),
-                                x: ev.x,
-                                y: ev.y,
-                                app,
+                    if let Some((text, pid)) = unsafe { ax_selected_text(ev.x, ev.y) } {
+                        forward_selection(
+                            &tx,
+                            &mut last_emitted,
+                            text,
+                            pid,
+                            ev.x,
+                            ev.y,
+                            "AX 捕获成功",
+                        );
+                    } else if focused_is_safari() {
+                        debug_log("AX 未取到 → Safari AppleScript 取词");
+                        let text = safari_selected_text();
+                        if let Some(text) = text {
+                            forward_selection(
+                                &tx,
+                                &mut last_emitted,
+                                text,
+                                focused_pid().unwrap_or(0),
+                                ev.x,
+                                ev.y,
+                                "Safari 取词成功",
+                            );
+                        } else if let Some((text, pid)) = force_fetch_via_copy() {
+                            forward_selection(
+                                &tx,
+                                &mut last_emitted,
+                                text,
                                 pid,
-                            });
-                            last_emitted = Some((text, ev.x, ev.y));
+                                ev.x,
+                                ev.y,
+                                "兼容模式取词成功",
+                            );
                         } else {
-                            debug_log("跳过：与上次捕获重复");
+                            debug_log("Safari + 兼容模式均未取到（静默，无事件）");
                         }
+                    } else if let Some((text, pid)) = force_fetch_via_copy() {
+                        forward_selection(
+                            &tx,
+                            &mut last_emitted,
+                            text,
+                            pid,
+                            ev.x,
+                            ev.y,
+                            "兼容模式取词成功",
+                        );
                     } else {
-                        debug_log("AX 未取到选中文本（静默失败，无事件）");
+                        debug_log("AX + 兼容模式均未取到选中文本（静默失败，无事件）");
                     }
                 }
                 last_up = Some((ev.t, ev.x, ev.y));
@@ -443,10 +523,64 @@ fn detect_loop(rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: 
     }
 }
 
-// ---------- AX 查询（docs/03 §3.3，不碰剪贴板） ----------
+// ---------- AX 查询（docs/03 §3.3，默认不碰剪贴板） ----------
 
-/// 查询聚焦应用的选中文本。返回 (文本, 应用 pid)；失败 = None（静默）。
-unsafe fn ax_selected_text() -> Option<(String, i32)> {
+/// 重复抑制 + 转发（AX / 兼容模式共用）
+fn forward_selection(
+    tx: &Sender<CaptureEvent>,
+    last_emitted: &mut Option<(String, f64, f64)>,
+    text: String,
+    pid: i32,
+    x: f64,
+    y: f64,
+    source: &str,
+) {
+    debug_log(format!("{source}：pid={pid} len={}", text.len()));
+    // 重复抑制：同文本 + 坐标相近（< 4px）
+    let dup = last_emitted.as_ref().map_or(false, |(lt, lx, ly)| {
+        *lt == text && ((lx - x).powi(2) + (ly - y).powi(2)).sqrt() < 4.0
+    });
+    if dup {
+        debug_log("跳过：与上次捕获重复");
+        return;
+    }
+    let app = proc_path(pid).unwrap_or_default();
+    debug_log(format!("判定通过 → 交 worker：app={app}"));
+    let _ = tx.send(CaptureEvent::Selection {
+        text: text.clone(),
+        x,
+        y,
+        app,
+        pid,
+    });
+    *last_emitted = Some((text, x, y));
+}
+
+/// AX 错误码可读名（日志用）
+fn ax_error_name(rc: i32) -> &'static str {
+    match rc {
+        0 => "Success",
+        -25200 => "Failure",
+        -25201 => "BadAttribute",
+        -25202 => "InvalidElement",
+        -25203 => "InvalidParameter",
+        -25204 => "InvalidFocusedUIElement",
+        -25205 => "IllegalArgument",
+        -25206 => "NoValue",
+        -25207 => "DoingAction",
+        -25208 => "AttributeUnsupported",
+        -25209 => "ActionUnsupported",
+        -25210 => "NotificationUnsupported",
+        -25211 => "NotImplemented",
+        -25212 => "NotificationAlreadyRegistered",
+        -25213 => "CannotComplete(消息失败/目标繁忙)",
+        -25214 => "NotEnoughPrecision",
+        _ => "Unknown",
+    }
+}
+
+/// AX 查询选中文本（默认路径），失败时按开关走兼容模式
+unsafe fn ax_selected_text(x: f64, y: f64) -> Option<(String, i32)> {
     let consts = ax_consts();
     let sys = AXUIElementCreateSystemWide();
     if sys.is_null() {
@@ -462,7 +596,8 @@ unsafe fn ax_selected_text() -> Option<(String, i32)> {
         let mut pid: c_int = 0;
         let _ = AXUIElementGetPid(app_el, &mut pid);
 
-        // 路径1（主）：聚焦元素级 SelectedText —— 多数应用的主路径
+        // 路径1（主）：聚焦元素级 SelectedText；失败则范围回退（AXSelectedTextRange + StringForRange）
+        // —— 微信 4.x 等 Qt 自绘文本视图不暴露 SelectedText，但支持范围取值
         let mut text = query_focused_element(app_el, consts);
 
         // 路径2：应用级 SelectedText（部分应用只在此暴露）
@@ -490,15 +625,270 @@ unsafe fn ax_selected_text() -> Option<(String, i32)> {
         if let Some(t) = text {
             out = Some((t, pid));
         }
-        CFRelease(app as *mut c_void);
     } else {
-        debug_log(format!("AX: 获取聚焦应用失败 rc={rc_app}"));
+        debug_log(format!(
+            "AX: 获取聚焦应用失败 rc={rc_app}（{}）——转坐标定位",
+            ax_error_name(rc_app)
+        ));
+    }
+
+    // 路径⑥：坐标定位 + 父链上溯（绕开聚焦链路，鼠标位置即选区位置）
+    if out.is_none() {
+        if let Some(t) = query_at_position(sys, consts, x, y) {
+            let pid = focused_pid().unwrap_or(0);
+            out = Some((t, pid));
+        }
+    }
+
+    // 路径⑦：兼容模式（常开兜底）——模拟 ⌘C 读剪贴板，微信/Office 等自绘文本应用的行业通行解
+    if out.is_none() {
+        debug_log("AX 未取到 → 兼容模式：模拟 ⌘C 取词");
+        if let Some((text, pid)) = force_fetch_via_copy() {
+            out = Some((text, pid));
+        }
+    }
+
+    // 路径⑤（最后兜底）：有界子树扫描——仅当以上全部失败，避免拖慢主路径
+    if out.is_none() && !app.is_null() {
+        if let Some(t) = scan_focused_subtrees(app as AXUIElementRef, consts) {
+            let pid = focused_pid().unwrap_or(0);
+            out = Some((t, pid));
+        }
+    }
+
+    if !app.is_null() {
+        CFRelease(app as *mut c_void);
     }
     CFRelease(sys as *mut c_void);
     out
 }
 
-/// 聚焦元素级 SelectedText
+/// 最后兜底：聚焦元素子树 → 聚焦窗口子树（有界 DFS）。
+/// 微信 4.x 的 Qt 桥常把 AXFocusedUIElement 停在输入框（rc=0 但选区为空），
+/// 真正的选区在兄弟/子孙节点上，需下探扫描。
+unsafe fn scan_focused_subtrees(app_el: AXUIElementRef, consts: &AxConsts) -> Option<String> {
+    const SCAN_BUDGET: usize = 64;
+    const SCAN_DEPTH: usize = 6;
+
+    let mut focused: CFTypeRefC = std::ptr::null();
+    let rc = AXUIElementCopyAttributeValue(app_el, consts.focused_element, &mut focused);
+    if rc == 0 && !focused.is_null() {
+        debug_log("AX: 扫描聚焦元素子树…");
+        let mut budget = SCAN_BUDGET;
+        let hit = scan_subtree_for_text(focused as AXUIElementRef, consts, SCAN_DEPTH, &mut budget);
+        CFRelease(focused as *mut c_void);
+        if hit.is_some() {
+            return hit;
+        }
+    }
+
+    let mut win: CFTypeRefC = std::ptr::null();
+    let rc_win = AXUIElementCopyAttributeValue(app_el, consts.focused_window, &mut win);
+    if rc_win == 0 && !win.is_null() {
+        debug_log("AX: 扫描聚焦窗口子树…");
+        let mut budget = SCAN_BUDGET;
+        let hit = scan_subtree_for_text(win as AXUIElementRef, consts, SCAN_DEPTH, &mut budget);
+        CFRelease(win as *mut c_void);
+        if hit.is_some() {
+            return hit;
+        }
+    }
+    None
+}
+
+/// 聚焦应用 pid（兼容模式取词后归属过滤用；查不到为 0，worker 侧黑名单跳过）
+fn focused_pid() -> Option<i32> {
+    unsafe {
+        let sys = AXUIElementCreateSystemWide();
+        if sys.is_null() {
+            return None;
+        }
+        let mut app: CFTypeRefC = std::ptr::null();
+        let rc = AXUIElementCopyAttributeValue(sys, ax_consts().focused_app, &mut app);
+        let mut pid: c_int = 0;
+        if rc == 0 && !app.is_null() {
+            let _ = AXUIElementGetPid(app as AXUIElementRef, &mut pid);
+            CFRelease(app as *mut c_void);
+        }
+        CFRelease(sys as *mut c_void);
+        (pid != 0).then_some(pid)
+    }
+}
+
+/// 坐标定位回退：AXUIElementCopyElementAtPosition（top-left 原点，与 CGEvent 同系）
+/// 取光标下元素，沿 AXParent 向上找带选区文本的节点。绕开聚焦链路。
+unsafe fn query_at_position(
+    sys: AXUIElementRef,
+    consts: &AxConsts,
+    x: f64,
+    y: f64,
+) -> Option<String> {
+    let mut el: CFTypeRefC = std::ptr::null();
+    let rc = AXUIElementCopyElementAtPosition(sys, x as f32, y as f32, &mut el);
+    if rc != 0 || el.is_null() {
+        debug_log(format!(
+            "AX: 坐标定位不可用 rc={rc}（{}）",
+            ax_error_name(rc)
+        ));
+        return None;
+    }
+    let mut cur = el as AXUIElementRef;
+    let mut text = None;
+    for depth in 0..=5 {
+        text = copy_selected_text(cur, consts, true)
+            .or_else(|| query_text_via_range(cur, consts, true));
+        if text.is_some() {
+            debug_log(format!("AX: 坐标定位命中（向上 {depth} 层）"));
+            break;
+        }
+        let mut parent: CFTypeRefC = std::ptr::null();
+        let rc_p = AXUIElementCopyAttributeValue(cur, consts.parent, &mut parent);
+        if rc_p != 0 || parent.is_null() {
+            break;
+        }
+        CFRelease(cur as *mut c_void);
+        cur = parent as AXUIElementRef;
+    }
+    CFRelease(cur as *mut c_void);
+    text
+}
+
+// ---------- Safari：AppleScript 取词（Safari 不暴露 AX SelectedText；剪贴板-free，参考 Easydict GUIDE） ----------
+
+fn focused_is_safari() -> bool {
+    focused_pid()
+        .and_then(proc_path)
+        .map(|p| p.to_lowercase().contains("safari"))
+        .unwrap_or(false)
+}
+
+/// Safari 取词：do JavaScript 读 window.getSelection()，并暂存选区 Range。
+/// 需 Safari 开发菜单开启「允许来自 Apple 事件的 JavaScript」；未开启/超时/空选区 = None。
+/// 副作用处理：浮动条出现/失焦可能清掉页面选区，读取时把 Range 存到 window.__magpieSel，
+/// 350ms 后检测到选区被清空则重新套用（还原高亮）。
+fn safari_selected_text() -> Option<String> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+
+    // 读取 + 暂存 Range（选区收起/无选区时返回空串）
+    let script = r#"tell application "Safari" to do JavaScript "(function(){var s=getSelection();if(!s.rangeCount||s.isCollapsed)return '';window.__magpieSel=s.getRangeAt(0).cloneRange();return s.toString()})()" in current tab of front window"#;
+    // 还原：仅当选区被清空/收起时重新套用，避免重复叠加
+    let restore = r#"tell application "Safari" to do JavaScript "(function(){var r=window.__magpieSel;if(!r)return;var s=getSelection();if(s.rangeCount===0||s.isCollapsed){s.removeAllRanges();s.addRange(r);}delete window.__magpieSel})()" in current tab of front window"#;
+
+    let mut child = Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+
+    // 有界等待：Safari 响应通常 <100ms，超时视为失败
+    let deadline = Instant::now() + Duration::from_millis(800);
+    let mut done = false;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                done = true;
+                break;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Err(_) => return None,
+        }
+    }
+    if !done {
+        let _ = child.kill();
+        let _ = child.wait();
+        debug_log("Safari AppleScript 超时");
+        return None;
+    }
+
+    let mut stdout = String::new();
+    if let Some(mut pipe) = child.stdout.take() {
+        let _ = pipe.read_to_string(&mut stdout);
+    }
+    let text = stdout.trim().to_string();
+    if text.is_empty() {
+        debug_log("Safari AppleScript：未取到文本（检查 开发菜单 → 允许来自 Apple 事件的 JavaScript）");
+        return None;
+    }
+    debug_log(format!("Safari AppleScript 取词成功 len={}", text.len()));
+
+    // 延时还原选区高亮：等浮动条出现、可能的清选区动作发生后执行
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(350));
+        let _ = Command::new("osascript")
+            .arg("-e")
+            .arg(restore)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    });
+
+    Some(text)
+}
+
+// ---------- 兼容模式：模拟 ⌘C 读剪贴板（常开兜底；行业通行解，参考 Easydict #84） ----------
+
+const K_VK_ANSI_C: u16 = 8;
+const K_CG_EVENT_FLAG_COMMAND: u64 = 1 << 20;
+
+unsafe fn post_cmd_c() {
+    let down = CGEventCreateKeyboardEvent(std::ptr::null_mut(), K_VK_ANSI_C, 1);
+    let up = CGEventCreateKeyboardEvent(std::ptr::null_mut(), K_VK_ANSI_C, 0);
+    if down.is_null() || up.is_null() {
+        if !down.is_null() {
+            CFRelease(down);
+        }
+        if !up.is_null() {
+            CFRelease(up);
+        }
+        return;
+    }
+    CGEventSetFlags(down, K_CG_EVENT_FLAG_COMMAND);
+    CGEventSetFlags(up, K_CG_EVENT_FLAG_COMMAND);
+    CGEventPost(K_CG_HID_EVENT_TAP, down);
+    CGEventPost(K_CG_HID_EVENT_TAP, up);
+    CFRelease(down);
+    CFRelease(up);
+}
+
+/// 兼容模式取词：快照剪贴板 → 模拟 ⌘C → 轮询变化 → 取词 → 还原快照。
+/// 返回 (文本, 聚焦应用 pid（查不到为 0）)；失败 = None（静默）。
+pub fn force_fetch_via_copy() -> Option<(String, i32)> {
+    const POLL_TIMES: usize = 60; // 60 × 10ms = 600ms 上限；应用响应后首个周期即命中
+    const POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+    let mut board = arboard::Clipboard::new().ok()?;
+    let snapshot = board.get_text().ok();
+
+    unsafe { post_cmd_c() };
+
+    let mut fetched: Option<String> = None;
+    for _ in 0..POLL_TIMES {
+        std::thread::sleep(POLL_INTERVAL);
+        if let Ok(now) = board.get_text() {
+            let changed = snapshot.as_ref().map_or(true, |s| *s != now);
+            if changed && !now.trim().is_empty() {
+                fetched = Some(now);
+                break;
+            }
+        }
+    }
+
+    // 尽力还原快照（原剪贴板无文本则清空）
+    let _ = match &snapshot {
+        Some(s) => board.set_text(s.clone()),
+        None => board.clear(),
+    };
+
+    let text = fetched?;
+    let pid = focused_pid().unwrap_or(0);
+    debug_log(format!("兼容模式：⌘C 取到文本 len={}", text.len()));
+    Some((text, pid))
+}
+
+/// 聚焦元素级取文本：SelectedText → 范围回退（轻量路径；子树扫描见 scan_focused_subtrees）
 unsafe fn query_focused_element(app_el: AXUIElementRef, consts: &AxConsts) -> Option<String> {
     let mut focused: CFTypeRefC = std::ptr::null();
     let rc_focus = AXUIElementCopyAttributeValue(app_el, consts.focused_element, &mut focused);
@@ -506,21 +896,143 @@ unsafe fn query_focused_element(app_el: AXUIElementRef, consts: &AxConsts) -> Op
         debug_log(format!("AX: 聚焦元素不可达 rc_focus={rc_focus}"));
         return None;
     }
+    let el = focused as AXUIElementRef;
+    let mut text = copy_selected_text(el, consts, false);
+    if text.is_none() {
+        text = query_text_via_range(el, consts, false);
+    }
+    CFRelease(focused as *mut c_void);
+    text
+}
+
+/// 有界 DFS：在子树每个节点上尝试 SelectedText / 范围回退（静默，避免日志刷屏）。
+/// budget 跨递归共享，防止大 UI 树拖垮查询耗时。
+unsafe fn scan_subtree_for_text(
+    el: AXUIElementRef,
+    consts: &AxConsts,
+    depth: usize,
+    budget: &mut usize,
+) -> Option<String> {
+    if *budget == 0 {
+        return None;
+    }
+    *budget -= 1;
+
+    let mut text = copy_selected_text(el, consts, true);
+    if text.is_none() {
+        text = query_text_via_range(el, consts, true);
+    }
+    if text.is_some() {
+        debug_log(format!("AX: 子树扫描命中（剩余预算 {budget}）"));
+        return text;
+    }
+    if depth == 0 {
+        return None;
+    }
+
+    let mut kids: CFTypeRefC = std::ptr::null();
+    let rc = AXUIElementCopyAttributeValue(el, consts.children, &mut kids);
+    if rc != 0 || kids.is_null() {
+        return None;
+    }
+    let n = CFArrayGetCount(kids);
+    for i in 0..n {
+        let child = CFArrayGetValueAtIndex(kids, i);
+        if child.is_null() {
+            continue;
+        }
+        // 数组持有引用，元素无需释放；找到即提前返回（kids 由 CFRelease 释放）
+        if let Some(t) = scan_subtree_for_text(child as AXUIElementRef, consts, depth - 1, budget) {
+            CFRelease(kids as *mut c_void);
+            return Some(t);
+        }
+        if *budget == 0 {
+            break;
+        }
+    }
+    CFRelease(kids as *mut c_void);
+    None
+}
+
+/// 直接取 AXSelectedText；rc=0 时区分 空值/非字符串/空串 三种情况（verbose=false 时静默）
+unsafe fn copy_selected_text(el: AXUIElementRef, consts: &AxConsts, quiet: bool) -> Option<String> {
     let mut val: CFTypeRefC = std::ptr::null();
-    let rc_sel = AXUIElementCopyAttributeValue(
-        focused as AXUIElementRef,
-        consts.selected_text,
-        &mut val,
+    let rc_sel = AXUIElementCopyAttributeValue(el, consts.selected_text, &mut val);
+    if rc_sel != 0 {
+        if !quiet {
+            debug_log(format!("AX: SelectedText rc_sel={rc_sel}"));
+        }
+        return None;
+    }
+    match describe_value(val) {
+        Ok(t) => Some(t),
+        Err(why) => {
+            if !quiet {
+                debug_log(format!("AX: SelectedText rc_sel=0 但{why}"));
+            }
+            None
+        }
+    }
+}
+
+/// 与 C CFRange 二进制布局一致（CFIndex = long = isize）
+#[repr(C)]
+struct CfRange {
+    location: isize,
+    length: isize,
+}
+
+/// 范围回退：AXSelectedTextRange → AXStringForRange（参数化查询）。
+/// 部分自绘文本视图（如微信 4.x 的 Qt 控件）不暴露 SelectedText 但支持范围取值。
+unsafe fn query_text_via_range(
+    el: AXUIElementRef,
+    consts: &AxConsts,
+    quiet: bool,
+) -> Option<String> {
+    // kAXValueCFRangeType = 3
+    const K_AX_VALUE_CF_RANGE: usize = 3;
+
+    let mut range_val: CFTypeRefC = std::ptr::null();
+    let rc_range = AXUIElementCopyAttributeValue(el, consts.selected_text_range, &mut range_val);
+    if rc_range != 0 || range_val.is_null() {
+        if !quiet {
+            debug_log(format!("AX: 范围回退不可用 rc_range={rc_range}"));
+        }
+        return None;
+    }
+    let mut range = CfRange { location: 0, length: 0 };
+    let ok = AXValueGetValue(range_val, K_AX_VALUE_CF_RANGE, &mut range as *mut _ as *mut c_void);
+    CFRelease(range_val as *mut c_void);
+    if ok == 0 || range.length <= 0 {
+        if !quiet {
+            debug_log(format!(
+                "AX: 范围取值失败 ok={ok} len={}（选区为空或值类型非 Range）",
+                range.length
+            ));
+        }
+        return None;
+    }
+
+    let param = AXValueCreate(K_AX_VALUE_CF_RANGE, &range as *const _ as *const c_void);
+    if param.is_null() {
+        return None;
+    }
+    let mut out: CFTypeRefC = std::ptr::null();
+    let rc_str = AXUIElementCopyParameterizedAttributeValue(
+        el,
+        consts.string_for_range,
+        param,
+        &mut out,
     );
-    let text = if rc_sel == 0 {
-        cf_type_to_string(val)
+    CFRelease(param);
+    let text = if rc_str == 0 {
+        cf_type_to_string(out)
     } else {
         None
     };
-    if text.is_none() {
-        debug_log(format!("AX: 聚焦元素 SelectedText rc_sel={rc_sel}"));
+    if text.is_none() && !quiet {
+        debug_log(format!("AX: StringForRange rc_str={rc_str}"));
     }
-    CFRelease(focused as *mut c_void);
     text
 }
 
@@ -560,6 +1072,24 @@ unsafe fn cf_type_to_string(v: CFTypeRefC) -> Option<String> {
         None
     } else {
         Some(out)
+    }
+}
+
+/// rc=0 但仍可能无文本：区分 空值 / 非字符串 / 空串（接管值的所有权）
+unsafe fn describe_value(v: CFTypeRefC) -> Result<String, &'static str> {
+    if v.is_null() {
+        return Err("值为空");
+    }
+    if CFGetTypeID(v) != CFString::type_id() {
+        CFRelease(v as *mut c_void);
+        return Err("值类型非字符串");
+    }
+    let s = CFString::wrap_under_create_rule(v as CFStringRef);
+    let out = s.to_string();
+    if out.trim().is_empty() {
+        Err("选区为空串")
+    } else {
+        Ok(out)
     }
 }
 

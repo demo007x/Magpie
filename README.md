@@ -37,7 +37,7 @@ Select text in any app and an instant floating bar offers translate / explain / 
 
 ## Implemented Features (M1 / MVP)
 
-- **Clipboard-free capture** — global text selection via macOS Accessibility APIs (CGEventTap + AX); drag-select or double-click triggers it. **Never touches the clipboard**
+- **Global selection capture** — text selection via macOS Accessibility APIs (CGEventTap + AX); drag-select or double-click triggers it, with 200 ms debounce and duplicate suppression
 - **Floating bar** — frosted-glass capsule near your cursor, auto edge-clamping, never steals focus, light/dark theme aware
 - **Five actions** — Translate / Explain / Summarize (streaming AI) + Copy / Search (local); order and visibility configurable
 - **Three translation channels** — AI translation (LLM), Baidu Translate, and DeepL; click for the default, expand to switch
@@ -45,6 +45,7 @@ Select text in any app and an instant floating bar offers translate / explain / 
 - **BYOK** — bring your own API key; DeepSeek preset, works with any OpenAI-compatible endpoint
 - **Menu bar resident** — Dock icon hidden by default; closing the main window just hides it while capture keeps running
 - **App blocklist** — no triggering inside terminals, password managers, or other sensitive apps
+- **Compatibility mode** — for apps that don't expose selections (WeChat, Office, …), simulate ⌘C to read the selected text and restore the clipboard afterwards
 
 ## Prerequisites
 
@@ -102,7 +103,7 @@ Data flow: CGEventTap (mouse) → detect thread (debounce / AX query) → filter
 
 ## Privacy & Security
 
-- Selection capture **never reads or writes the clipboard** (pure Accessibility APIs)
+- Selection is read via Accessibility APIs by default; the built-in compatibility mode simulates ⌘C and restores the clipboard afterwards
 - API keys are stored in plaintext in local `settings.json` (moving to the system keychain in M2) and are sent only to the LLM / translation endpoints you configure
 - No telemetry, no accounts
 

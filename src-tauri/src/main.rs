@@ -131,6 +131,7 @@ fn main() {
             capture::capture_status,
             capture::open_accessibility_settings,
             capture::prompt_accessibility,
+            capture::request_listen_access,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

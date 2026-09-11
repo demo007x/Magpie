@@ -7,6 +7,29 @@ use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
 use crate::capture::debug_log;
 
+#[cfg(target_os = "macos")]
+mod macos_glue {
+    use std::os::raw::{c_char, c_void};
+
+    // objc_msgSend 按调用签名分别声明（与 objc crate 内部做法一致）
+    #[allow(clashing_extern_declarations)]
+    extern "C" {
+        fn sel_registerName(name: *const c_char) -> *mut c_void;
+        #[link_name = "objc_msgSend"]
+        fn msg_send_order_front_regardless(receiver: *mut c_void, sel: *mut c_void);
+    }
+
+    /// 显示窗口但不激活本进程（等价 [NSWindow orderFrontRegardless]）。
+    /// tao 的 show = makeKeyAndOrderFront 会把激活态抢到本进程，
+    /// 目标应用失焦后选区高亮消失——必须绕开。
+    pub fn show_without_activation(ns_window: *mut c_void) {
+        unsafe {
+            let sel = sel_registerName(b"orderFrontRegardless\0".as_ptr() as *const c_char);
+            msg_send_order_front_regardless(ns_window, sel);
+        }
+    }
+}
+
 /// TS 未传尺寸时的兜底
 pub const DEFAULT_W: f64 = 328.0;
 pub const DEFAULT_H: f64 = 54.0;
@@ -56,8 +79,8 @@ pub fn rect_contains(app: &AppHandle, x: f64, y: f64, pad: f64) -> bool {
     })
 }
 
-/// (x, y)（逻辑坐标）所在显示器的逻辑右下边界；找不到则回退主显示器
-fn monitor_bounds(win: &WebviewWindow, x: f64, y: f64) -> (f64, f64) {
+/// (x, y)（逻辑坐标）所在显示器的逻辑矩形 `(left, top, right, bottom)`；找不到则回退主显示器
+fn monitor_rect(win: &WebviewWindow, x: f64, y: f64) -> (f64, f64, f64, f64) {
     for m in win.available_monitors().unwrap_or_default() {
         let s = m.scale_factor();
         let pos = m.position();
@@ -65,22 +88,29 @@ fn monitor_bounds(win: &WebviewWindow, x: f64, y: f64) -> (f64, f64) {
         let (lx, ly) = (pos.x as f64 / s, pos.y as f64 / s);
         let (lw, lh) = (size.width as f64 / s, size.height as f64 / s);
         if x >= lx && x <= lx + lw && y >= ly && y <= ly + lh {
-            return (lx + lw, ly + lh);
+            return (lx, ly, lx + lw, ly + lh);
         }
     }
     if let Ok(Some(p)) = win.primary_monitor() {
         let s = p.scale_factor();
-        return (p.size().width as f64 / s, p.size().height as f64 / s);
+        let pos = p.position();
+        let size = p.size();
+        return (
+            pos.x as f64 / s,
+            pos.y as f64 / s,
+            pos.x as f64 + size.width as f64 / s,
+            pos.y as f64 + size.height as f64 / s,
+        );
     }
-    (1920.0, 1080.0)
+    (0.0, 0.0, 1920.0, 1080.0)
 }
 
 /// 锚点 → 窗口位置：优先光标右下，底部放不下翻转到上方，钳制在显示器内
 fn place(win: &WebviewWindow, ax: f64, ay: f64, w: f64, h: f64) -> (f64, f64) {
-    let (max_x, max_y) = monitor_bounds(win, ax, ay);
-    let nx = (ax + 6.0).clamp(0.0, (max_x - w).max(0.0));
-    let ny = if ay + 14.0 + h > max_y {
-        (ay - h - 12.0).max(0.0)
+    let (m_l, m_t, m_r, m_b) = monitor_rect(win, ax, ay);
+    let nx = (ax + 6.0).clamp(m_l, (m_r - w).max(m_l));
+    let ny = if ay + 14.0 + h > m_b {
+        (ay - h - 12.0).max(m_t)
     } else {
         ay + 14.0
     };
@@ -103,6 +133,15 @@ pub fn show_floating_bar(
         .map_err(|e| e.to_string())?;
     win.set_position(LogicalPosition::new(nx, ny))
         .map_err(|e| e.to_string())?;
+    // tao 的 show() = makeKeyAndOrderFront：会把激活态抢到本进程，目标应用失焦后
+    // 选区高亮消失（macOS 不为非激活窗口绘制高亮）。改用 orderFrontRegardless：
+    // 仅把窗口置前显示，不改变激活态，保住用户的选词效果。
+    #[cfg(target_os = "macos")]
+    {
+        let ns = win.ns_window().map_err(|e| e.to_string())?;
+        macos_glue::show_without_activation(ns);
+    }
+    #[cfg(not(target_os = "macos"))]
     win.show().map_err(|e| e.to_string())?;
     let state = app.state::<FloatingState>();
     *state.lock().unwrap() = FloatingRect {
@@ -153,7 +192,7 @@ pub fn begin_floating_drag(app: AppHandle, x: f64, y: f64) -> Result<(), String>
     Ok(())
 }
 
-/// 拖动中：光标全局坐标 → 窗口新位置（由 capture worker 转发调用）
+/// 拖动中：光标全局坐标 → 窗口新位置（钳制在光标所在显示器内，由 capture worker 转发调用）
 pub fn apply_drag(app: &AppHandle, cx: f64, cy: f64) {
     if !is_dragging() {
         return;
@@ -161,6 +200,17 @@ pub fn apply_drag(app: &AppHandle, cx: f64, cy: f64) {
     let grab = DRAG_GRAB.lock().map(|g| *g).unwrap_or((0.0, 0.0));
     let (nx, ny) = (cx - grab.0, cy - grab.1);
     if let Some(win) = app.get_webview_window("floating") {
+        let (m_l, m_t, m_r, m_b) = monitor_rect(&win, cx, cy);
+        let (w, h) = app
+            .try_state::<FloatingState>()
+            .map(|s| {
+                let r = s.lock().unwrap();
+                (r.w, r.h)
+            })
+            .unwrap_or((DEFAULT_W, DEFAULT_H));
+        // 整条窗口保持在光标所在显示器内
+        let nx = nx.clamp(m_l, (m_r - w).max(m_l));
+        let ny = ny.clamp(m_t, (m_b - h).max(m_t));
         let _ = win.set_position(LogicalPosition::new(nx, ny));
         if let Some(state) = app.try_state::<FloatingState>() {
             let mut r = state.lock().unwrap();
