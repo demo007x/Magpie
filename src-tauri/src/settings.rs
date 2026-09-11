@@ -51,6 +51,7 @@ impl Default for Actions {
     }
 }
 
+/// 搜索引擎（自定义引擎列表项）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SearchEngine {
@@ -204,13 +205,23 @@ pub fn current(app: &AppHandle) -> Settings {
     app.state::<Mutex<Settings>>().lock().unwrap().clone()
 }
 
-/// 进程路径包含黑名单关键词即命中（大小写不敏感）
-pub fn is_blacklisted(app: &AppHandle, proc_path: &str) -> bool {
+/// 黑名单命中：bundle id 精确匹配（大小写不敏感）或进程路径 contains（兼容手动进程名/旧 .app 条目）
+pub fn is_blacklisted(app: &AppHandle, proc_path: &str, bundle_id: Option<&str>) -> bool {
     let s = current(app);
     let p = proc_path.to_lowercase();
-    s.app_blacklist
-        .iter()
-        .any(|b| !b.is_empty() && p.contains(&b.to_lowercase()))
+    let bid = bundle_id.map(|b| b.to_lowercase());
+    s.app_blacklist.iter().any(|b| {
+        let b = b.trim().to_lowercase();
+        if b.is_empty() {
+            return false;
+        }
+        if let Some(bid) = &bid {
+            if *bid == b {
+                return true;
+            }
+        }
+        p.contains(&b)
+    })
 }
 
 #[tauri::command]

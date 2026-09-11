@@ -8,6 +8,8 @@ pub enum CaptureEvent {
         x: f64,
         y: f64,
         app: String,
+        /// 运行中应用的 bundle identifier（如 com.apple.Safari）；解析失败为空
+        bid: String,
         pid: i32,
     },
     PlainClick {
@@ -115,17 +117,19 @@ pub fn spawn_worker(app: AppHandle, rx: Receiver<CaptureEvent>) {
         let my_pid = std::process::id() as i32;
         while let Ok(ev) = rx.recv() {
             match ev {
-                CaptureEvent::Selection { text, x, y, app: app_path, pid } => {
+                CaptureEvent::Selection { text, x, y, app: app_path, bid, pid } => {
                     if pid == my_pid {
                         debug_log("selection 跳过：自身进程");
                         continue;
                     }
-                    if settings::is_blacklisted(&app, &app_path) {
-                        debug_log(format!("selection 跳过：黑名单命中 {app_path}"));
+                    if settings::is_blacklisted(&app, &app_path, Some(&bid)) {
+                        debug_log(format!(
+                            "selection 跳过：黑名单命中 app={app_path} bid={bid}"
+                        ));
                         continue;
                     }
                     debug_log(format!(
-                        "selection 通过 → 发事件：pid={pid} app={app_path} len={} ({x:.0},{y:.0})",
+                        "selection 通过 → 发事件：pid={pid} app={app_path} bid={bid} len={} ({x:.0},{y:.0})",
                         text.len()
                     ));
                     let _ = app.emit(

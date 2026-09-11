@@ -2,6 +2,7 @@
 //! 双线程模型：tap 线程仅入队回调 → detect 线程做状态机/防抖/AX 查询（docs/03 §3.1–3.3）。
 //! 安全边界：全程不读写剪贴板；AX 查询失败 = 静默失败。
 
+use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -544,13 +545,18 @@ fn forward_selection(
         debug_log("跳过：与上次捕获重复");
         return;
     }
+    // AX 链路拿不到 pid（权限状态异常等）时，用 NSWorkspace 前台应用兜底，
+    // 保证黑名单过滤与归属判断不失效
+    let pid = if pid > 0 { pid } else { frontmost_pid().unwrap_or(0) };
     let app = proc_path(pid).unwrap_or_default();
-    debug_log(format!("判定通过 → 交 worker：app={app}"));
+    let bid = running_bundle_id(pid).unwrap_or_default();
+    debug_log(format!("判定通过 → 交 worker：app={app} bid={bid}"));
     let _ = tx.send(CaptureEvent::Selection {
         text: text.clone(),
         x,
         y,
         app,
+        bid,
         pid,
     });
     *last_emitted = Some((text, x, y));
@@ -1105,4 +1111,75 @@ fn proc_path(pid: c_int) -> Option<String> {
         .take_while(|&b| b != 0)
         .collect();
     String::from_utf8(bytes).ok()
+}
+
+// ---------- NSRunningApplication / NSWorkspace：运行中应用身份（黑名单精确匹配用） ----------
+
+#[link(name = "AppKit", kind = "framework")]
+extern "C" {}
+
+// objc_msgSend 按调用签名分别声明（与 objc crate 内部做法一致）
+#[allow(clashing_extern_declarations)]
+extern "C" {
+    fn objc_getClass(name: *const c_char) -> *mut c_void;
+    fn sel_registerName(name: *const c_char) -> *mut c_void;
+    #[link_name = "objc_msgSend"]
+    fn msg_send_id_with_i32(receiver: *mut c_void, sel: *mut c_void, arg: i32) -> *mut c_void;
+    #[link_name = "objc_msgSend"]
+    fn msg_send_id_inst(receiver: *mut c_void, sel: *mut c_void) -> *mut c_void;
+    #[link_name = "objc_msgSend"]
+    fn msg_send_i64(receiver: *mut c_void, sel: *mut c_void) -> i64;
+    #[link_name = "objc_msgSend"]
+    fn msg_send_utf8(receiver: *mut c_void, sel: *mut c_void) -> *const c_char;
+}
+
+fn objc_class(name: &str) -> *mut c_void {
+    let c = CString::new(name).unwrap();
+    unsafe { objc_getClass(c.as_ptr()) }
+}
+
+fn objc_sel(name: &str) -> *mut c_void {
+    let c = CString::new(name).unwrap();
+    unsafe { sel_registerName(c.as_ptr()) }
+}
+
+/// 运行中应用的 bundle identifier（如 com.apple.Safari）；解析失败 = None。
+/// 黑名单精确匹配用——Safari 等系统应用的进程路径不含 .app 包名，contains 会漏。
+pub(crate) fn running_bundle_id(pid: c_int) -> Option<String> {
+    unsafe {
+        let app = msg_send_id_with_i32(
+            objc_class("NSRunningApplication"),
+            objc_sel("runningApplicationWithProcessIdentifier:"),
+            pid,
+        );
+        if app.is_null() {
+            return None;
+        }
+        let bid = msg_send_id_inst(app, objc_sel("bundleIdentifier"));
+        if bid.is_null() {
+            return None;
+        }
+        let ptr = msg_send_utf8(bid, objc_sel("UTF8String"));
+        if ptr.is_null() {
+            return None;
+        }
+        Some(CStr::from_ptr(ptr).to_string_lossy().into_owned())
+    }
+}
+
+/// 前台应用 pid（NSWorkspace，**不依赖 AX**）。AX 权限状态异常（如 -25212）时的兜底，
+/// 保证黑名单过滤与归属归属判断不失效。
+fn frontmost_pid() -> Option<i32> {
+    unsafe {
+        let ws = msg_send_id_inst(objc_class("NSWorkspace"), objc_sel("sharedWorkspace"));
+        if ws.is_null() {
+            return None;
+        }
+        let app = msg_send_id_inst(ws, objc_sel("frontmostApplication"));
+        if app.is_null() {
+            return None;
+        }
+        let pid = msg_send_i64(app, objc_sel("processIdentifier"));
+        (pid > 0).then_some(pid as i32)
+    }
 }

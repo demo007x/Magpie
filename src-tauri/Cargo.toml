@@ -17,6 +17,13 @@ futures-util = "0.3"
 core-foundation = "0.10"
 md-5 = "0.10"
 arboard = "3"
+rfd = "0.15"
+
+# 本地补丁：修复 wry 上游 #1752 —— WebKit 偶发 nil URL 导致
+# url_scheme_handler unwrap panic（extern "C" 不可 unwind，进程 abort）
+# 上游修复 PR：tauri-apps/wry#1744（未合并）
+[patch.crates-io]
+wry = { path = "../vendor/wry" }
 
 [profile.release]
 strip = true

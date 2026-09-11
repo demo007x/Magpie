@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod ai;
+mod app_picker;
 mod capture;
 mod floating;
 mod settings;
@@ -132,10 +133,21 @@ fn main() {
             capture::open_accessibility_settings,
             capture::prompt_accessibility,
             capture::request_listen_access,
+            app_picker::pick_app_bundle,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            // 启动即静默退出的排查插桩（debug 构建输出）
+            if cfg!(debug_assertions) {
+                match &event {
+                    RunEvent::ExitRequested { code, .. } => {
+                        eprintln!("[magpie] ExitRequested code={code:?}")
+                    }
+                    RunEvent::Exit => eprintln!("[magpie] EventLoop Exit"),
+                    _ => {}
+                }
+            }
             #[cfg(target_os = "macos")]
             if let RunEvent::Reopen { .. } = event {
                 if let Some(w) = app.get_webview_window("main") {

@@ -141,7 +141,8 @@ TS (WebView × 2)                        Rust 核心进程
 | [docs/04-模块设计-窗口与交互.md](docs/04-模块设计-窗口与交互.md) | 浮动条/主窗口规格                |
 | [docs/05-模块设计-AI服务层.md](docs/05-模块设计-AI服务层.md)     | 动作注册表、prompt、流式协议     |
 | [docs/06-技术选型.md](docs/06-技术选型.md)                       | ADR 决策记录                     |
-| [docs/07-MVP执行计划.md](docs/07-MVP执行计划.md)                 | 任务分解与验收状态               |
+| [docs/07-MVP执行计划.md](docs/07-MVP执行计划.md) | 任务分解与验收状态 |
+| [docs/08-功能储备-建议清单.md](docs/08-功能储备-建议清单.md) | 后续功能建议池与优先级 |
 
 ## License
 

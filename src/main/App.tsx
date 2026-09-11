@@ -88,6 +88,7 @@ export default function App() {
   useEffect(() => {
     if (page !== "capture") return;
     let stop = false;
+    let t: number | undefined;
     const poll = () => {
       invoke<{
         granted: boolean;
@@ -99,14 +100,16 @@ export default function App() {
           setGranted(s.granted);
           setAxServiceOk(s.axServiceOk);
           setListenAccess(s.listenEventAccess);
+          // 三项全就绪即停止轮询：常驻 IPC 会放大 wry 上游 nil-URL 崩溃（#1752）的触发面
+          if (s.granted && s.axServiceOk && s.listenEventAccess) return;
+          t = window.setTimeout(poll, 2000);
         })
         .catch(() => undefined);
     };
     poll();
-    const t = setInterval(poll, 2000);
     return () => {
       stop = true;
-      clearInterval(t);
+      if (t !== undefined) window.clearTimeout(t);
     };
   }, [page]);
 
@@ -856,25 +859,54 @@ export default function App() {
           <>
             <h1>禁用应用</h1>
             <p className="page-hint">
-              让拾趣在敏感场景保持安静：黑名单应用（按进程名匹配）内划词不触发浮动条，适合终端、密码管理器等应用。保存后立即生效。
+              让拾趣在敏感场景保持安静：黑名单应用内划词不触发浮动条，适合终端、密码管理器等应用。点「选择应用…」从应用列表挑选，保存后立即生效。
             </p>
+
             <div className="card">
-              <div className="field wide">
-                <span>应用名列表（逗号分隔）</span>
-                <input
-                  value={settings.appBlacklist.join(", ")}
-                  onChange={(e) =>
-                    patch({
-                      appBlacklist: e.target.value
-                        .split(/[,，]/)
-                        .map((s) => s.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                  placeholder="Terminal, iTerm, 1Password"
-                />
+              {settings.appBlacklist.length === 0 ? (
+                <div className="row-between">
+                  <div className="row-title" style={{ color: "var(--sec)" }}>
+                    暂无禁用应用
+                  </div>
+                </div>
+              ) : (
+                settings.appBlacklist.map((name, i) => (
+                  <div className="row-between" key={`${name}-${i}`}>
+                    <div className="row-title">{name}</div>
+                    <button
+                      className="btn"
+                      onClick={() =>
+                        patch({
+                          appBlacklist: settings.appBlacklist.filter((_, idx) => idx !== i),
+                        })
+                      }
+                    >
+                      移除
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="card">
+              <div className="row-between">
+                <button
+                  className="btn primary"
+                  onClick={() => {
+                    invoke<string | null>("pick_app_bundle")
+                      .then((app) => {
+                        if (app && !settings.appBlacklist.includes(app)) {
+                          patch({ appBlacklist: [...settings.appBlacklist, app] });
+                        }
+                      })
+                      .catch(() => undefined);
+                  }}
+                >
+                  选择应用…
+                </button>
               </div>
             </div>
+
             <div className="save-bar">
               <button className="btn primary" onClick={save}>
                 {saved ? "已保存" : "保存更改"}
