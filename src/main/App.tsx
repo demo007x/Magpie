@@ -608,7 +608,7 @@ export default function App() {
               )}
               <div className="row-between sep">
                 <div>
-                  <div className="row-title">AX 服务实测</div>
+                  <div className="row-title">取词健康自检</div>
                   <div className="row-sub">
                     保障划词稳定的健康检查。若已授权仍显示异常：在系统设置「辅助功能」中取消再重新勾选拾趣，然后重启应用。
                   </div>
