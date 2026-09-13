@@ -1,0 +1,62 @@
+name: Release
+
+# 推送 v* 标签 → 自动构建 Universal 2 包并创建 Release；
+# 也可在 Actions 页手动触发（产物在 Artifacts 下载）。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  release:
+    permissions:
+      contents: write # tauri-action 创建 Release 需要
+    runs-on: macos-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装 Rust（stable + 双架构目标）
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust 编译缓存
+        uses: Swatinem/rust-cache@v2
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      # tauri-action 自动执行 pnpm build（beforeBuildCommand）并构建
+      - name: 构建（Universal 2）
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target universal-apple-darwin
+          # 标签推送时创建 Release 并挂载 dmg/app 产物
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Magpie {0}', github.ref_name) || '' }}
+          releaseDraft: false
+          prerelease: false
+
+      - name: 上传构建产物（手动触发时）
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: magpie-macos-universal
+          path: |
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
