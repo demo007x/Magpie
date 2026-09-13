@@ -28,12 +28,11 @@ fn ui_debug_log(msg: String) {
     }
 }
 
-/// 用系统默认浏览器打开链接（本地"搜索"动作用）
+/// 用系统默认浏览器/邮件客户端打开链接（本地"搜索/打开链接/写邮件"动作用）
 #[tauri::command]
-fn open_url(url: String) {
-    // 只接受我们构造的 http(s) 链接，防任意命令注入
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return;
+fn open_url(url: String) -> bool {
+    if !is_safe_url(&url) {
+        return false;
     }
     #[cfg(target_os = "macos")]
     let _ = std::process::Command::new("open").arg(&url).spawn();
@@ -41,6 +40,21 @@ fn open_url(url: String) {
     let _ = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn();
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+    true
+}
+
+/// 白名单：http(s)；mailto（严格 local@domain，无空格无路径，杜绝注入面）
+fn is_safe_url(url: &str) -> bool {
+    if url.starts_with("https://") || url.starts_with("http://") {
+        return true;
+    }
+    if let Some(addr) = url.strip_prefix("mailto:") {
+        if addr.is_empty() || addr.contains([' ', '/', '?', '#']) {
+            return false;
+        }
+        return matches!(addr.split_once('@'), Some((local, domain)) if !local.is_empty() && domain.contains('.'));
+    }
+    false
 }
 
 fn main() {

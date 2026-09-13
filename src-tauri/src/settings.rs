@@ -37,6 +37,14 @@ pub struct Actions {
     pub summarize: bool,
     pub copy: bool,
     pub search: bool,
+    /// 上下文动作：选中文本为 URL 时「打开链接」
+    pub link: bool,
+    /// 上下文动作：选中文本为邮箱时「写邮件」
+    pub email: bool,
+    /// 上下文动作：选中文本含验证码时「复制验证码」
+    pub code: bool,
+    /// 上下文动作：选中文本含电话号码时「复制号码」
+    pub tel: bool,
 }
 
 impl Default for Actions {
@@ -47,6 +55,10 @@ impl Default for Actions {
             summarize: true,
             copy: true,
             search: true,
+            link: true,
+            email: true,
+            code: true,
+            tel: true,
         }
     }
 }

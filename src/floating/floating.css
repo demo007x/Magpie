@@ -69,6 +69,9 @@ body,
   border: 0.5px solid var(--line);
   border-radius: 11px;
   box-shadow: var(--shadow);
+  user-select: none; /* 胶囊条是纯操作面：禁止选中文本（防点击/拖拽时出现选中高亮） */
+  -webkit-user-select: none;
+  cursor: default;
 }
 
 .action-slot {
@@ -277,6 +280,65 @@ body,
   will-change: scroll-position; /* 提升为合成层滚动，跟手丝滑 */
   user-select: text;
   cursor: auto;
+}
+
+/* 多值提取列表（链接/邮箱/验证码/号码） */
+.extract-group {
+  margin: 2px 0 4px;
+  font-size: 11px;
+  font-weight: 590;
+  color: var(--sec);
+}
+
+.extract-group:not(:first-child) {
+  margin-top: 10px;
+}
+
+.extract-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 0.5px solid var(--line);
+}
+
+.extract-item:last-child {
+  border-bottom: none;
+  padding-bottom: 2px;
+}
+
+.extract-text {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  word-break: break-all;
+  color: var(--text);
+}
+
+.extract-acts {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.extract-acts button {
+  font-size: 11px;
+  font-weight: 510;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 0.5px solid var(--line);
+  background: var(--hov);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.extract-acts button:hover {
+  background: var(--text);
+  color: var(--surf);
 }
 
 /* 流式输出 + 用户上翻阅读时出现的「回到底部」按钮 */

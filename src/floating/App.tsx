@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -9,15 +9,49 @@ import {
   AlignLeft,
   Check,
   ChevronDown,
+  ClipboardCheck,
   Copy,
+  ExternalLink,
   Languages,
   Lightbulb,
+  Mail,
+  Phone,
+  ScanSearch,
   Search,
   X,
 } from "lucide-react";
 import { ACTIONS, actionById } from "../shared/actions";
 import { aiChat } from "../shared/ai";
+import {
+  extractAll,
+  extractCode,
+  extractEmail,
+  extractTel,
+  extractUrl,
+} from "../shared/textContext";
 import type { SearchEngine, Settings } from "../shared/types";
+
+// 上下文智能动作：由「提取信息」统一承载（多值/混合进面板），不再逐个上胶囊条
+const CONTEXT_ACTION_IDS = new Set(["link", "email", "tel", "code"]);
+const isContextAction = (id: string) => CONTEXT_ACTION_IDS.has(id);
+
+type ExtractGroups = { tel: string[]; email: string[]; link: string[]; code: string[] };
+
+const EXTRACT_GROUPS: Array<{ id: keyof ExtractGroups; label: string }> = [
+  { id: "tel", label: "电话" },
+  { id: "email", label: "邮箱" },
+  { id: "link", label: "链接" },
+  { id: "code", label: "验证码" },
+];
+
+/** 数量最多的实体类型（面板图标用） */
+function dominantGroup(groups: ExtractGroups): string {
+  let best: keyof ExtractGroups = "link";
+  for (const g of EXTRACT_GROUPS) {
+    if (groups[g.id].length > groups[best].length) best = g.id;
+  }
+  return best;
+}
 
 // ---- 图标（lucide-react 图标库，统一 15px / 1.75 描边，随文字色） ----
 const ICONS: Record<string, React.ReactNode> = {
@@ -26,6 +60,11 @@ const ICONS: Record<string, React.ReactNode> = {
   translate: <Languages size={15} strokeWidth={1.75} />,
   explain: <Lightbulb size={15} strokeWidth={1.75} />,
   summarize: <AlignLeft size={15} strokeWidth={1.75} />,
+  link: <ExternalLink size={15} strokeWidth={1.75} />,
+  email: <Mail size={15} strokeWidth={1.75} />,
+  code: <ClipboardCheck size={15} strokeWidth={1.75} />,
+  tel: <Phone size={15} strokeWidth={1.75} />,
+  __extract: <ScanSearch size={15} strokeWidth={1.75} />,
 };
 const CopyIcon = <Copy size={13} strokeWidth={1.75} />;
 const CheckIcon = <Check size={13} strokeWidth={2} className="ok" />;
@@ -38,7 +77,7 @@ const TRANSLATE_SERVICES = [
   { id: "deepl", label: "DeepL" },
 ];
 
-// 状态机：Bar（胶囊） → Result（流式面板）；dismiss/新选区回收
+// 状态机：Bar（胶囊） → Result（流式面板）/ Extract（多值列表）；dismiss/新选区回收
 type Phase =
   | { kind: "bar" }
   | {
@@ -49,6 +88,13 @@ type Phase =
     error: string | null;
     /** 本次结果使用的翻译服务（重试保持同一服务） */
     service?: string;
+  }
+  | {
+    kind: "extract";
+    /** 主要实体类型（决定面板图标） */
+    actionId: string;
+    label: string;
+    groups: ExtractGroups;
   };
 
 // 翻译的富结果：译文主体 + 要点（学习辅助）。展示分层，复制只取译文。
@@ -68,6 +114,10 @@ export default function App() {
     explain: true,
     summarize: true,
     copy: true,
+    link: true,
+    email: true,
+    code: true,
+    tel: true,
   });
   const [actionOrder, setActionOrder] = useState<string[]>([]);
   const [translateEnabled, setTranslateEnabled] = useState<string[]>(["ai"]);
@@ -81,7 +131,13 @@ export default function App() {
   const [menu, setMenu] = useState<"search" | "translate" | null>(null);
   // 结果面板复制成功的短暂反馈（图标变对勾）
   const [copied, setCopied] = useState(false);
+  // 提取列表（多值面板）的复制反馈
+  const [copiedAll, setCopiedAll] = useState(false);
+  // 提取列表行内复制的反馈（记录条目内容）
+  const [copiedItem, setCopiedItem] = useState<string | null>(null);
   const copiedTimerRef = useRef<number | undefined>(undefined);
+  const copiedAllTimerRef = useRef<number | undefined>(undefined);
+  const copiedItemTimerRef = useRef<number | undefined>(undefined);
   const flashTimerRef = useRef<number | undefined>(undefined);
   // 流式输出跟随：默认贴底自动滚动；用户向上滚动离开底部则冻结，滚回底部恢复
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -157,12 +213,84 @@ export default function App() {
       .catch(() => undefined);
   };
 
-  // 按用户自定义顺序渲染（未配置的按注册表顺序排在后面）
-  const visibleActions = ACTIONS.filter((a) => actions[a.id] !== false).sort((a, b) => {
-    const ia = actionOrder.indexOf(a.id);
-    const ib = actionOrder.indexOf(b.id);
-    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
-  });
+  // 按用户自定义顺序渲染（未配置的按注册表顺序排在后面）。
+  // 实体提取与胶囊分流：
+  // 无实体 → 现状；恰好 1 个实体 → 对应动作一键直达（占「搜索」位，搜索隐藏）；
+  // ≥2 个实体（同类型多个或混合类型）→ 单一「提取信息」按钮，点击进分组面板。
+  // 四类动作均可在主界面动作卡片关闭（关闭的类型不提取、不计数）。
+  const extracted = useMemo(() => {
+    const all = extractAll(text);
+    const groups: ExtractGroups = {
+      tel: actions.tel !== false ? all.tels : [],
+      email: actions.email !== false ? all.emails : [],
+      link: actions.link !== false ? all.urls : [],
+      code: actions.code !== false ? all.codes : [],
+    };
+    const total = groups.tel.length + groups.email.length + groups.link.length + groups.code.length;
+    return { groups, total };
+  }, [text, actions]);
+
+  const searchIdx = actionOrder.indexOf("search");
+  const orderKey = (id: string) => {
+    const i = actionOrder.indexOf(id);
+    return i >= 0 ? i : id === "__ctx" ? searchIdx : 999;
+  };
+
+  type BarEntry = { id: string; label: string; onClick: () => void };
+
+  const barEntries = (() => {
+    const entries: BarEntry[] = [];
+    for (const a of ACTIONS) {
+      // 上下文动作不上胶囊条：由提取结果统一决定胶囊条上的上下文按钮
+      if (isContextAction(a.id)) continue;
+      if (actions[a.id] === false) continue;
+      if (a.id === "search" && extracted.total > 0) continue; // 搜索位让给提取按钮
+      entries.push({
+        id: a.id,
+        label: a.label,
+        onClick: () => {
+          setMenu(null);
+          runAction(a.id);
+        },
+      });
+    }
+    if (extracted.total === 1) {
+      const g = extracted.groups;
+      const single =
+        g.link.length === 1
+          ? { id: "link", label: "打开链接" }
+          : g.email.length === 1
+            ? { id: "email", label: "写邮件" }
+            : g.tel.length === 1
+              ? { id: "tel", label: "复制号码" }
+              : { id: "code", label: "复制验证码" };
+      entries.push({
+        id: single.id,
+        label: single.label,
+        onClick: () => {
+          setMenu(null);
+          runAction(single.id);
+        },
+      });
+    } else if (extracted.total > 1) {
+      entries.push({
+        id: "__extract",
+        label: "提取信息",
+        onClick: () => {
+          setMenu(null);
+          // actionId 取数量最多的实体类型（决定面板图标）
+          setPhase({
+            kind: "extract",
+            actionId: dominantGroup(extracted.groups),
+            label: "提取信息",
+            groups: extracted.groups,
+          });
+        },
+      });
+    }
+    entries.sort((a, b) => orderKey(a.id) - orderKey(b.id));
+    return entries;
+  })();
 
   useEffect(() => {
     loadSettings();
@@ -286,6 +414,40 @@ export default function App() {
           return;
         }
         openEngine(defaultEngine);
+        return;
+      }
+
+      if (id === "link") {
+        const url = extractUrl(t);
+        if (!url) return;
+        invoke("open_url", { url })
+          .then(() => flash(id, "已打开"))
+          .catch(() => flash(id, "打开失败"));
+        return;
+      }
+
+      if (id === "email") {
+        const addr = extractEmail(t);
+        if (!addr) return;
+        invoke("open_url", { url: `mailto:${addr}` })
+          .then(() => flash(id, "已打开邮件客户端"))
+          .catch(() => flash(id, "打开失败"));
+        return;
+      }
+
+      if (id === "tel") {
+        const num = extractTel(t);
+        if (!num) return;
+        navigator.clipboard.writeText(num).catch(() => undefined);
+        flash(id, `已复制 ${num}`);
+        return;
+      }
+
+      if (id === "code") {
+        const code = extractCode(t);
+        if (!code) return;
+        navigator.clipboard.writeText(code).catch(() => undefined);
+        flash(id, `已复制 ${code}`);
         return;
       }
       return;
@@ -434,38 +596,38 @@ export default function App() {
       onMouseUp={onStageMouseUp}
     >
       <div className="bar" role="toolbar">
-        {visibleActions.map((a) => (
-          <span key={a.id} className="action-slot">
+        {barEntries.map((e) => (
+          <span key={e.id} className="action-slot">
             <button
               className="action"
               title={
-                a.id === "search" && defaultEngine
+                e.id === "search" && defaultEngine
                   ? `用${defaultEngine.name}搜索`
-                  : a.id === "translate" && defaultTranslate
+                  : e.id === "translate" && defaultTranslate
                     ? `当前默认：${defaultTranslate.label}`
                     : undefined
               }
               onClick={guarded(() => {
                 setMenu(null); // 执行动作即收起展开中的菜单（chips 不滞留在主条与结果面板之间）
-                runAction(a.id);
+                e.onClick();
               })}
             >
-              <span className="ic">{ICONS[a.id]}</span>
-              <span>{flashId === a.id ? flashMsg : a.label}</span>
+              <span className="ic">{ICONS[e.id]}</span>
+              <span>{flashId === e.id ? flashMsg : e.label}</span>
             </button>
-            {((a.id === "search" && enabledEngines.length > 1) ||
-              (a.id === "translate" && enabledTranslates.length > 1)) && (
+            {((e.id === "search" && enabledEngines.length > 1) ||
+              (e.id === "translate" && enabledTranslates.length > 1)) && (
                 <button
                   className="chev"
-                  title={a.id === "search" ? "更多搜索引擎" : "更多翻译服务"}
+                  title={e.id === "search" ? "更多搜索引擎" : "更多翻译服务"}
                   onClick={guarded(() =>
-                    setMenu((m) => (m === a.id ? null : (a.id as "search" | "translate"))),
+                    setMenu((m) => (m === e.id ? null : (e.id as "search" | "translate"))),
                   )}
                 >
                   <ChevronDown
                     size={13}
                     strokeWidth={2}
-                    className={`chev-svg ${menu === a.id ? "open" : ""}`}
+                    className={`chev-svg ${menu === e.id ? "open" : ""}`}
                   />
                 </button>
               )}
@@ -564,6 +726,83 @@ export default function App() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {phase.kind === "extract" && (
+        <div className="panel">
+          <header className="panel-head">
+            <span className="panel-title">
+              <span className="ic">
+                <ScanSearch size={15} strokeWidth={1.75} />
+              </span>
+              {phase.label}
+            </span>
+            <span className="panel-tools">
+              <button
+                className="tool"
+                onClick={guarded(() => {
+                  const all = EXTRACT_GROUPS.flatMap((g) => phase.groups[g.id]);
+                  navigator.clipboard.writeText(all.join("\n")).catch(() => undefined);
+                  setCopiedAll(true);
+                  if (copiedAllTimerRef.current) window.clearTimeout(copiedAllTimerRef.current);
+                  copiedAllTimerRef.current = window.setTimeout(() => setCopiedAll(false), 1200);
+                })}
+                title="复制全部"
+              >
+                {copiedAll ? CheckIcon : CopyIcon}
+              </button>
+              <button className="tool" onClick={guarded(backToBar)} title="收起">
+                {CloseIcon}
+              </button>
+            </span>
+          </header>
+          <div className="panel-body extract-list">
+            {EXTRACT_GROUPS.filter((g) => phase.groups[g.id].length > 0).map((g) => (
+              <div key={g.id}>
+                <div className="extract-group">{g.label}</div>
+                {phase.groups[g.id].map((item, i) => (
+                  <div className="extract-item" key={`${item}-${i}`}>
+                    <span className="extract-text">{item}</span>
+                    <span className="extract-acts">
+                      {g.id === "link" && (
+                        <button
+                          onClick={guarded(() =>
+                            invoke("open_url", { url: item }).catch(() => undefined),
+                          )}
+                        >
+                          打开
+                        </button>
+                      )}
+                      {g.id === "email" && (
+                        <button
+                          onClick={guarded(() =>
+                            invoke("open_url", { url: `mailto:${item}` }).catch(() => undefined),
+                          )}
+                        >
+                          邮件
+                        </button>
+                      )}
+                      <button
+                        onClick={guarded(() => {
+                          navigator.clipboard.writeText(item).catch(() => undefined);
+                          setCopiedItem(item);
+                          if (copiedItemTimerRef.current)
+                            window.clearTimeout(copiedItemTimerRef.current);
+                          copiedItemTimerRef.current = window.setTimeout(
+                            () => setCopiedItem(null),
+                            1200,
+                          );
+                        })}
+                      >
+                        {copiedItem === item ? "已复制" : "复制"}
+                      </button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         </div>
       )}

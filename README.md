@@ -39,12 +39,14 @@ Select text in any app and an instant floating bar offers translate / explain / 
 
 - **Global selection capture** — text selection via macOS Accessibility APIs (CGEventTap + AX); drag-select or double-click triggers it, with 200 ms debounce and duplicate suppression
 - **Floating bar** — frosted-glass capsule near your cursor, auto edge-clamping, never steals focus, light/dark theme aware
-- **Five actions** — Translate / Explain / Summarize (streaming AI) + Copy / Search (local); order and visibility configurable
+- **Nine actions** — Translate / Explain / Summarize (streaming AI) + Copy / Search / Open Link / Compose Email / Copy Code / Copy Phone; order and visibility configurable
+- **Context-aware actions** — links, emails, verification codes and phone numbers in the selected text are detected automatically: a single entity is one click away (open / compose / copy), multiple entities open a grouped panel for batch operations; recognition follows a strict-consistency rule (TLD allowlist — irregular forms are deliberately not matched)
+- **Dedicated permissions page** — Accessibility / Input Monitoring / AX health check in one place, with one-click guided authorization
 - **Three translation channels** — AI translation (LLM), Baidu Translate, and DeepL; click for the default, expand to switch
 - **Custom search engines** — ships with Baidu AI / Baidu / Google AI / Google / Bing / GitHub; any `{q}` URL template works
 - **BYOK** — bring your own API key; DeepSeek preset, works with any OpenAI-compatible endpoint
 - **Menu bar resident** — Dock icon hidden by default; closing the main window just hides it while capture keeps running
-- **App blocklist** — no triggering inside terminals, password managers, or other sensitive apps
+- **App blocklist** — no triggering inside terminals, password managers, or other sensitive apps; pick apps from the system panel (exact bundle-id matching, reliable even for system apps like Safari)
 - **Compatibility mode** — for apps that don't expose selections (WeChat, Office, …), simulate ⌘C to read the selected text and restore the clipboard afterwards
 
 ## Prerequisites

@@ -13,6 +13,14 @@ export interface ActionFlags {
   summarize: boolean;
   copy: boolean;
   search: boolean;
+  /** 上下文动作：选中文本为 URL 时出现「打开链接」 */
+  link: boolean;
+  /** 上下文动作：选中文本为邮箱时出现「写邮件」 */
+  email: boolean;
+  /** 上下文动作：选中文本含验证码时出现「复制验证码」 */
+  code: boolean;
+  /** 上下文动作：选中文本含电话号码时出现「复制号码」 */
+  tel: boolean;
 }
 
 export interface SearchEngine {

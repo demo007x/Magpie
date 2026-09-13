@@ -10,17 +10,19 @@ import {
   Info,
   Languages,
   Search,
+  ShieldCheck,
   TextCursorInput,
 } from "lucide-react";
 import { ACTIONS } from "../shared/actions";
 import markIcon from "./assets/mark.svg";
 import type { Provider, SearchEngine, Settings } from "../shared/types";
 
-type Page = "model" | "capture" | "translate" | "search" | "blocklist" | "about";
+type Page = "model" | "capture" | "perms" | "translate" | "search" | "blocklist" | "about";
 
 const NAV_ICONS: Record<Page, React.ReactNode> = {
   model: <Cpu size={15} strokeWidth={1.75} />,
   capture: <TextCursorInput size={15} strokeWidth={1.75} />,
+  perms: <ShieldCheck size={15} strokeWidth={1.75} />,
   translate: <Languages size={15} strokeWidth={1.75} />,
   search: <Search size={15} strokeWidth={1.75} />,
   blocklist: <Ban size={15} strokeWidth={1.75} />,
@@ -41,6 +43,22 @@ const ACTION_LABELS: Record<string, string> = {
   summarize: "总结",
   copy: "复制",
   search: "搜索",
+  link: "打开链接",
+  email: "写邮件",
+  code: "复制验证码",
+  tel: "复制号码",
+};
+
+const ACTION_DESC: Record<string, string> = {
+  translate: "中文译英文，其他译中文，附学习要点",
+  explain: "解释选中内容是什么、为什么重要",
+  summarize: "提炼要点，最多 5 条",
+  copy: "复制选中的原文",
+  search: "用默认搜索引擎搜索选中内容",
+  link: "选中的是网址时，一键打开网页",
+  email: "选中的是邮箱时，唤起邮件客户端",
+  code: "选中含验证码时，一键复制纯数字",
+  tel: "选中含电话号码时，一键复制号码",
 };
 
 const isAiAction = (id: string) => ACTIONS.find((a) => a.id === id)?.kind !== "local";
@@ -84,9 +102,9 @@ export default function App() {
     };
   }, []);
 
-  // 划词页轮询权限状态（授权后自动刷新）
+  // 权限页轮询权限状态（授权后自动刷新）
   useEffect(() => {
-    if (page !== "capture") return;
+    if (page !== "perms") return;
     let stop = false;
     let t: number | undefined;
     const poll = () => {
@@ -363,6 +381,7 @@ export default function App() {
             [
               ["model", "模型服务"],
               ["capture", "划词"],
+              ["perms", "权限"],
               ["translate", "翻译"],
               ["search", "搜索引擎"],
               ["blocklist", "禁用应用"],
@@ -471,10 +490,70 @@ export default function App() {
           <>
             <h1>划词</h1>
             <p className="page-hint">
-              在任意应用中选中文字，浮动条即刻提供翻译、解释、总结等动作。本页管理划词所需权限与浮动条动作，改动点击「保存更改」后生效。
+              在任意应用中选中文字，浮动条即刻提供翻译、解释、总结等动作。本页管理浮动条动作的开关与顺序，改动点击「保存更改」后生效。
             </p>
 
-            <h2 className="sec">权限</h2>
+            <h2 className="sec">动作</h2>
+            <div className="card">
+              {orderedActionIds.map((k) => (
+                <div
+                  key={k}
+                  ref={(el) => {
+                    if (el) rowEls.current.set(k, el);
+                    else rowEls.current.delete(k);
+                  }}
+                  className={`row-between sep action-row ${dragId === k ? "dragging" : ""} ${
+                    overId === k && dragId && dragId !== k ? "drop-target" : ""
+                  }`}
+                >
+                  <div className="row-title">
+                    <span className="grip" title="拖动排序" onMouseDown={(e) => onGripDown(e, k)}>
+                      <GripVertical size={13} strokeWidth={1.75} />
+                    </span>
+                    {ACTION_LABELS[k] ?? k}
+                    {isAiAction(k) && <span className="tag ai">AI</span>}
+                    <span className="action-desc">{ACTION_DESC[k] ?? ""}</span>
+                  </div>
+                  <div className="row-ctl">
+                    <label className="switch">
+                      <input
+                        type="checkbox"
+                        checked={settings.actions[k as keyof typeof settings.actions] ?? false}
+                        onChange={(e) => {
+                          // 至少保留一个开启的动作，避免浮动条变空白
+                          if (
+                            !e.target.checked &&
+                            Object.values(settings.actions).filter(Boolean).length <= 1
+                          ) {
+                            alert("至少保留一个动作");
+                            return;
+                          }
+                          patch({
+                            actions: { ...settings.actions, [k]: e.target.checked },
+                          });
+                        }}
+                      />
+                      <span className="knob" />
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="save-bar">
+              <button className="btn primary" onClick={save}>
+                {saved ? "已保存" : "保存更改"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {page === "perms" && (
+          <>
+            <h1>权限</h1>
+            <p className="page-hint">
+              划词依赖两项系统权限，未授权时按引导开启，授权后状态自动刷新。
+            </p>
             <div className="card">
               <div className="row-between">
                 <div>
@@ -538,58 +617,6 @@ export default function App() {
                   {axServiceOk === null ? "检测中" : axServiceOk ? "正常" : "异常"}
                 </span>
               </div>
-            </div>
-
-            <h2 className="sec">动作</h2>
-            <div className="card">
-              {orderedActionIds.map((k) => (
-                <div
-                  key={k}
-                  ref={(el) => {
-                    if (el) rowEls.current.set(k, el);
-                    else rowEls.current.delete(k);
-                  }}
-                  className={`row-between sep action-row ${dragId === k ? "dragging" : ""} ${
-                    overId === k && dragId && dragId !== k ? "drop-target" : ""
-                  }`}
-                >
-                  <div className="row-title">
-                    <span className="grip" title="拖动排序" onMouseDown={(e) => onGripDown(e, k)}>
-                      <GripVertical size={13} strokeWidth={1.75} />
-                    </span>
-                    {ACTION_LABELS[k] ?? k}
-                    {isAiAction(k) && <span className="tag ai">AI</span>}
-                  </div>
-                  <div className="row-ctl">
-                    <label className="switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.actions[k as keyof typeof settings.actions] ?? false}
-                        onChange={(e) => {
-                          // 至少保留一个开启的动作，避免浮动条变空白
-                          if (
-                            !e.target.checked &&
-                            Object.values(settings.actions).filter(Boolean).length <= 1
-                          ) {
-                            alert("至少保留一个动作");
-                            return;
-                          }
-                          patch({
-                            actions: { ...settings.actions, [k]: e.target.checked },
-                          });
-                        }}
-                      />
-                      <span className="knob" />
-                    </label>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="save-bar">
-              <button className="btn primary" onClick={save}>
-                {saved ? "已保存" : "保存更改"}
-              </button>
             </div>
           </>
         )}

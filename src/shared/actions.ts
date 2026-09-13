@@ -2,11 +2,14 @@ import type { ChatMessage } from "./types";
 
 // 动作注册表：新增动作 = 注册一个对象，Rust / 窗口 / 设置零改动（M2 起可扩展自定义动作）
 // kind "ai" = 走模型流式；"local" = 前端本地处理（如复制选中文本）
+// 上下文动作（link/email/code/tel）的可见性由浮动条「提取信息」统一决策（见 floating/App.tsx），
+// 不使用 when 谓词；when 机制保留给未来其他上下文动作。
 export interface ActionDef {
   id: string;
   label: string;
   kind?: "ai" | "local";
   buildMessages?(text: string): ChatMessage[];
+  when?(text: string): boolean;
 }
 
 const SYSTEM_BASE =
@@ -66,6 +69,26 @@ export const ACTIONS: ActionDef[] = [
         { role: "user", content: text },
       ];
     },
+  },
+  {
+    id: "link",
+    label: "打开链接",
+    kind: "local",
+  },
+  {
+    id: "email",
+    label: "写邮件",
+    kind: "local",
+  },
+  {
+    id: "code",
+    label: "复制验证码",
+    kind: "local",
+  },
+  {
+    id: "tel",
+    label: "复制号码",
+    kind: "local",
   },
 ];
 
