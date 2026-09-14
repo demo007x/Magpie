@@ -215,6 +215,15 @@ body,
   border-bottom: 0.5px solid var(--line);
 }
 
+/* OCR 面板标题栏可拖动 */
+.panel-head.grab {
+  cursor: grab;
+}
+
+.panel-head.grab:active {
+  cursor: grabbing;
+}
+
 .panel-title {
   display: inline-flex;
   align-items: center;
@@ -270,6 +279,22 @@ body,
 /* 复制成功反馈：图标短暂变对勾（强调色） */
 .tool .ok {
   color: var(--accent);
+}
+
+/* 钉住激活态 / 禁用态 */
+.tool.active {
+  color: var(--accent);
+  background: var(--hov);
+}
+
+/* 钉图失败反馈 */
+.tool.err {
+  color: var(--err);
+}
+
+.tool:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .panel-body {
@@ -339,6 +364,159 @@ body,
 .extract-acts button:hover {
   background: var(--text);
   color: var(--surf);
+}
+
+/* OCR 文本识别：识别原文区（默认 3 行折叠，可展开） */
+.ocr-source-wrap {
+  position: relative;
+}
+
+/* 识别原文：无背景色块，与面板无缝一致（折叠/展开仅通过高度与箭头表达）。
+   pre-wrap 保留 OCR 按行输出的换行结构（JSX 渲染会折叠 \n） */
+.ocr-source {
+  padding: 2px 26px 2px 2px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text);
+  max-height: 63px; /* 约 3 行 */
+  overflow: hidden;
+  user-select: text;
+  cursor: text;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ocr-source.expanded {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.ocr-toggle {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  border: none;
+  background: transparent;
+  color: var(--sec);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 5px;
+}
+
+.ocr-toggle:hover {
+  background: var(--line);
+}
+
+.ocr-toggle .chev-svg {
+  transition: transform 0.15s ease;
+}
+
+.ocr-toggle .chev-svg.open {
+  transform: rotate(180deg);
+}
+
+/* OCR 结果区（原文下方） */
+.ocr-result {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--line);
+  font-size: 12.5px;
+  line-height: 1.8;
+  letter-spacing: 0.015em;
+  user-select: text;
+}
+
+/* OCR 面板动作行：对识别文本执行的 AI 动作（紧凑版胶囊按钮） */
+.ocr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1px;
+  margin: 6px -7px 8px; /* 负边距对齐胶囊与正文左缘（按钮自带内边距） */
+}
+
+.action.sm {
+  height: 26px;
+  padding: 0 7px;
+  gap: 4px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.action.sm .chev {
+  height: 26px;
+}
+
+.action.active {
+  background: var(--hov);
+  font-weight: 590;
+}
+
+.action.active .ic {
+  color: var(--accent);
+}
+
+/* ---- 钉图窗口（pin-*）：无边框置顶图片 ---- */
+.pin {
+  position: relative;
+  width: max-content;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+}
+
+.pin img {
+  display: block;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.22);
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+/* 悬停工具条：默认隐藏，悬停浮现（识别文字 / 复制 / 关闭） */
+.pin-tools {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surf);
+  border: 0.5px solid var(--line);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms;
+}
+
+.pin:hover .pin-tools {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ocr-result .error {
+  color: var(--bad, #e5484d);
+  font-size: 12px;
+}
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--sec);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 /* 流式输出 + 用户上翻阅读时出现的「回到底部」按钮 */

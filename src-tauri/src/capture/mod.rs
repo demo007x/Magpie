@@ -36,6 +36,8 @@ use macos::{
     open_accessibility_settings as open_platform_settings,
     prompt_accessibility as prompt_platform_accessibility,
     request_listen_access as platform_request_listen_access,
+    request_screen_capture_access as platform_request_screen_capture_access,
+    screen_capture_access as platform_screen_capture_access,
 };
 
 #[cfg(not(target_os = "macos"))]
@@ -52,10 +54,44 @@ use other::{
 
 use serde::Serialize;
 use serde_json::json;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use tauri::{AppHandle, Emitter};
 
 use crate::{floating, settings};
+
+/// 捕获静音开关：截图取词等系统交互期间置位，鼠标事件不入队、不触发划词判定
+static CAPTURE_MUTED: AtomicBool = AtomicBool::new(false);
+
+pub fn set_capture_muted(muted: bool) {
+    CAPTURE_MUTED.store(muted, Ordering::Relaxed);
+}
+
+pub fn capture_muted() -> bool {
+    CAPTURE_MUTED.load(Ordering::Relaxed)
+}
+
+/// RAII 守卫：创建即静音，Drop 时自动解除（任何退出路径都不会漏）
+pub struct CaptureMuteGuard;
+
+impl CaptureMuteGuard {
+    pub fn new() -> Self {
+        set_capture_muted(true);
+        Self
+    }
+}
+
+impl Default for CaptureMuteGuard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for CaptureMuteGuard {
+    fn drop(&mut self) {
+        set_capture_muted(false);
+    }
+}
 
 /// 捕获链路调试日志（仅 debug 构建输出到 stderr / dev 终端）
 pub(crate) fn debug_log(msg: impl std::fmt::Display) {
@@ -72,6 +108,8 @@ pub struct CaptureStatus {
     pub ax_service_ok: bool,
     /// 输入监控权限（缺失时事件 tap 收不到其他应用的事件，浮动条不弹）
     pub listen_event_access: bool,
+    /// 屏幕录制权限（OCR 截图取词需要）
+    pub screen_capture_access: bool,
     pub platform: String,
 }
 
@@ -82,6 +120,7 @@ pub fn capture_status(app: AppHandle) -> CaptureStatus {
         granted,
         ax_service_ok: platform_ax_service_probe(),
         listen_event_access: platform_listen_event_access(),
+        screen_capture_access: platform_screen_capture_access(),
         platform: std::env::consts::OS.to_string(),
     };
     let _ = app.emit("capture://permission", json!({ "granted": granted }));
@@ -94,6 +133,15 @@ pub fn capture_status(app: AppHandle) -> CaptureStatus {
 pub fn request_listen_access() -> bool {
     #[cfg(target_os = "macos")]
     return platform_request_listen_access();
+    #[cfg(not(target_os = "macos"))]
+    return true;
+}
+
+/// 发起屏幕录制授权请求（macOS）：系统弹窗授权。非 macOS 恒 true
+#[tauri::command]
+pub fn request_screen_capture_access() -> bool {
+    #[cfg(target_os = "macos")]
+    return platform_request_screen_capture_access();
     #[cfg(not(target_os = "macos"))]
     return true;
 }
@@ -136,15 +184,20 @@ pub fn spawn_worker(app: AppHandle, rx: Receiver<CaptureEvent>) {
                         "selection://captured",
                         json!({ "text": text, "x": x, "y": y, "app": app_path }),
                     );
+                    // 新选区：未钉住的 OCR 独立窗口随收起（钉住则保留）
+                    floating::dismiss_ocr_if_unpinned(&app);
                 }
                 CaptureEvent::PlainClick { x, y } => {
-                    // 点击浮动条本身：不 dismiss；其余单击 → 通知前端收起（无任务时隐藏）
-                    if floating::rect_contains(&app, x, y, 4.0) {
+                    // 点击浮动条/识别面板本身：不 dismiss（避免点面板反而被隐藏）
+                    let in_ocr = floating::ocr_rect_contains(&app, x, y, 8.0);
+                    if floating::rect_contains(&app, x, y, 4.0) || in_ocr {
                         continue;
                     }
                     if floating::is_visible(&app) {
                         let _ = app.emit("selection://dismiss", json!({}));
                     }
+                    // 未钉住的 OCR 窗口随普通单击收起（钉住则保留）
+                    floating::dismiss_ocr_if_unpinned(&app);
                 }
                 CaptureEvent::DragMove { x, y } => floating::apply_drag(&app, x, y),
                 CaptureEvent::DragEnd => floating::end_drag(&app),

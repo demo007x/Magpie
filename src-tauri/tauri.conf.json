@@ -36,6 +36,21 @@
         "shadow": false,
         "focus": false,
         "acceptFirstMouse": true
+      },
+      {
+        "label": "ocr",
+        "url": "floating.html",
+        "width": 420,
+        "height": 340,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false,
+        "focus": false,
+        "acceptFirstMouse": true
       }
     ],
     "security": {

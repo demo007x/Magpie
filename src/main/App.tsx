@@ -86,6 +86,22 @@ export default function App() {
   const [granted, setGranted] = useState<boolean | null>(null);
   const [listenAccess, setListenAccess] = useState<boolean | null>(null);
   const [axServiceOk, setAxServiceOk] = useState<boolean | null>(null);
+  const [screenAccess, setScreenAccess] = useState<boolean | null>(null);
+  // 截图/识别失败等全局提示（app://toast，4s 自动消失）
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    const un = listen<{ message: string }>("app://toast", (e) => {
+      setToast(e.payload.message);
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
+      toastTimer.current = window.setTimeout(() => setToast(null), 4000);
+    });
+    return () => {
+      un.then((f) => f());
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     invoke<Settings>("get_settings").then(setSettings).catch(() => undefined);
@@ -112,14 +128,17 @@ export default function App() {
         granted: boolean;
         axServiceOk: boolean;
         listenEventAccess: boolean;
+        screenCaptureAccess: boolean;
       }>("capture_status")
         .then((s) => {
           if (stop) return;
           setGranted(s.granted);
           setAxServiceOk(s.axServiceOk);
           setListenAccess(s.listenEventAccess);
+          setScreenAccess(s.screenCaptureAccess);
           // 三项全就绪即停止轮询：常驻 IPC 会放大 wry 上游 nil-URL 崩溃（#1752）的触发面
-          if (s.granted && s.axServiceOk && s.listenEventAccess) return;
+          // （屏幕录制不参与停止判定：未授权时保留引导入口）
+          if (s.granted && s.axServiceOk && s.listenEventAccess && s.screenCaptureAccess) return;
           t = window.setTimeout(poll, 2000);
         })
         .catch(() => undefined);
@@ -608,6 +627,29 @@ export default function App() {
               )}
               <div className="row-between sep">
                 <div>
+                  <div className="row-title">屏幕录制</div>
+                  <div className="row-sub">
+                    托盘「文本识别」需要读取屏幕画面并离线识别文字。未授权时点下方「授权屏幕录制」开启。
+                  </div>
+                </div>
+                <span className={`pill ${screenAccess ? "ok" : screenAccess === false ? "bad" : ""}`}>
+                  {screenAccess === null ? "检测中" : screenAccess ? "已授权" : "未授权"}
+                </span>
+              </div>
+              {screenAccess === false && (
+                <div className="card-foot">
+                  <button
+                    className="btn primary"
+                    onClick={() =>
+                      invoke<boolean>("request_screen_capture_access").catch(() => undefined)
+                    }
+                  >
+                    授权屏幕录制
+                  </button>
+                </div>
+              )}
+              <div className="row-between sep">
+                <div>
                   <div className="row-title">取词健康自检</div>
                   <div className="row-sub">
                     保障划词稳定的健康检查。若已授权仍显示异常：在系统设置「辅助功能」中取消再重新勾选拾趣，然后重启应用。
@@ -984,6 +1026,7 @@ export default function App() {
           </>
         )}
       </main>
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }

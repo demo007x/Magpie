@@ -706,3 +706,21 @@ button:focus-visible {
   color: var(--sec);
   opacity: 0.8;
 }
+
+/* 全局提示（截图取消/权限缺失等后台事件反馈）：顶部居中悬浮条 */
+.toast {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  max-width: 70%;
+  padding: 9px 16px;
+  border-radius: 10px;
+  background: var(--text);
+  color: var(--card);
+  font-size: 12.5px;
+  line-height: 1.5;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+  word-break: break-all;
+}

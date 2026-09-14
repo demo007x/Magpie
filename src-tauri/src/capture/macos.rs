@@ -14,7 +14,7 @@ use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::{CFString, CFStringRef};
 
-use super::{debug_log, CaptureEvent};
+use super::{capture_muted, debug_log, CaptureEvent};
 
 // ---------- C FFI ----------
 
@@ -162,6 +162,9 @@ extern "C" {
     fn CGPreflightListenEventAccess() -> u8;
     // 发起输入监控授权请求：系统把当前运行的二进制自动注册进「输入监控」列表
     fn CGRequestListenEventAccess() -> u8;
+    // 屏幕录制权限：OCR 截图取词需要
+    fn CGPreflightScreenCaptureAccess() -> u8;
+    fn CGRequestScreenCaptureAccess() -> u8;
 }
 
 extern "C" {
@@ -210,6 +213,10 @@ extern "C" fn tap_callback(
     ev: CGEventRef,
     _user: *mut c_void,
 ) -> CGEventRef {
+    // 截图取词等系统交互期间静音：screencapture 的框选拖选会被误判为划词
+    if capture_muted() {
+        return ev;
+    }
     // 回调内只做计数 + 入队（绝不查询 AX）
     EVENT_COUNT.fetch_add(1, Ordering::Relaxed);
     EVENT_TOTAL.fetch_add(1, Ordering::Relaxed);
@@ -425,7 +432,7 @@ fn tap_mask() -> u64 {
 fn detect_loop(rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: u64) {
     let mut down: Option<(f64, f64)> = None;
     let mut last_up: Option<(Instant, f64, f64)> = None;
-    let mut last_emitted: Option<(String, f64, f64)> = None;
+    let mut last_emitted: Option<LastEmit> = None;
 
     while let Ok(ev) = rx.recv() {
         match ev.kind {
@@ -460,6 +467,10 @@ fn detect_loop(rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: 
                     debug_log(format!("mouse-up：普通点击 ({:.0},{:.0})", ev.x, ev.y));
                     // 注意：不带 pid——worker 只用浮动条矩形判定，若填自身 pid 会被过滤导致 dismiss 永不触发
                     let _ = tx.send(CaptureEvent::PlainClick { x: ev.x, y: ev.y });
+                } else if capture_muted() {
+                    // 截图取词等系统交互期间的拖选：跳过判定与 AX 查询（防止在
+                    // 截图模态会话里触发 AX 异常导致进程 abort）
+                    debug_log("mouse-up：静音期间忽略拖选");
                 } else {
                     debug_log(format!(
                         "mouse-up：判定为选词（drag={drag_dist:.1}px double={is_double}），防抖 {debounce_ms}ms 后查询 AX"
@@ -529,7 +540,7 @@ fn detect_loop(rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: 
 /// 重复抑制 + 转发（AX / 兼容模式共用）
 fn forward_selection(
     tx: &Sender<CaptureEvent>,
-    last_emitted: &mut Option<(String, f64, f64)>,
+    last_emitted: &mut Option<LastEmit>,
     text: String,
     pid: i32,
     x: f64,
@@ -537,12 +548,19 @@ fn forward_selection(
     source: &str,
 ) {
     debug_log(format!("{source}：pid={pid} len={}", text.len()));
-    // 重复抑制：同文本 + 坐标相近（< 4px）
-    let dup = last_emitted.as_ref().map_or(false, |(lt, lx, ly)| {
-        *lt == text && ((lx - x).powi(2) + (ly - y).powi(2)).sqrt() < 4.0
+    // 重复抑制：
+    // a) 同文本 + 坐标相近（< 4px）——同位置重复划词
+    // b) 同文本 + 同应用 + 2.5s 内——空划词（没选中任何东西）时 AX/兼容模式
+    //    会返回上一次的旧选区或应用残留文本，用户感知为"没选中却弹了胶囊"，
+    //    换位置的重复拖选坐标判重拦不住，按时间窗抑制
+    let now = Instant::now();
+    let dup = last_emitted.as_ref().map_or(false, |l| {
+        l.text == text
+            && (((l.x - x).powi(2) + (l.y - y).powi(2)).sqrt() < 4.0
+                || (l.pid == pid && now.duration_since(l.t) < Duration::from_millis(2500)))
     });
     if dup {
-        debug_log("跳过：与上次捕获重复");
+        debug_log("跳过：与上次捕获重复（坐标相近或短时间窗内同应用同文本）");
         return;
     }
     // AX 链路拿不到 pid（权限状态异常等）时，用 NSWorkspace 前台应用兜底，
@@ -559,7 +577,16 @@ fn forward_selection(
         bid,
         pid,
     });
-    *last_emitted = Some((text, x, y));
+    *last_emitted = Some(LastEmit { text, pid, x, y, t: now });
+}
+
+/// 上次转发记录（重复抑制用）
+struct LastEmit {
+    text: String,
+    pid: i32,
+    x: f64,
+    y: f64,
+    t: Instant,
 }
 
 /// AX 错误码可读名（日志用）
@@ -889,10 +916,27 @@ pub fn force_fetch_via_copy() -> Option<(String, i32)> {
     };
 
     let text = fetched?;
+    // 无选区误取抑制：不少应用在无文本选区时 ⌘C 会复制"别的"（当前行/URL/文件名…），
+    // 且连续空划词会重复复制同一内容。3s 内兼容模式取到相同文本视为误取，静默丢弃。
+    {
+        let mut last = LAST_COPY_TEXT.lock().unwrap();
+        let now = Instant::now();
+        let dup = last
+            .as_ref()
+            .map_or(false, |(t, at)| *t == text && now.duration_since(*at) < Duration::from_millis(3000));
+        *last = Some((text.clone(), now));
+        if dup {
+            debug_log("兼容模式：3s 内取到相同文本（疑似无选区误复制），丢弃");
+            return None;
+        }
+    }
     let pid = focused_pid().unwrap_or(0);
     debug_log(format!("兼容模式：⌘C 取到文本 len={}", text.len()));
     Some((text, pid))
 }
+
+/// 上次兼容模式取到的文本（误取抑制用）
+static LAST_COPY_TEXT: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 
 /// 聚焦元素级取文本：SelectedText → 范围回退（轻量路径；子树扫描见 scan_focused_subtrees）
 unsafe fn query_focused_element(app_el: AXUIElementRef, consts: &AxConsts) -> Option<String> {
@@ -1111,6 +1155,16 @@ fn proc_path(pid: c_int) -> Option<String> {
         .take_while(|&b| b != 0)
         .collect();
     String::from_utf8(bytes).ok()
+}
+
+/// 屏幕录制权限预检（OCR 截图取词需要）
+pub fn screen_capture_access() -> bool {
+    unsafe { CGPreflightScreenCaptureAccess() != 0 }
+}
+
+/// 发起屏幕录制授权请求（系统弹窗）
+pub fn request_screen_capture_access() -> bool {
+    unsafe { CGRequestScreenCaptureAccess() != 0 }
 }
 
 // ---------- NSRunningApplication / NSWorkspace：运行中应用身份（黑名单精确匹配用） ----------

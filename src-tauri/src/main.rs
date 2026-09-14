@@ -4,8 +4,11 @@ mod ai;
 mod app_picker;
 mod capture;
 mod floating;
+mod ocr;
+mod pin;
 mod settings;
 
+use serde_json::json;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -85,10 +88,14 @@ fn main() {
 
             // 状态栏常驻图标：左键进主页面；右键菜单：主页面/功能设置/退出应用
             let home_item = MenuItem::with_id(app, "home", "主页面", true, None::<&str>)?;
+            let ocr_item = MenuItem::with_id(app, "ocr", "文本识别", true, None::<&str>)?;
             let settings_item =
                 MenuItem::with_id(app, "settings", "功能设置", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "退出应用", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&home_item, &settings_item, &quit_item])?;
+            let menu = Menu::with_items(
+                app,
+                &[&home_item, &ocr_item, &settings_item, &quit_item],
+            )?;
             TrayIconBuilder::with_id("main")
                 // 状态栏专用模板图（单色鹊形 + alpha，白斑/眼为镂空）：
                 // icon_as_template 让系统按菜单栏明暗自动反色，浅色渲染黑、深色渲染白
@@ -105,6 +112,36 @@ fn main() {
                     "settings" => {
                         show_main_window(app);
                         let _ = app.emit_to("main", "nav://page", "model");
+                    }
+                    "ocr" => {
+                        // 文本识别：后台线程执行（框选期间不能阻塞主线程）。
+                        // 识别文本 + 截图原图一并推给 OCR 独立窗口（原图供「钉图」）
+                        eprintln!("[magpie:ocr] 文本识别开始");
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let result = tauri::async_runtime::spawn_blocking(
+                                ocr::capture_and_recognize,
+                            )
+                            .await;
+                            match result {
+                                Ok(Ok((text, image))) => {
+                                    eprintln!(
+                                        "[magpie:ocr] 成功：len={}，推送 OCR 窗口",
+                                        text.len()
+                                    );
+                                    ocr::push_text_to_ocr_window(&app, text, Some(image));
+                                }
+                                Ok(Err(e)) => {
+                                    eprintln!("[magpie:ocr] 失败：{e}");
+                                    // 取消是正常交互，不弹提示
+                                    if e != "截图已取消" {
+                                        let _ =
+                                            app.emit("app://toast", json!({ "message": e }));
+                                    }
+                                }
+                                Err(e) => eprintln!("[magpie:ocr] 任务失败: {e}"),
+                            }
+                        });
                     }
                     "quit" => app.exit(0),
                     _ => {}
@@ -147,6 +184,23 @@ fn main() {
             capture::open_accessibility_settings,
             capture::prompt_accessibility,
             capture::request_listen_access,
+            capture::request_screen_capture_access,
+            floating::set_ocr_pinned,
+            floating::ocr_window_mode,
+            floating::ocr_window_pos,
+            floating::ocr_take_pending,
+            floating::ocr_window_ready,
+            floating::hide_ocr_window,
+            floating::move_ocr,
+            pin::pin_get_data,
+            pin::pin_window_ready,
+            pin::pin_window_pos,
+            pin::resize_pin,
+            pin::move_pin,
+            pin::close_pin,
+            pin::pin_copy_image,
+            pin::pin_to_ocr,
+            pin::pin_from_ocr,
             app_picker::pick_app_bundle,
         ])
         .build(tauri::generate_context!())

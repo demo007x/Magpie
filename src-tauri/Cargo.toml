@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "拾趣 Magpie · 划词即理解的 AI 阅读伴侣"
 edition = "2021"
 rust-version = "1.80"
+default-run = "magpie"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -14,10 +15,26 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 futures-util = "0.3"
+base64 = "0.22"
+# 钉图复制到剪贴板：PNG 解码为 RGBA（只开 png 特性控制编译体积）
+image = { version = "0.25", default-features = false, features = ["png"] }
 core-foundation = "0.10"
 md-5 = "0.10"
 arboard = "3"
 rfd = "0.15"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = [
+  "NSArray",
+  "NSDictionary",
+  "NSString",
+  "NSURL",
+] }
+objc2-vision = { version = "0.3", features = [
+  "VNRecognizeTextRequest",
+  "VNRequest",
+  "VNObservation",
+  "VNRequestHandler",
+] }
 
 # 本地补丁：修复 wry 上游 #1752 —— WebKit 偶发 nil URL 导致
 # url_scheme_handler unwrap panic（extern "C" 不可 unwind，进程 abort）
