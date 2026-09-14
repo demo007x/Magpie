@@ -1,2 +1,6 @@
+# 单包仓库：此文件仅为 pnpm 设置而存在（allowBuilds），
+# 但部分 pnpm 版本要求工作区文件必须带 packages 字段，故显式声明根目录
+packages:
+  - "."
 allowBuilds:
   esbuild: true
