@@ -432,7 +432,7 @@ fn tap_mask() -> u64 {
 fn detect_loop(rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: u64) {
     let mut down: Option<(f64, f64)> = None;
     let mut last_up: Option<(Instant, f64, f64)> = None;
-    let mut last_emitted: Option<LastEmit> = None;
+    let mut last_emitted: Option<(String, f64, f64)> = None;
 
     while let Ok(ev) = rx.recv() {
         match ev.kind {
@@ -540,7 +540,7 @@ fn detect_loop(rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: 
 /// 重复抑制 + 转发（AX / 兼容模式共用）
 fn forward_selection(
     tx: &Sender<CaptureEvent>,
-    last_emitted: &mut Option<LastEmit>,
+    last_emitted: &mut Option<(String, f64, f64)>,
     text: String,
     pid: i32,
     x: f64,
@@ -548,19 +548,12 @@ fn forward_selection(
     source: &str,
 ) {
     debug_log(format!("{source}：pid={pid} len={}", text.len()));
-    // 重复抑制：
-    // a) 同文本 + 坐标相近（< 4px）——同位置重复划词
-    // b) 同文本 + 同应用 + 2.5s 内——空划词（没选中任何东西）时 AX/兼容模式
-    //    会返回上一次的旧选区或应用残留文本，用户感知为"没选中却弹了胶囊"，
-    //    换位置的重复拖选坐标判重拦不住，按时间窗抑制
-    let now = Instant::now();
-    let dup = last_emitted.as_ref().map_or(false, |l| {
-        l.text == text
-            && (((l.x - x).powi(2) + (l.y - y).powi(2)).sqrt() < 4.0
-                || (l.pid == pid && now.duration_since(l.t) < Duration::from_millis(2500)))
+    // 重复抑制：同文本 + 坐标相近（< 4px）
+    let dup = last_emitted.as_ref().map_or(false, |(lt, lx, ly)| {
+        *lt == text && ((lx - x).powi(2) + (ly - y).powi(2)).sqrt() < 4.0
     });
     if dup {
-        debug_log("跳过：与上次捕获重复（坐标相近或短时间窗内同应用同文本）");
+        debug_log("跳过：与上次捕获重复");
         return;
     }
     // AX 链路拿不到 pid（权限状态异常等）时，用 NSWorkspace 前台应用兜底，
@@ -577,16 +570,7 @@ fn forward_selection(
         bid,
         pid,
     });
-    *last_emitted = Some(LastEmit { text, pid, x, y, t: now });
-}
-
-/// 上次转发记录（重复抑制用）
-struct LastEmit {
-    text: String,
-    pid: i32,
-    x: f64,
-    y: f64,
-    t: Instant,
+    *last_emitted = Some((text, x, y));
 }
 
 /// AX 错误码可读名（日志用）
@@ -916,27 +900,10 @@ pub fn force_fetch_via_copy() -> Option<(String, i32)> {
     };
 
     let text = fetched?;
-    // 无选区误取抑制：不少应用在无文本选区时 ⌘C 会复制"别的"（当前行/URL/文件名…），
-    // 且连续空划词会重复复制同一内容。3s 内兼容模式取到相同文本视为误取，静默丢弃。
-    {
-        let mut last = LAST_COPY_TEXT.lock().unwrap();
-        let now = Instant::now();
-        let dup = last
-            .as_ref()
-            .map_or(false, |(t, at)| *t == text && now.duration_since(*at) < Duration::from_millis(3000));
-        *last = Some((text.clone(), now));
-        if dup {
-            debug_log("兼容模式：3s 内取到相同文本（疑似无选区误复制），丢弃");
-            return None;
-        }
-    }
     let pid = focused_pid().unwrap_or(0);
     debug_log(format!("兼容模式：⌘C 取到文本 len={}", text.len()));
     Some((text, pid))
 }
-
-/// 上次兼容模式取到的文本（误取抑制用）
-static LAST_COPY_TEXT: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 
 /// 聚焦元素级取文本：SelectedText → 范围回退（轻量路径；子树扫描见 scan_focused_subtrees）
 unsafe fn query_focused_element(app_el: AXUIElementRef, consts: &AxConsts) -> Option<String> {
