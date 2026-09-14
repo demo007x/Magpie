@@ -1,0 +1,72 @@
+/* 全局 toast：「鹊羽」主题，与胶囊/面板同一设计语言；原生窗口阴影。 */
+:root {
+  --text: #1c1c24;
+  --accent: #5e5ce6;
+  --err: #e5484d;
+  --surf: #ffffff;
+  --radius: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #ededf4;
+    --accent: #8684ff;
+    --err: #ff6b61;
+    --surf: #1d1d26;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  background: transparent;
+  overflow: hidden;
+}
+
+/* 材质层由原生提供（填满窗口），CSS 无需背景与投影；
+   不要在此层加 transform/opacity 动画——WebKit 透明窗口下会合成出黑色浮层 */
+.stage {
+  user-select: none;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+}
+
+.toast-pop {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: max-content;
+  max-width: 428px;
+  padding: 5px 12px;
+  background: var(--surf);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.toast-pop svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.toast-pop.is-err svg {
+  color: var(--err);
+}
+
+.toast-pop:not(.is-err) svg {
+  color: var(--accent);
+}
+
+.toast-text {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

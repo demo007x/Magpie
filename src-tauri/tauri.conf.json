@@ -33,7 +33,7 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false,
-        "shadow": false,
+        "shadow": true,
         "focus": false,
         "acceptFirstMouse": true
       },
@@ -48,9 +48,22 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false,
-        "shadow": false,
+        "shadow": true,
         "focus": false,
         "acceptFirstMouse": true
+      },
+      {
+        "label": "toast",
+        "url": "toast.html",
+        "width": 200,
+        "height": 48,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": true,
+        "focus": false
       }
     ],
     "security": {

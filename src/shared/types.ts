@@ -57,6 +57,8 @@ export interface Settings {
   translate: TranslateConfig;
   /** 是否在 macOS Dock 显示图标（关 = 纯菜单栏常驻模式） */
   showDockIcon: boolean;
+  /** 文本识别全局快捷键（如 "Alt+O"、"CmdOrCtrl+Shift+O"；空串 = 禁用） */
+  ocrShortcut: string;
   appBlacklist: string[];
   debounceMs: number;
 }

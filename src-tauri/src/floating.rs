@@ -45,6 +45,33 @@ pub(crate) fn show_without_activation(win: &WebviewWindow) -> Result<(), String>
     Ok(())
 }
 
+/// 原生圆角裁切：给 NSWindow contentView 的图层设 cornerRadius + masksToBounds。
+/// 透明窗口上 CSS 圆角压在窗口边界，WebKit 透明合成层不做边缘抗锯齿，必然出毛刺；
+/// 原生图层裁切由系统合成器完成，圆弧与原生 App 同级平滑。（社区共识方案）
+#[cfg(target_os = "macos")]
+pub fn apply_native_corner_radius(win: &WebviewWindow, radius: f64) {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+
+    let Ok(ns_window) = win.ns_window() else {
+        return;
+    };
+    let ns_window = ns_window as *mut AnyObject;
+    unsafe {
+        let content: *mut AnyObject = msg_send![ns_window, contentView];
+        if content.is_null() {
+            return;
+        }
+        let _: () = msg_send![content, setWantsLayer: true];
+        let layer: *mut AnyObject = msg_send![content, layer];
+        if layer.is_null() {
+            return;
+        }
+        let _: () = msg_send![layer, setCornerRadius: radius];
+        let _: () = msg_send![layer, setMasksToBounds: true];
+    }
+}
+
 /// TS 未传尺寸时的兜底
 pub const DEFAULT_W: f64 = 328.0;
 pub const DEFAULT_H: f64 = 54.0;
@@ -142,6 +169,17 @@ pub fn hide_ocr_window(window: WebviewWindow) {
     if window.label() == "ocr" {
         let _ = window.hide();
     }
+}
+
+/// 内容测量 → 缩放 OCR 窗口（窗口尺寸贴合面板内容，毛玻璃材质填满窗口即面板）
+#[tauri::command]
+pub fn resize_ocr(window: WebviewWindow, width: f64, height: f64) {
+    if window.label() != "ocr" {
+        return;
+    }
+    let w = width.clamp(280.0, 520.0);
+    let h = height.clamp(80.0, 460.0);
+    let _ = window.set_size(LogicalSize::new(w, h));
 }
 
 /// OCR 窗口当前是否可见（供 dismiss 判断）

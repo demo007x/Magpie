@@ -138,6 +138,8 @@ pub struct Settings {
     pub translate: TranslateConfig,
     /// 是否在 macOS Dock 显示图标（关 = 纯菜单栏常驻模式）
     pub show_dock_icon: bool,
+    /// 文本识别全局快捷键（如 "Alt+O"、"CmdOrCtrl+Shift+O"）；空串 = 禁用
+    pub ocr_shortcut: String,
     pub app_blacklist: Vec<String>,
     pub debounce_ms: u64,
 }
@@ -160,6 +162,7 @@ impl Default for Settings {
             default_search: "百度".into(),
             translate: TranslateConfig::default(),
             show_dock_icon: false,
+            ocr_shortcut: "Alt+S".into(),
             app_blacklist: vec![
                 "Terminal".into(),
                 "iTerm".into(),
@@ -263,5 +266,7 @@ pub fn save_settings(
         let _ = app.set_activation_policy(policy);
     }
     let _ = app.emit("settings://changed", ());
+    // 文本识别快捷键即时生效（改键/清空禁用都会重新注册）
+    crate::apply_ocr_shortcut(&app);
     Ok(())
 }

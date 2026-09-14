@@ -8,6 +8,7 @@ import {
   Cpu,
   GripVertical,
   Info,
+  Keyboard,
   Languages,
   Search,
   ShieldCheck,
@@ -17,17 +18,97 @@ import { ACTIONS } from "../shared/actions";
 import markIcon from "./assets/mark.svg";
 import type { Provider, SearchEngine, Settings } from "../shared/types";
 
-type Page = "model" | "capture" | "perms" | "translate" | "search" | "blocklist" | "about";
+type Page =
+  | "model"
+  | "capture"
+  | "shortcuts"
+  | "perms"
+  | "translate"
+  | "search"
+  | "blocklist"
+  | "about";
 
 const NAV_ICONS: Record<Page, React.ReactNode> = {
   model: <Cpu size={15} strokeWidth={1.75} />,
   capture: <TextCursorInput size={15} strokeWidth={1.75} />,
+  shortcuts: <Keyboard size={15} strokeWidth={1.75} />,
   perms: <ShieldCheck size={15} strokeWidth={1.75} />,
   translate: <Languages size={15} strokeWidth={1.75} />,
   search: <Search size={15} strokeWidth={1.75} />,
   blocklist: <Ban size={15} strokeWidth={1.75} />,
   about: <Info size={15} strokeWidth={1.75} />,
 };
+
+// 快捷键条目注册表：新增全局快捷键 = 加一行配置 + settings 加对应字段
+// （文案面向用户描述触发后的行为，不描述按键本身）
+const SHORTCUT_ITEMS: Array<{
+  key: "ocrShortcut";
+  label: string;
+  desc: string;
+}> = [
+  {
+    key: "ocrShortcut",
+    label: "文本识别",
+    desc: "点击右侧框后按下组合键即完成录制（需含 Alt / ⌘ / Ctrl / Shift 至少一个修饰键，如 ⌥S、⌘⇧O；Esc 取消）。任意应用内按下即拉起框选识别，托盘菜单旁会同步显示当前设定的键。注册失败（被其他应用占用）时不会生效，可换一个组合。",
+  },
+];
+
+// 快捷键录制框：点击聚焦后捕获用户按下的组合键，规范化为 Tauri Shortcut 格式。
+// 只读（禁手输）；Esc 取消；无修饰键的单击提示不合法（避免吞掉单键全局快捷键）。
+function ShortcutRecorder({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [recording, setRecording] = useState(false);
+  const [hint, setHint] = useState("");
+
+  return (
+    <input
+      readOnly
+      style={{ width: 180, flexShrink: 0, cursor: "pointer" }}
+      className={recording ? "recording" : ""}
+      value={recording ? hint || "按下组合键…" : value}
+      placeholder="点击录制，如 Alt+S"
+      onFocus={() => {
+        setRecording(true);
+        setHint("");
+      }}
+      onBlur={() => setRecording(false)}
+      onKeyDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === "Escape") {
+          e.currentTarget.blur();
+          return;
+        }
+        // 修饰键：macOS ⌘ 与 Windows Ctrl 统一存为 CmdOrCtrl（跨平台语义等价）
+        const mods: string[] = [];
+        if (e.metaKey) mods.push("CmdOrCtrl");
+        if (e.ctrlKey) mods.push("Ctrl");
+        if (e.altKey) mods.push("Alt");
+        if (e.shiftKey) mods.push("Shift");
+        // 只按了修饰键：先给出已按下的提示，等待主键
+        if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) {
+          setHint(mods.length ? `${mods.join("+")}+…` : "按下组合键…");
+          return;
+        }
+        if (mods.length === 0) {
+          setHint("需至少包含一个修饰键");
+          return;
+        }
+        let key = e.key;
+        if (/^[a-z]$/i.test(key)) key = key.toUpperCase();
+        else if (/^F\d{1,2}$/.test(key)) key = key.toUpperCase();
+        else if (!/^\d$/.test(key)) return; // 其他主键（符号/空格等）不支持，忽略
+        onChange([...mods, key].join("+"));
+        e.currentTarget.blur();
+      }}
+    />
+  );
+}
 
 const NEW_PROVIDER = (): Provider => ({
   id: `p${Date.now()}`,
@@ -87,21 +168,7 @@ export default function App() {
   const [listenAccess, setListenAccess] = useState<boolean | null>(null);
   const [axServiceOk, setAxServiceOk] = useState<boolean | null>(null);
   const [screenAccess, setScreenAccess] = useState<boolean | null>(null);
-  // 截图/识别失败等全局提示（app://toast，4s 自动消失）
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimer = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    const un = listen<{ message: string }>("app://toast", (e) => {
-      setToast(e.payload.message);
-      if (toastTimer.current) window.clearTimeout(toastTimer.current);
-      toastTimer.current = window.setTimeout(() => setToast(null), 4000);
-    });
-    return () => {
-      un.then((f) => f());
-      if (toastTimer.current) window.clearTimeout(toastTimer.current);
-    };
-  }, []);
+  // 截图/识别失败等全局提示改由独立 toast 窗口展示（主窗口隐藏时也可见）
 
   useEffect(() => {
     invoke<Settings>("get_settings").then(setSettings).catch(() => undefined);
@@ -400,6 +467,7 @@ export default function App() {
             [
               ["model", "模型服务"],
               ["capture", "划词"],
+              ["shortcuts", "快捷键"],
               ["perms", "权限"],
               ["translate", "翻译"],
               ["search", "搜索引擎"],
@@ -555,6 +623,35 @@ export default function App() {
                       <span className="knob" />
                     </label>
                   </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="save-bar">
+              <button className="btn primary" onClick={save}>
+                {saved ? "已保存" : "保存更改"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {page === "shortcuts" && (
+          <>
+            <h1>快捷键</h1>
+            <p className="page-hint">
+              全局快捷键在任意应用内生效。改动点击「保存更改」后即时生效；若组合被其他应用占用导致注册失败，可换一个组合。
+            </p>
+            <div className="card">
+              {SHORTCUT_ITEMS.map((item) => (
+                <div className="row-between" key={item.key}>
+                  <div>
+                    <div className="row-title">{item.label}</div>
+                    <div className="row-sub">{item.desc}</div>
+                  </div>
+                  <ShortcutRecorder
+                    value={settings[item.key]}
+                    onChange={(v) => patch({ [item.key]: v } as Partial<Settings>)}
+                  />
                 </div>
               ))}
             </div>
@@ -1026,7 +1123,6 @@ export default function App() {
           </>
         )}
       </main>
-      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }

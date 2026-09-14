@@ -1,29 +1,38 @@
-/* 浮动条：实心原生面板（macOS popover 质感），随系统明暗。
-   双色极简与主窗口同构：墨阶为骨、系统蓝为交互强调色。窗口尺寸由内容测量决定。 */
+/* 浮动条/结果面板：「鹊羽」主题——拾趣的品牌色系。
+   喜鹊羽毛的靛青→孔雀蓝虹彩渐变做品牌色，AI 阅读工具的气质：
+   表面冷净，强调色饱满，选中/进行中用渐变点亮。原生窗口阴影 + 自主配色。 */
 :root {
   --surf: #ffffff;
-  --text: #1d1d1f;
-  --sec: #86868b;
-  --line: rgba(0, 0, 0, 0.1);
-  --hov: rgba(0, 0, 0, 0.055);
-  --press: rgba(0, 0, 0, 0.1);
-  --accent: #0a7aff;
-  --err: #d92f2f;
-  --shadow: 0 5px 18px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+  --text: #1c1c24;
+  --sec: #85858f;
+  --line: rgba(28, 28, 46, 0.08);
+  --hov: rgba(94, 92, 230, 0.07);
+  --press: rgba(94, 92, 230, 0.13);
+  /* 品牌色：靛蓝紫 → 孔雀蓝（鹊羽渐变的两端） */
+  --accent: #5e5ce6;
+  --accent-soft: rgba(94, 92, 230, 0.1);
+  --on-accent: #ffffff;
+  --err: #e5484d;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(24, 24, 46, 0.06), 0 4px 12px rgba(24, 24, 46, 0.08),
+    0 16px 40px rgba(24, 24, 46, 0.13);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --surf: #232327;
-    --text: #f2f2f5;
-    --sec: #98989f;
-    --line: rgba(255, 255, 255, 0.1);
-    --hov: rgba(255, 255, 255, 0.08);
-    --press: rgba(255, 255, 255, 0.14);
-    --accent: #3f8cff;
+    --surf: #1d1d26; /* 微紫调深空底 */
+    --text: #ededf4;
+    --sec: #9a9aa8;
+    --line: rgba(237, 237, 244, 0.1);
+    --hov: rgba(125, 122, 255, 0.1);
+    --press: rgba(125, 122, 255, 0.16);
+    --accent: #8684ff;
+    --accent-soft: rgba(134, 132, 255, 0.14);
+    --on-accent: #ffffff;
     --err: #ff6b61;
-    --shadow: 0 5px 18px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.25);
-  }
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.32),
+      0 16px 40px rgba(0, 0, 0, 0.45);
+    }
 }
 
 * {
@@ -47,14 +56,23 @@ body,
 .stage {
   width: max-content; /* 动作条自适应内容；二级菜单/结果面板见各自规则 */
   max-width: 640px; /* 上限兜底：仅二级菜单单行展开可能触及；超限时折行 */
-  padding: 5px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* 整个窗口是一块连续表面：胶囊/子菜单/结果面板都是它的区域，永不割裂。
+     padding 是表面到窗口边缘的透明边距（background-clip 排除在着色外）：
+     圆角在窗口内部渲染才有抗锯齿余量，直接顶满窗口边会出毛刺 */
+  padding: 2px;
+  background: var(--surf);
+  background-clip: padding-box;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
   user-select: none;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
   font-size: 13px;
-  /* 注意：不要在此层加 transform/opacity 动画——WebKit 透明窗口下会合成出黑色浮层 */
+  /* 不要在此层加 transform/opacity 动画——WebKit 透明窗口下会合成出黑色浮层。
+     也不要加 padding：原生材质层填满窗口，内容四周留缝会露出材质底色，
+     形成「底层灰、上层白」的两层感。窗口尺寸 = 内容尺寸（测量后传给 Rust）。 */
 }
 
 /* ---- 动作条 ---- */
@@ -63,12 +81,8 @@ body,
   display: flex;
   align-items: center;
   flex-wrap: wrap; /* 动作多时折行，窗口尺寸随测量自适应 */
-  gap: 1px;
-  padding: 3px;
-  background: var(--surf);
-  border: 0.5px solid var(--line);
-  border-radius: 11px;
-  box-shadow: var(--shadow);
+  gap: 2px;
+  padding: 2px;
   user-select: none; /* 胶囊条是纯操作面：禁止选中文本（防点击/拖拽时出现选中高亮） */
   -webkit-user-select: none;
   cursor: default;
@@ -79,10 +93,26 @@ body,
   align-items: center;
 }
 
+/* 动作分组分隔线：短发丝线画在 gap 里，区分主按钮组与扩展动作组 */
+.action-slot + .action-slot {
+  position: relative;
+}
+
+.action-slot + .action-slot::before {
+  content: "";
+  position: absolute;
+  left: -1.5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 14px;
+  background: var(--line);
+}
+
 .chev {
-  width: 18px;
-  height: 32px;
-  margin-left: -5px; /* 贴近动作文字（吃掉按钮右 padding），保留 18px 命中区 */
+  width: 16px;
+  height: 26px;
+  margin-left: -5px; /* 贴近动作文字（吃掉按钮右 padding），保留命中区 */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -109,9 +139,10 @@ body,
 .action {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 32px;
-  padding: 0 9px;
+  gap: 4px;
+  height: 26px;
+  padding: 0 7px;
+  font-size: 12px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -121,6 +152,7 @@ body,
   letter-spacing: 0.01em;
   white-space: nowrap;
   cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .action .ic {
@@ -130,7 +162,7 @@ body,
 }
 
 .action:hover {
-  background: var(--hov);
+  background: var(--accent-soft); /* 蓝 tint hover：给面板一点 accent 气息 */
 }
 
 .action:hover .ic {
@@ -151,10 +183,6 @@ body,
   flex-wrap: wrap;
   gap: 2px;
   padding: 3px;
-  background: var(--surf);
-  border: 0.5px solid var(--line);
-  border-radius: 11px;
-  box-shadow: var(--shadow);
 }
 
 .chip {
@@ -163,7 +191,7 @@ body,
   color: var(--text);
   font: inherit;
   font-size: 12px;
-  padding: 4px 9px;
+  padding: 3px 8px;
   border-radius: 7px;
   cursor: pointer;
   white-space: nowrap;
@@ -174,7 +202,8 @@ body,
 }
 
 .chip.primary {
-  color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 590;
 }
 
@@ -200,10 +229,6 @@ body,
   width: 396px; /* 固定宽：文本折行、超高滚动，窗口不随内容横向膨胀 */
   display: flex;
   flex-direction: column;
-  background: var(--surf);
-  border: 0.5px solid var(--line);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
   color: var(--text);
 }
 
@@ -211,7 +236,7 @@ body,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 8px 8px 13px;
+  padding: 6px 8px 6px 13px;
   border-bottom: 0.5px solid var(--line);
 }
 
@@ -375,9 +400,9 @@ body,
    pre-wrap 保留 OCR 按行输出的换行结构（JSX 渲染会折叠 \n） */
 .ocr-source {
   padding: 2px 26px 2px 2px;
-  font-size: 12.5px;
-  line-height: 1.7;
-  color: var(--text);
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--text); /* 识别文字就是结果本体：保持正文色，不能弱化 */
   max-height: 63px; /* 约 3 行 */
   overflow: hidden;
   user-select: text;
@@ -415,11 +440,9 @@ body,
   transform: rotate(180deg);
 }
 
-/* OCR 结果区（原文下方） */
+/* OCR 结果区（原文下方）：上边界由 .ocr-source-wrap 的固定线承担，
+   此处不再画线（画在滚动区内会随内容滚动） */
 .ocr-result {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 0.5px solid var(--line);
   font-size: 12.5px;
   line-height: 1.8;
   letter-spacing: 0.015em;
@@ -427,18 +450,43 @@ body,
 }
 
 /* OCR 面板动作行：对识别文本执行的 AI 动作（紧凑版胶囊按钮） */
+/* OCR 面板主体：原文区固定，结果区独立滚动（动作行固定在面板底部不参与滚动） */
+.ocr-main {
+  padding: 8px 13px 0;
+  overflow: hidden;
+}
+
+/* 固定上界线：识别原文区下缘——仅在下方有动作结果时显示（无结果时不画线，
+   避免与动作行上缘线形成空夹层） */
+.ocr-source-wrap.has-result {
+  border-bottom: 0.5px solid var(--line);
+  padding-bottom: 7px;
+}
+
+/* 结果滚动区：夹在原文下缘线与动作行上缘线之间，内容超限仅此区域滚动 */
+.ocr-result-scroll {
+  overflow-y: auto;
+  max-height: 240px;
+  margin-top: 8px;
+  overscroll-behavior: contain; /* 滚到边界不外溢，避免带动窗口抖动 */
+}
+
 .ocr-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-start; /* 动作按钮靠左（与正文同缘），不居中 */
   gap: 1px;
-  margin: 6px -7px 8px; /* 负边距对齐胶囊与正文左缘（按钮自带内边距） */
+  /* 固定下界线：与原文下缘线同宽，两线之间才是结果滚动区 */
+  margin: 8px 0 0;
+  padding-top: 5px;
+  border-top: 0.5px solid var(--line);
 }
 
 .action.sm {
-  height: 26px;
-  padding: 0 7px;
-  gap: 4px;
+  height: 24px;
+  padding: 0 6px;
+  gap: 3px;
   font-size: 12px;
   border-radius: 6px;
 }
@@ -448,12 +496,13 @@ body,
 }
 
 .action.active {
-  background: var(--hov);
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 590;
 }
 
 .action.active .ic {
-  color: var(--accent);
+  color: var(--on-accent);
 }
 
 /* ---- 钉图窗口（pin-*）：无边框置顶图片 ---- */
@@ -483,7 +532,6 @@ body,
   background: var(--surf);
   border: 0.5px solid var(--line);
   border-radius: 9px;
-  box-shadow: var(--shadow);
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms;

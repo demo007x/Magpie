@@ -77,13 +77,18 @@ pub fn recognize_file(path: &Path) -> Result<String, String> {
     eprintln!("[ocr] 助手退出：status={}", output.status);
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        // 助手以 "ERR:<原因>" 报告失败原因，去掉前缀直接作为提示展示
+        //（如「未识别到文字」，不需要「文本识别失败: ERR:」包装）
+        if let Some(reason) = stderr.strip_prefix("ERR:") {
+            return Err(reason.to_string());
+        }
         return Err(format!(
             "文本识别失败{}",
-            if stderr.trim().is_empty() {
+            if stderr.is_empty() {
                 String::new()
             } else {
-                format!(": {}", stderr.trim())
+                format!(": {stderr}")
             }
         ));
     }

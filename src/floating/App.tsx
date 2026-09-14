@@ -70,16 +70,16 @@ function dominantGroup(groups: ExtractGroups): string {
 
 // ---- 图标（lucide-react 图标库，统一 15px / 1.75 描边，随文字色） ----
 const ICONS: Record<string, React.ReactNode> = {
-  copy: <Copy size={15} strokeWidth={1.75} />,
-  search: <Search size={15} strokeWidth={1.75} />,
-  translate: <Languages size={15} strokeWidth={1.75} />,
-  explain: <Lightbulb size={15} strokeWidth={1.75} />,
-  summarize: <AlignLeft size={15} strokeWidth={1.75} />,
-  link: <ExternalLink size={15} strokeWidth={1.75} />,
-  email: <Mail size={15} strokeWidth={1.75} />,
-  code: <ClipboardCheck size={15} strokeWidth={1.75} />,
-  tel: <Phone size={15} strokeWidth={1.75} />,
-  __extract: <ScanSearch size={15} strokeWidth={1.75} />,
+  copy: <Copy size={14} strokeWidth={1.75} />,
+  search: <Search size={14} strokeWidth={1.75} />,
+  translate: <Languages size={14} strokeWidth={1.75} />,
+  explain: <Lightbulb size={14} strokeWidth={1.75} />,
+  summarize: <AlignLeft size={14} strokeWidth={1.75} />,
+  link: <ExternalLink size={14} strokeWidth={1.75} />,
+  email: <Mail size={14} strokeWidth={1.75} />,
+  code: <ClipboardCheck size={14} strokeWidth={1.75} />,
+  tel: <Phone size={14} strokeWidth={1.75} />,
+  __extract: <ScanSearch size={14} strokeWidth={1.75} />,
 };
 const CopyIcon = <Copy size={13} strokeWidth={1.75} />;
 const CheckIcon = <Check size={13} strokeWidth={2} className="ok" />;
@@ -268,9 +268,12 @@ function PinView() {
 function splitTranslate(output: string): { main: string; notes: string | null } {
   let s = output.trim();
   if (s.startsWith("【译文】")) s = s.slice(4).trim();
+  // 模型偶尔会给译文加 markdown 引用前缀（>），提示词已禁止；此处兜底剥掉，
+  // 避免被渲染成引用块样式（翻译应为纯文本，不添加程序自带的装饰）
+  while (s.startsWith(">")) s = s.replace(/^>\s?/m, "").trim();
   const i = s.indexOf("【要点】");
   if (i < 0) return { main: s, notes: null };
-  return { main: s.slice(0, i).trim(), notes: s.slice(i + 4).trim() || null };
+  return { main: s.slice(0, i).replace(/^>\s?/gm, "").trim(), notes: s.slice(i + 4).trim() || null };
 }
 
 export default function App() {
@@ -346,6 +349,27 @@ export default function App() {
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   };
 
+  // OCR 结果区：同一套智能跟随（默认贴底；用户上翻即暂停 + 回到底部圆钮）
+  const ocrBodyRef = useRef<HTMLDivElement | null>(null);
+  const ocrStickRef = useRef(true);
+  const [ocrStick, setOcrStick] = useState(true);
+
+  const onOcrResultScroll = () => {
+    const el = ocrBodyRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+    ocrStickRef.current = atBottom;
+    setOcrStick(atBottom);
+  };
+
+  const ocrJumpToBottom = () => {
+    const el = ocrBodyRef.current;
+    if (!el) return;
+    ocrStickRef.current = true;
+    setOcrStick(true);
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
+
   const enabledEngines = engines.filter((e) => e.enabled);
   const defaultEngine =
     enabledEngines.find((e) => e.name === defaultSearch) ?? enabledEngines[0] ?? null;
@@ -360,9 +384,9 @@ export default function App() {
   const defaultTranslate =
     enabledTranslates.find((s) => s.id === translateDefault) ?? enabledTranslates[0] ?? null;
 
-  const openEngine = (engine: SearchEngine) => {
+  const openEngine = (engine: SearchEngine, q = text.trim()) => {
     const tpl = engine.url.includes("{q}") ? engine.url : `${engine.url}{q}`;
-    invoke("open_url", { url: tpl.replace("{q}", encodeURIComponent(text.trim())) })
+    invoke("open_url", { url: tpl.replace("{q}", encodeURIComponent(q)) })
       .then(() => flash("search", "已打开"))
       .catch(() => flash("search", "打开失败"));
   };
@@ -371,6 +395,8 @@ export default function App() {
   useLayoutEffect(() => {
     const el = bodyRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+    const ocrEl = ocrBodyRef.current;
+    if (ocrEl && ocrStickRef.current) ocrEl.scrollTop = ocrEl.scrollHeight;
   }, [phase]);
 
   useEffect(() => {
@@ -378,11 +404,23 @@ export default function App() {
       stickRef.current = true;
       setStick(true);
     }
+    if (phase.kind === "ocr") {
+      ocrStickRef.current = true;
+      setOcrStick(true);
+    }
   }, [phase]);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const runIdRef = useRef(0);
   const streamingRef = useRef(false);
+  // 划词结果面板宽度：跟随触发时的胶囊宽度（宽度切换不跳变）
+  const [panelW, setPanelW] = useState(396);
+  // OCR 窗口显示链路状态：新识别结果到来时重置（强制重测量 + 重新显示）
+  const lastSizeRef = useRef("");
+  const ocrReadyRef = useRef(false);
+  // 识别原文是否超长（超 3 行折叠高度）——决定展开/收起按钮是否显示
+  const sourceRef = useRef<HTMLDivElement | null>(null);
+  const [sourceOverflow, setSourceOverflow] = useState(false);
 
   const loadSettings = () => {
     invoke<Settings>("get_settings")
@@ -485,6 +523,9 @@ export default function App() {
       invoke<string | null>("ocr_take_pending")
         .then((t) => {
           if (t) {
+            // 新结果：重置测量/显示状态，确保面板必然重新显示
+            lastSizeRef.current = "";
+            ocrReadyRef.current = false;
             setPhase({
               kind: "ocr",
               text: t,
@@ -532,6 +573,9 @@ export default function App() {
         invoke<string | null>("ocr_take_pending")
           .then((t) => {
             if (t) {
+              // 新结果：重置测量/显示状态——若尺寸与上次相同也必须重新显示窗口
+              lastSizeRef.current = "";
+              ocrReadyRef.current = false;
               setPhase({
                 kind: "ocr",
                 text: t,
@@ -602,15 +646,18 @@ export default function App() {
     };
   }, []);
 
-  // OCR 窗口内容就绪后：定位 + 显示（先渲染后显示，无白屏/动画）
-  useEffect(() => {
-    if (IS_OCR && phase.kind === "ocr") {
-      invoke("ocr_window_ready").catch(() => undefined);
-    }
-  }, [phase.kind]);
+  // （OCR 窗口的定位+显示已改由尺寸测量 effect 在 resize 完成后链式触发，见下）
+
+  // 识别原文是否溢出折叠高度（超 3 行）：决定展开/收起按钮显示与否
+  useLayoutEffect(() => {
+    if (phase.kind !== "ocr") return;
+    const el = sourceRef.current;
+    if (!el) return;
+    // 收起态下 scrollHeight 为完整文本高度，clientHeight 被 max-height 钳在 3 行
+    setSourceOverflow(el.scrollHeight > el.clientHeight + 1);
+  }, [phase]);
 
   // 渲染后测量内容尺寸 → 按锚点定位/调整窗口（自适应）；尺寸不变时不重复调窗口
-  const lastSizeRef = useRef("");
   useLayoutEffect(() => {
     const el = stageRef.current;
     if (!el) return;
@@ -618,6 +665,19 @@ export default function App() {
     const w = Math.ceil(rect.width);
     const h = Math.ceil(rect.height);
     const sizeKey = `${w}x${h}`;
+    // OCR 独立窗口：先按内容缩放窗口，就绪后再定位显示（避免旧尺寸下闪现大面板）；
+    // 显示一次即可，后续内容变化只 resize，不重复定位
+    if (IS_OCR && phase.kind === "ocr" && sizeKey !== lastSizeRef.current) {
+      lastSizeRef.current = sizeKey;
+      invoke("resize_ocr", { width: w, height: h })
+        .catch(() => undefined)
+        .finally(() => {
+          if (ocrReadyRef.current) return;
+          ocrReadyRef.current = true;
+          invoke("ocr_window_ready").catch(() => undefined);
+        });
+      return;
+    }
     if (pending) {
       lastSizeRef.current = sizeKey;
       invoke("show_floating_bar", { x: pending.x, y: pending.y, width: w, height: h })
@@ -679,6 +739,13 @@ export default function App() {
     const source = phase.kind === "ocr" ? phase.text : text;
     if (!source.trim()) return;
 
+    // 结果面板宽度跟随胶囊当前宽度（300–560 夹取）：
+    // 胶囊 → 面板切换时窗口宽度无缝衔接，不会突然变宽
+    const snapPanelW = () => {
+      const w = document.querySelector(".bar")?.getBoundingClientRect().width ?? 0;
+      setPanelW(Math.min(560, Math.max(300, Math.ceil(w))));
+    };
+
     // 本地动作：不经 AI，前端即时完成
     if (action.kind === "local") {
       const t = source.trim();
@@ -694,7 +761,7 @@ export default function App() {
           flash(id, "未配置引擎");
           return;
         }
-        openEngine(defaultEngine);
+        openEngine(defaultEngine, t);
         return;
       }
 
@@ -747,6 +814,7 @@ export default function App() {
         if (phase.kind === "ocr") {
           setPhase({ ...phase, actionId: id, output: "", streaming: true, error: null });
         } else {
+          snapPanelW();
           setPhase({
             kind: "result",
             actionId: id,
@@ -788,6 +856,7 @@ export default function App() {
     if (phase.kind === "ocr") {
       setPhase({ ...phase, actionId: id, output: "", streaming: true, error: null });
     } else {
+      snapPanelW();
       setPhase({
         kind: "result",
         actionId: id,
@@ -939,7 +1008,7 @@ export default function App() {
       </div>
       )}
 
-      {menu === "search" && enabledEngines.length > 1 && (
+      {menu === "search" && !IS_OCR && enabledEngines.length > 1 && (
         <div className="chips">
           {enabledEngines.map((e) => (
             <button
@@ -956,7 +1025,7 @@ export default function App() {
         </div>
       )}
 
-      {menu === "translate" && enabledTranslates.length > 1 && (
+      {menu === "translate" && !IS_OCR && enabledTranslates.length > 1 && (
         <div className="chips">
           {enabledTranslates.map((s) => (
             <button
@@ -974,7 +1043,7 @@ export default function App() {
       )}
 
       {!IS_OCR && phase.kind === "result" && (
-        <div className="panel">
+        <div className="panel" style={{ width: panelW }}>
           <header className="panel-head">
             <span className="panel-title">
               <span className="ic">{ICONS[phase.actionId]}</span>
@@ -1039,7 +1108,7 @@ export default function App() {
           <header className="panel-head">
             <span className="panel-title">
               <span className="ic">
-                <ScanSearch size={15} strokeWidth={1.75} />
+                <ScanSearch size={14} strokeWidth={1.75} />
               </span>
               {phase.label}
             </span>
@@ -1116,7 +1185,7 @@ export default function App() {
           <header className={`panel-head ${IS_OCR ? "grab" : ""}`} onMouseDown={IS_OCR ? onOcrHeadDown : undefined}>
             <span className="panel-title">
               <span className="ic">
-                <ScanSearch size={15} strokeWidth={1.75} />
+                <ScanSearch size={14} strokeWidth={1.75} />
               </span>
               文本识别
             </span>
@@ -1192,57 +1261,34 @@ export default function App() {
               </button>
             </span>
           </header>
-          <div className="panel-body">
-            <div className="ocr-source-wrap">
-              <div className={`ocr-source ${phase.expanded ? "expanded" : ""}`}>{phase.text}</div>
-              <button
-                className="ocr-toggle"
-                onClick={guarded(() =>
-                  setPhase((p) => (p.kind === "ocr" ? { ...p, expanded: !p.expanded } : p)),
-                )}
-                title={phase.expanded ? "收起原文" : "展开原文"}
+          <div className="ocr-main">
+            <div className={`ocr-source-wrap ${phase.actionId ? "has-result" : ""}`}>
+              <div
+                ref={sourceRef}
+                className={`ocr-source ${phase.expanded ? "expanded" : ""}`}
               >
-                <ChevronDown
-                  size={13}
-                  strokeWidth={2}
-                  className={`chev-svg ${phase.expanded ? "open" : ""}`}
-                />
-              </button>
-            </div>
-            {/* 动作行：对识别文本执行 AI 动作（结果内嵌在下方，可反复切换） */}
-            <div className="ocr-actions">
-              {ACTIONS.filter((a) => a.buildMessages && actions[a.id] !== false).map((a) => (
-                <span key={a.id} className="action-slot">
-                  <button
-                    className={`action sm ${phase.actionId === a.id ? "active" : ""}`}
-                    onClick={guarded(() => {
-                      setMenu(null);
-                      runAction(a.id);
-                    })}
-                  >
-                    <span className="ic">{ICONS[a.id]}</span>
-                    <span>{a.label}</span>
-                  </button>
-                  {a.id === "translate" && enabledTranslates.length > 1 && (
-                    <button
-                      className="chev"
-                      title="更多翻译服务"
-                      onClick={guarded(() =>
-                        setMenu((m) => (m === "translate" ? null : "translate")),
-                      )}
-                    >
-                      <ChevronDown
-                        size={13}
-                        strokeWidth={2}
-                        className={`chev-svg ${menu === "translate" ? "open" : ""}`}
-                      />
-                    </button>
+                {phase.text}
+              </div>
+              {/* 原文超 3 行（或已展开）才显示折叠切换，短文本不显示 */}
+              {(sourceOverflow || phase.expanded) && (
+                <button
+                  className="ocr-toggle"
+                  onClick={guarded(() =>
+                    setPhase((p) => (p.kind === "ocr" ? { ...p, expanded: !p.expanded } : p)),
                   )}
-                </span>
-              ))}
+                  title={phase.expanded ? "收起原文" : "展开原文"}
+                >
+                  <ChevronDown
+                    size={13}
+                    strokeWidth={2}
+                    className={`chev-svg ${phase.expanded ? "open" : ""}`}
+                  />
+                </button>
+              )}
             </div>
             {phase.actionId && (
-              <div className="ocr-result md">
+              <div className="ocr-result-scroll" ref={ocrBodyRef} onScroll={onOcrResultScroll}>
+                <div className="ocr-result md">
                 {phase.output ? (
                   <>
                     <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
@@ -1275,6 +1321,88 @@ export default function App() {
                   </div>
                 )}
                 {phase.streaming && <span className="dot" title="生成中" />}
+                </div>
+                {phase.streaming && !ocrStick && (
+                  <button
+                    className="jump-down"
+                    onClick={guarded(ocrJumpToBottom)}
+                    title="回到底部"
+                  >
+                    <ChevronDown size={13} strokeWidth={2} />
+                  </button>
+                )}
+              </div>
+            )}
+            {/* 动作行：固定在面板最底部（不随结果滚动）。
+                AI 动作（翻译/解释/总结）结果内嵌滚动区；搜索为本地动作，
+                用识别文本直接打开默认引擎——对识别出的书名/术语等尤其实用 */}
+            <div className="ocr-actions">
+              {ACTIONS.filter(
+                (a) => (a.buildMessages || a.id === "search") && actions[a.id] !== false,
+              ).map((a) => (
+                <span key={a.id} className="action-slot">
+                  <button
+                    className={`action sm ${phase.actionId === a.id ? "active" : ""}`}
+                    onClick={guarded(() => {
+                      setMenu(null);
+                      runAction(a.id);
+                    })}
+                  >
+                    <span className="ic">{ICONS[a.id]}</span>
+                    <span>{a.label}</span>
+                  </button>
+                  {(a.id === "translate" || a.id === "search") &&
+                    (a.id === "translate"
+                      ? enabledTranslates.length > 1
+                      : enabledEngines.length > 1) && (
+                      <button
+                        className="chev"
+                        title={a.id === "translate" ? "更多翻译服务" : "更多搜索引擎"}
+                        onClick={guarded(() =>
+                          setMenu((m) => (m === a.id ? null : (a.id as "search" | "translate"))),
+                        )}
+                      >
+                        <ChevronDown
+                          size={13}
+                          strokeWidth={2}
+                          className={`chev-svg ${menu === a.id ? "open" : ""}`}
+                        />
+                      </button>
+                    )}
+                </span>
+              ))}
+            </div>
+            {/* 二级菜单：与划词行为一致，展开在动作行正下方 */}
+            {menu === "translate" && enabledTranslates.length > 1 && (
+              <div className="chips">
+                {enabledTranslates.map((s) => (
+                  <button
+                    key={s.id}
+                    className={`chip ${defaultTranslate?.id === s.id ? "primary" : ""}`}
+                    onClick={guarded(() => {
+                      setMenu(null);
+                      runAction("translate", s.id);
+                    })}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {menu === "search" && enabledEngines.length > 1 && (
+              <div className="chips">
+                {enabledEngines.map((e) => (
+                  <button
+                    key={e.name}
+                    className={`chip ${defaultEngine?.name === e.name ? "primary" : ""}`}
+                    onClick={guarded(() => {
+                      setMenu(null);
+                      openEngine(e, phase.text);
+                    })}
+                  >
+                    {e.name}
+                  </button>
+                ))}
               </div>
             )}
           </div>

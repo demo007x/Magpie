@@ -724,3 +724,10 @@ button:focus-visible {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
   word-break: break-all;
 }
+
+/* 快捷键录制中：强调边框（聚焦态样式之外持续可见，含修饰键提示文案时） */
+input.recording {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  color: var(--accent);
+}
