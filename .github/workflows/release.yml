@@ -39,6 +39,18 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # tauri-action 自动执行 pnpm build（beforeBuildCommand）并构建
+      # tauri CLI 合并 Universal 包时只处理主程序，不会合并 src/bin 下的额外
+      # 二进制（ocr_helper）；先 --no-bundle 预构建，手动 lipo 出通用 ocr_helper，
+      # 再让 tauri-action 打包（cargo 已缓存，秒过）
+      - name: 预构建并合并 ocr_helper（universal）
+        run: |
+          pnpm tauri build --target universal-apple-darwin --no-bundle
+          mkdir -p src-tauri/target/universal-apple-darwin/release
+          lipo -create \
+            src-tauri/target/aarch64-apple-darwin/release/ocr_helper \
+            src-tauri/target/x86_64-apple-darwin/release/ocr_helper \
+            -output src-tauri/target/universal-apple-darwin/release/ocr_helper
+
       - name: 构建（Universal 2）
         uses: tauri-apps/tauri-action@v0
         env:
