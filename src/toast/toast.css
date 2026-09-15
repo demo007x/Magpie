@@ -4,7 +4,6 @@
   --accent: #5e5ce6;
   --err: #e5484d;
   --surf: #ffffff;
-  --radius: 12px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -12,7 +11,7 @@
     --text: #ededf4;
     --accent: #8684ff;
     --err: #ff6b61;
-    --surf: #1d1d26;
+    --surf: #282828;
   }
 }
 
@@ -44,7 +43,6 @@ body,
   max-width: 428px;
   padding: 5px 12px;
   background: var(--surf);
-  border-radius: var(--radius);
   color: var(--text);
   font-size: 13px;
   line-height: 1.4;

@@ -96,15 +96,6 @@ const TRANSLATE_SERVICES = [
 type Phase =
   | { kind: "bar" }
   | {
-    kind: "result";
-    actionId: string;
-    output: string;
-    streaming: boolean;
-    error: string | null;
-    /** 本次结果使用的翻译服务（重试保持同一服务） */
-    service?: string;
-  }
-  | {
     kind: "extract";
     /** 主要实体类型（决定面板图标） */
     actionId: string;
@@ -112,15 +103,52 @@ type Phase =
     groups: ExtractGroups;
   }
   | {
-    /** OCR 文本识别：合并面板（文本可见 + 动作内嵌 + 结果流式） */
+    /** OCR 文本识别：合并面板（文本可见 + 动作内嵌 + 结果流式）。
+        fromOcr = 识别来源（显示钉图/文本识别标题）；false = 划词导流结果 */
     kind: "ocr";
     text: string;
+    fromOcr: boolean;
     actionId: string | null;
     output: string;
     streaming: boolean;
     error: string | null;
     expanded: boolean;
   };
+
+// 重复查询缓存：同动作 + 同服务 + 同文本，5 分钟内直接复用结果
+// （容量 50，LRU 淘汰；划词场景「反复选中同一段」很常见）
+const resultCache = new Map<string, { output: string; at: number }>();
+const CACHE_TTL = 5 * 60_000;
+const CACHE_CAP = 50;
+
+function cacheGet(key: string): string | null {
+  const hit = resultCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > CACHE_TTL) {
+    resultCache.delete(key);
+    return null;
+  }
+  resultCache.delete(key);
+  resultCache.set(key, hit); // LRU touch
+  return hit.output;
+}
+
+function cachePut(key: string, output: string) {
+  if (resultCache.size >= CACHE_CAP) {
+    const oldest = resultCache.keys().next().value;
+    if (oldest !== undefined) resultCache.delete(oldest);
+  }
+  resultCache.set(key, { output, at: Date.now() });
+}
+
+// 结果窗口待显示结果（Rust ocr_take_pending 的返回结构）
+interface PendingView {
+  text: string;
+  fromOcr: boolean;
+  pinned: boolean;
+  manualSize: boolean;
+  run: { id: string; service: string | null } | null;
+}
 
 // ---- 钉图视图：无边框置顶窗口内渲染截图 ----
 // 交互：图片即拖拽区（data-tauri-drag-region 系统级拖动）；滚轮缩放；
@@ -309,8 +337,6 @@ export default function App() {
   const [defaultSearch, setDefaultSearch] = useState("");
   // 展开的 chips 菜单（搜索引擎 / 翻译服务，同屏只开一个）
   const [menu, setMenu] = useState<"search" | "translate" | null>(null);
-  // 结果面板复制成功的短暂反馈（图标变对勾）
-  const [copied, setCopied] = useState(false);
   // 提取列表（多值面板）的复制反馈
   const [copiedAll, setCopiedAll] = useState(false);
   // 提取列表行内复制的反馈（记录条目内容）
@@ -319,36 +345,15 @@ export default function App() {
   const [copiedOcr, setCopiedOcr] = useState(false);
   // OCR 面板「钉图」成功的反馈（图标短暂变对勾）
   const [pinOk, setPinOk] = useState(false);
+  // 结果窗口完成闪烁：流式结束瞬间呼吸点变绿，2s 后消失（比单纯延迟消失语义清晰）
+  const [doneFlash, setDoneFlash] = useState(false);
   // 钉图失败的反馈（图标变红 + title 显示具体原因，直到下次重试）
   const [pinErr, setPinErr] = useState<string | null>(null);
-  const copiedTimerRef = useRef<number | undefined>(undefined);
   const copiedAllTimerRef = useRef<number | undefined>(undefined);
   const copiedItemTimerRef = useRef<number | undefined>(undefined);
   const copiedOcrTimerRef = useRef<number | undefined>(undefined);
   const pinOkTimerRef = useRef<number | undefined>(undefined);
   const flashTimerRef = useRef<number | undefined>(undefined);
-  // 流式输出跟随：默认贴底自动滚动；用户向上滚动离开底部则冻结，滚回底部恢复
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  const stickRef = useRef(true);
-  const [stick, setStick] = useState(true);
-
-  const onBodyScroll = () => {
-    const el = bodyRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-    stickRef.current = atBottom;
-    setStick(atBottom);
-  };
-
-  const jumpToBottom = () => {
-    const el = bodyRef.current;
-    if (!el) return;
-    stickRef.current = true;
-    setStick(true);
-    // 平滑滚动到底（跟随期间的增量滚动保持瞬时，避免追逐感）
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  };
-
   // OCR 结果区：同一套智能跟随（默认贴底；用户上翻即暂停 + 回到底部圆钮）
   const ocrBodyRef = useRef<HTMLDivElement | null>(null);
   const ocrStickRef = useRef(true);
@@ -393,28 +398,32 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>({ kind: "bar" });
   // 流式增量渲染后：贴底状态才跟随滚动（用户上翻阅读时不打扰）；新一轮结果从贴底开始跟随
   useLayoutEffect(() => {
-    const el = bodyRef.current;
-    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
     const ocrEl = ocrBodyRef.current;
     if (ocrEl && ocrStickRef.current) ocrEl.scrollTop = ocrEl.scrollHeight;
   }, [phase]);
 
   useEffect(() => {
-    if (phase.kind === "result" && phase.output === "") {
-      stickRef.current = true;
-      setStick(true);
-    }
-    if (phase.kind === "ocr") {
+    // 仅在新一轮开始（输出为空）时重置跟随；流式进行中重置会覆盖用户的上翻暂停
+    if (phase.kind === "ocr" && phase.output === "") {
       ocrStickRef.current = true;
       setOcrStick(true);
     }
   }, [phase]);
 
+  // 完成闪烁：streaming true→false 且已有输出（出错不闪绿，错误有自己的提示）
+  useEffect(() => {
+    if (phase.kind !== "ocr" || phase.streaming || !phase.output || phase.error) {
+      setDoneFlash(false);
+      return;
+    }
+    setDoneFlash(true);
+    const t = window.setTimeout(() => setDoneFlash(false), 2000);
+    return () => window.clearTimeout(t);
+  }, [phase]);
+
   const stageRef = useRef<HTMLDivElement>(null);
   const runIdRef = useRef(0);
   const streamingRef = useRef(false);
-  // 划词结果面板宽度：跟随触发时的胶囊宽度（宽度切换不跳变）
-  const [panelW, setPanelW] = useState(396);
   // OCR 窗口显示链路状态：新识别结果到来时重置（强制重测量 + 重新显示）
   const lastSizeRef = useRef("");
   const ocrReadyRef = useRef(false);
@@ -501,13 +510,14 @@ export default function App() {
         label: "提取信息",
         onClick: () => {
           setMenu(null);
-          // actionId 取数量最多的实体类型（决定面板图标）
-          setPhase({
-            kind: "extract",
-            actionId: dominantGroup(extracted.groups),
-            label: "提取信息",
-            groups: extracted.groups,
-          });
+          // 导流到独立结果窗口（__extract = 结果窗口自行从文本计算分组）
+          invoke("push_selection_result", {
+            text: text,
+            actionId: "__extract",
+            service: null,
+          }).catch(() => undefined);
+          invoke("hide_floating_bar").catch(() => undefined);
+          setPhase({ kind: "bar" });
         },
       });
     }
@@ -520,21 +530,51 @@ export default function App() {
     invoke("ui_debug_log", { msg: "floating webview 就绪" }).catch(() => undefined);
     // OCR 独立窗口：取走 Rust 侧存好的识别文本（推送可能早于 webview 挂载）
     if (IS_OCR) {
-      invoke<string | null>("ocr_take_pending")
-        .then((t) => {
-          if (t) {
-            // 新结果：重置测量/显示状态，确保面板必然重新显示
-            lastSizeRef.current = "";
-            ocrReadyRef.current = false;
+      invoke<PendingView | null>("ocr_take_pending")
+        .then((p) => {
+          if (!p) return;
+          // 新结果：重置测量/显示状态，确保面板必然重新显示
+          lastSizeRef.current = "";
+          ocrReadyRef.current = false;
+          setOcrPinnedState(p.pinned);
+          setManualSize(p.manualSize);
+          setPhase({
+            kind: "ocr",
+            text: p.text,
+            fromOcr: p.fromOcr,
+            actionId: p.run?.id ?? null,
+            output: "",
+            streaming: false,
+            error: null,
+            expanded: false,
+          });
+          if (p.run?.id === "__extract") {
+            // 提取信息：结果窗口本地从文本计算分组
+            const all = extractAll(p.text);
+            const groups: ExtractGroups = {
+              tel: all.tels,
+              email: all.emails,
+              link: all.urls,
+              code: all.codes,
+            };
+            setPhase({
+              kind: "extract",
+              actionId: dominantGroup(groups),
+              label: "提取结果",
+              groups,
+            });
+          } else {
             setPhase({
               kind: "ocr",
-              text: t,
-              actionId: null,
+              text: p.text,
+              fromOcr: p.fromOcr,
+              actionId: p.run?.id ?? null,
               output: "",
               streaming: false,
               error: null,
               expanded: false,
             });
+            if (p.run) runAction(p.run.id, p.run.service ?? undefined, p.text);
           }
         })
         .catch(() => undefined);
@@ -570,21 +610,50 @@ export default function App() {
       // OCR 来源事件：仅 OCR 独立窗口消费（浮动条抢走 pending 会与之竞争）
       if (e.payload.app === "ocr") {
         if (!IS_OCR) return;
-        invoke<string | null>("ocr_take_pending")
-          .then((t) => {
-            if (t) {
-              // 新结果：重置测量/显示状态——若尺寸与上次相同也必须重新显示窗口
-              lastSizeRef.current = "";
-              ocrReadyRef.current = false;
+        invoke<PendingView | null>("ocr_take_pending")
+          .then((p) => {
+            if (!p) return;
+            // 新结果：重置测量/显示状态——若尺寸与上次相同也必须重新显示窗口
+            lastSizeRef.current = "";
+            ocrReadyRef.current = false;
+            setOcrPinnedState(p.pinned);
+            setManualSize(p.manualSize);
+            setPhase({
+              kind: "ocr",
+              text: p.text,
+              fromOcr: p.fromOcr,
+              actionId: p.run?.id ?? null,
+              output: "",
+              streaming: false,
+              error: null,
+              expanded: false,
+            });
+            if (p.run?.id === "__extract") {
+              const all = extractAll(p.text);
+              const groups: ExtractGroups = {
+                tel: all.tels,
+                email: all.emails,
+                link: all.urls,
+                code: all.codes,
+              };
+              setPhase({
+                kind: "extract",
+                actionId: dominantGroup(groups),
+                label: "提取结果",
+                groups,
+              });
+            } else {
               setPhase({
                 kind: "ocr",
-                text: t,
-                actionId: null,
+                text: p.text,
+                fromOcr: p.fromOcr,
+                actionId: p.run?.id ?? null,
                 output: "",
                 streaming: false,
                 error: null,
                 expanded: false,
               });
+              if (p.run) runAction(p.run.id, p.run.service ?? undefined, p.text);
             }
           })
           .catch(() => undefined);
@@ -667,7 +736,11 @@ export default function App() {
     const sizeKey = `${w}x${h}`;
     // OCR 独立窗口：先按内容缩放窗口，就绪后再定位显示（避免旧尺寸下闪现大面板）；
     // 显示一次即可，后续内容变化只 resize，不重复定位
-    if (IS_OCR && phase.kind === "ocr" && sizeKey !== lastSizeRef.current) {
+    if (
+      IS_OCR &&
+      (phase.kind === "ocr" || phase.kind === "extract") &&
+      sizeKey !== lastSizeRef.current
+    ) {
       lastSizeRef.current = sizeKey;
       invoke("resize_ocr", { width: w, height: h })
         .catch(() => undefined)
@@ -688,6 +761,87 @@ export default function App() {
       invoke("resize_floating", { width: w, height: h }).catch(() => undefined);
     }
   }, [phase, pending, menu, flashId]);
+
+  // 结果窗口手动尺寸：用户拖拽手柄后进入该模式（宽度固定、高度为自适应上限）
+  const [manualSize, setManualSize] = useState(false);
+
+  // 底边拖拽：仅调高度（单独的向下/向上拖动）
+  const startResultResizeV = (e: ReactMouseEvent) => {
+    if (!IS_OCR) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setManualSize(true);
+    const sh = window.innerHeight;
+    const sy = e.clientY;
+    const onMove = (ev: MouseEvent) => {
+      const h = Math.max(200, Math.min(800, sh + ev.clientY - sy));
+      invoke("set_result_window_size", {
+        width: window.innerWidth,
+        height: h,
+      }).catch(() => undefined);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      invoke("persist_result_window_state").catch(() => undefined);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const startResultResize = (e: ReactMouseEvent) => {
+    if (!IS_OCR) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // 立即进入手动尺寸模式：stage 铺满窗口、内容随窗口重排
+    //（若等下次 pending 同步才生效，拖拽期间表面不跟随，四角呈直角）
+    setManualSize(true);
+    const sw = window.innerWidth;
+    const sh = window.innerHeight;
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.max(320, Math.min(560, sw + ev.clientX - sx));
+      const h = Math.max(200, Math.min(800, sh + ev.clientY - sy));
+      invoke("set_result_window_size", { width: w, height: h }).catch(() => undefined);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      invoke("persist_result_window_state").catch(() => undefined);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  // 关闭结果窗口：解除钉住 + 隐藏（划词/识图结果窗口共用）
+  const closeResultWindow = () => {
+    setOcrPinnedState(false);
+    invoke("hide_ocr_window").catch(() => undefined);
+    setPhase({ kind: "bar" });
+  };
+
+  // 结果窗口键盘闭环：Esc 关窗、⌘P 切换钉住、⌘W 关窗（Bob 同款）。
+  // 窗口默认不抢焦点，点击面板任意处即聚焦，之后快捷键生效
+  useEffect(() => {
+    if (!IS_OCR) return;
+    const onKey = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (e.key === "Escape") {
+        closeResultWindow();
+      } else if (meta && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        const next = !ocrPinnedRef.current;
+        setOcrPinnedState(next);
+        invoke("set_ocr_pinned", { pinned: next }).catch(() => undefined);
+      } else if (meta && e.key.toLowerCase() === "w") {
+        e.preventDefault();
+        closeResultWindow();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // ---- OCR 面板拖拽：按住标题栏拖动（move_ocr 落位时钳制在屏幕内） ----
   const ocrDragRef = useRef<{ sx: number; sy: number; wx: number; wy: number } | null>(null);
@@ -732,19 +886,13 @@ export default function App() {
     flashTimerRef.current = window.setTimeout(() => setFlashId(null), 1200);
   };
 
-  const runAction = (id: string, serviceOverride?: string) => {
+  const runAction = (id: string, serviceOverride?: string, sourceOverride?: string) => {
     const action = actionById(id);
     if (!action) return;
-    // 动作文本源：OCR 面板用识别文本，普通划词用选中文本
-    const source = phase.kind === "ocr" ? phase.text : text;
+    // 动作文本源：显式指定（划词结果导流时由 pending 带入）> OCR 面板用识别文本 > 普通划词用选中文本
+    const source = sourceOverride ?? (phase.kind === "ocr" ? phase.text : text);
     if (!source.trim()) return;
 
-    // 结果面板宽度跟随胶囊当前宽度（300–560 夹取）：
-    // 胶囊 → 面板切换时窗口宽度无缝衔接，不会突然变宽
-    const snapPanelW = () => {
-      const w = document.querySelector(".bar")?.getBoundingClientRect().width ?? 0;
-      setPanelW(Math.min(560, Math.max(300, Math.ceil(w))));
-    };
 
     // 本地动作：不经 AI，前端即时完成
     if (action.kind === "local") {
@@ -809,22 +957,36 @@ export default function App() {
         return;
       }
       if (svc === "baidu" || svc === "deepl") {
+        const trimmed = source.trim();
+        const cacheKey = `${id}:${svc}:${trimmed}`;
+        const cachedOut = cacheGet(cacheKey);
+        if (cachedOut !== null && (phase.kind === "ocr" || sourceOverride !== undefined)) {
+          // 缓存命中：跳过请求直接展示
+          setPhase((p) =>
+            p.kind === "ocr"
+              ? { ...p, actionId: id, output: cachedOut, streaming: false, error: null }
+              : p,
+          );
+          return;
+        }
         const runId = ++runIdRef.current;
         streamingRef.current = true;
-        if (phase.kind === "ocr") {
-          setPhase({ ...phase, actionId: id, output: "", streaming: true, error: null });
+        if (phase.kind === "ocr" || sourceOverride !== undefined) {
+          // 函数式更新：紧随 pending 消费的 auto-run 不会读到旧 phase
+          setPhase((p) =>
+            p.kind === "ocr" ? { ...p, actionId: id, output: "", streaming: true, error: null } : p,
+          );
         } else {
-          snapPanelW();
-          setPhase({
-            kind: "result",
+          // 划词 AI 结果导流到独立结果窗口（默认钉住，胶囊下方弹出）
+          invoke("push_selection_result", {
+            text: source,
             actionId: id,
-            output: "",
-            streaming: true,
-            error: null,
-            service: svc,
-          });
+            service: serviceOverride ?? null,
+          }).catch(() => undefined);
+          invoke("hide_floating_bar").catch(() => undefined);
+          setPhase({ kind: "bar" });
+          return;
         }
-        const trimmed = source.trim();
         const isDeepl = svc === "deepl";
         // 中文→英文，其他→中文；目标语言代码 DeepL 用大写（EN/ZH）
         const to = /[一-鿿]/.test(trimmed) ? (isDeepl ? "EN" : "en") : (isDeepl ? "ZH" : "zh");
@@ -832,15 +994,16 @@ export default function App() {
           .then((out) => {
             if (runIdRef.current !== runId) return;
             streamingRef.current = false;
+            cachePut(cacheKey, out);
             setPhase((p) =>
-              p.kind === "result" || p.kind === "ocr" ? { ...p, output: out, streaming: false } : p,
+              p.kind === "ocr" ? { ...p, output: out, streaming: false } : p,
             );
           })
           .catch((e) => {
             if (runIdRef.current !== runId) return;
             streamingRef.current = false;
             setPhase((p) =>
-              p.kind === "result" || p.kind === "ocr"
+              p.kind === "ocr"
                 ? { ...p, streaming: false, error: String(e) }
                 : p,
             );
@@ -851,39 +1014,75 @@ export default function App() {
 
     const runId = ++runIdRef.current;
     if (!action.buildMessages) return;
-    streamingRef.current = true;
-    // OCR 合并面板：结果直接渲染在面板内（原文区下方），动作可反复切换
-    if (phase.kind === "ocr") {
-      setPhase({ ...phase, actionId: id, output: "", streaming: true, error: null });
-    } else {
-      snapPanelW();
-      setPhase({
-        kind: "result",
-        actionId: id,
-        output: "",
-        streaming: true,
-        error: null,
-        service: serviceOverride,
-      });
+    const cacheKey = `${id}:${serviceOverride ?? ""}:${source}`;
+    const cached = cacheGet(cacheKey);
+    if (cached !== null && (phase.kind === "ocr" || sourceOverride !== undefined)) {
+      // 缓存命中：跳过请求直接展示
+      setPhase((p) =>
+        p.kind === "ocr"
+          ? { ...p, actionId: id, output: cached, streaming: false, error: null }
+          : p,
+      );
+      return;
     }
+    streamingRef.current = true;
+    // 结果窗口（识图/划词导流共用）：结果直接渲染在面板内，动作可反复切换。
+    // 函数式更新：紧随 pending 消费的 auto-run 不会读到旧 phase
+    if (phase.kind === "ocr" || sourceOverride !== undefined) {
+      setPhase((p) =>
+        p.kind === "ocr" ? { ...p, actionId: id, output: "", streaming: true, error: null } : p,
+      );
+    } else {
+      // 划词 AI 结果导流到独立结果窗口（默认钉住，胶囊下方弹出）
+      invoke("push_selection_result", {
+        text: source,
+        actionId: id,
+        service: serviceOverride ?? null,
+      }).catch(() => undefined);
+      invoke("hide_floating_bar").catch(() => undefined);
+      setPhase({ kind: "bar" });
+      return;
+    }
+
+    // 流式渲染节流：chunk 累积进 full，60ms 合帧批量刷新（长文流式不再逐字重渲染）
+    let full = "";
+    let deltaTimer: number | undefined;
+    const flushDelta = () => {
+      if (deltaTimer) {
+        window.clearTimeout(deltaTimer);
+        deltaTimer = undefined;
+      }
+      if (runIdRef.current !== runId) return;
+      setPhase((p) => (p.kind === "ocr" ? { ...p, output: full } : p));
+    };
 
     aiChat(action.buildMessages(source), null, {
       onDelta: (chunk) => {
         if (runIdRef.current !== runId) return;
-        setPhase((p) =>
-          p.kind === "result" || p.kind === "ocr" ? { ...p, output: p.output + chunk } : p,
-        );
+        full += chunk;
+        if (deltaTimer === undefined) {
+          deltaTimer = window.setTimeout(flushDelta, 60);
+        }
       },
       onDone: () => {
         if (runIdRef.current !== runId) return;
+        if (deltaTimer) {
+          window.clearTimeout(deltaTimer);
+          deltaTimer = undefined;
+        }
         streamingRef.current = false;
-        setPhase((p) => (p.kind === "result" || p.kind === "ocr" ? { ...p, streaming: false } : p));
+        setPhase((p) => (p.kind === "ocr" ? { ...p, output: full, streaming: false } : p));
+        cachePut(cacheKey, full);
       },
       onError: (message) => {
         if (runIdRef.current !== runId) return;
+        if (deltaTimer) {
+          window.clearTimeout(deltaTimer);
+          deltaTimer = undefined;
+        }
         streamingRef.current = false;
         setPhase((p) =>
-          p.kind === "result" || p.kind === "ocr" ? { ...p, streaming: false, error: message } : p,
+          p.kind === "ocr" ? { ...p, output: full, streaming: false, error: message } : p,
         );
       },
     });
@@ -893,22 +1092,6 @@ export default function App() {
     runIdRef.current++;
     streamingRef.current = false;
     setPhase({ kind: "bar" });
-  };
-
-  const copyResult = () => {
-    if (phase.kind === "result" && phase.output) {
-      // 翻译只复制译文本体（要点为展示层的学习辅助，不进剪贴板）
-      const payload =
-        phase.actionId === "translate" ? splitTranslate(phase.output).main : phase.output;
-      navigator.clipboard.writeText(payload).then(
-        () => {
-          setCopied(true);
-          if (copiedTimerRef.current) window.clearTimeout(copiedTimerRef.current);
-          copiedTimerRef.current = window.setTimeout(() => setCopied(false), 1200);
-        },
-        () => undefined,
-      );
-    }
   };
 
   // ---- 拖拽：整条任意位置可拖（含按钮上），按下后位移 > 5px 判定为拖，吞掉其 click ----
@@ -959,7 +1142,7 @@ export default function App() {
 
   return (
     <div
-      className="stage"
+      className={`stage ${IS_OCR && manualSize ? "manual-size" : ""}`}
       ref={stageRef}
       onMouseDown={onStageMouseDown}
       onMouseMove={onStageMouseMove}
@@ -1042,69 +1225,11 @@ export default function App() {
         </div>
       )}
 
-      {!IS_OCR && phase.kind === "result" && (
-        <div className="panel" style={{ width: panelW }}>
-          <header className="panel-head">
-            <span className="panel-title">
-              <span className="ic">{ICONS[phase.actionId]}</span>
-              {actionById(phase.actionId)?.label}
-            </span>
-            <span className="panel-tools">
-              {phase.streaming && <span className="dot" title="生成中" />}
-              <button
-                className="tool"
-                onClick={guarded(copyResult)}
-                title={copied ? "已复制" : "复制结果"}
-              >
-                {copied ? CheckIcon : CopyIcon}
-              </button>
-              <button className="tool" onClick={guarded(backToBar)} title="收起">
-                {CloseIcon}
-              </button>
-            </span>
-          </header>
-          {phase.kind === "result" && phase.streaming && !stick && (
-            <button className="jump-down" onClick={guarded(jumpToBottom)} title="回到底部">
-              <ChevronDown size={13} strokeWidth={2} />
-            </button>
-          )}
-          <div className="panel-body" ref={bodyRef} onScroll={onBodyScroll}>
-            {phase.output ? (
-              <>
-                <div className="md output">
-                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                    {(phase.actionId === "translate"
-                      ? splitTranslate(phase.output).main
-                      : phase.output) + (phase.streaming ? " ▍" : "")}
-                  </ReactMarkdown>
-                </div>
-                {phase.actionId === "translate" &&
-                  splitTranslate(phase.output).notes &&
-                  !phase.streaming && (
-                    <div className="notes md">
-                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                        {splitTranslate(phase.output).notes}
-                      </ReactMarkdown>
-                    </div>
-                  )}
-              </>
-            ) : phase.error ? null : (
-              <div className="placeholder">正在思考…</div>
-            )}
-            {phase.error && (
-              <div className="error">
-                <p>{phase.error}</p>
-                <button className="retry" onClick={() => runAction(phase.actionId, phase.service)}>
-                  重试
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {!IS_OCR && phase.kind === "extract" && (
-        <div className="panel">
+      {phase.kind === "extract" && (
+        <div
+          className="panel"
+          onMouseDown={IS_OCR ? () => invoke("focus_ocr_window").catch(() => undefined) : undefined}
+        >
           <header className="panel-head">
             <span className="panel-title">
               <span className="ic">
@@ -1126,7 +1251,11 @@ export default function App() {
               >
                 {copiedAll ? CheckIcon : CopyIcon}
               </button>
-              <button className="tool" onClick={guarded(backToBar)} title="收起">
+              <button
+                className="tool"
+                onClick={guarded(() => (IS_OCR ? closeResultWindow() : backToBar()))}
+                title="收起"
+              >
                 {CloseIcon}
               </button>
             </span>
@@ -1177,23 +1306,42 @@ export default function App() {
               </div>
             ))}
           </div>
+          {IS_OCR && (
+            <>
+              <div className="resize-handle" onMouseDown={startResultResize} />
+              <div className="resize-handle-v" onMouseDown={startResultResizeV} />
+            </>
+          )}
         </div>
       )}
 
       {phase.kind === "ocr" && (
-        <div className="panel">
+        <div
+          className="panel"
+          onMouseDown={
+            IS_OCR
+              ? () => invoke("focus_ocr_window").catch(() => undefined)
+              : undefined
+          }
+        >
           <header className={`panel-head ${IS_OCR ? "grab" : ""}`} onMouseDown={IS_OCR ? onOcrHeadDown : undefined}>
             <span className="panel-title">
               <span className="ic">
-                <ScanSearch size={14} strokeWidth={1.75} />
+                {phase.fromOcr ? (
+                  <ScanSearch size={14} strokeWidth={1.75} />
+                ) : (
+                  ICONS[phase.actionId ?? ""]
+                )}
               </span>
-              文本识别
+              {phase.fromOcr ? "文本识别" : (actionById(phase.actionId ?? "")?.label ?? "结果")}
+              {(phase.streaming || doneFlash) && (
+                <span className={`dot ${doneFlash ? "done" : ""}`} title={phase.streaming ? "生成中" : "已完成"} />
+              )}
             </span>
             <span className="panel-tools">
-              {IS_OCR && (
-                <>
-                  <button
-                    className={`tool ${pinErr ? "err" : ""}`}
+              {IS_OCR && phase.fromOcr && (
+                <button
+                  className={`tool ${pinErr ? "err" : ""}`}
                     onClick={guarded(() => {
                       setPinErr(null);
                       invoke("pin_from_ocr").then(
@@ -1213,10 +1361,12 @@ export default function App() {
                           : "钉图：把本次截图钉在识别面板上方"
                     }
                   >
-                    {pinOk ? CheckIcon : <ImagePlus size={13} strokeWidth={1.75} />}
-                  </button>
-                  <button
-                    className={`tool ${ocrPinned ? "active" : ""}`}
+                  {pinOk ? CheckIcon : <ImagePlus size={13} strokeWidth={1.75} />}
+                </button>
+              )}
+              {IS_OCR && (
+                <button
+                  className={`tool ${ocrPinned ? "active" : ""}`}
                     onClick={guarded(() => {
                       const next = !ocrPinnedRef.current;
                       setOcrPinnedState(next);
@@ -1224,9 +1374,8 @@ export default function App() {
                     })}
                     title={ocrPinned ? "取消钉住面板" : "钉住面板（点空白不关闭）"}
                   >
-                    {ocrPinned ? <PinOff size={13} strokeWidth={1.75} /> : <Pin size={13} strokeWidth={1.75} />}
-                  </button>
-                </>
+                  {ocrPinned ? <PinOff size={13} strokeWidth={1.75} /> : <Pin size={13} strokeWidth={1.75} />}
+                </button>
               )}
               <button
                 className="tool"
@@ -1320,7 +1469,6 @@ export default function App() {
                     </button>
                   </div>
                 )}
-                {phase.streaming && <span className="dot" title="生成中" />}
                 </div>
                 {phase.streaming && !ocrStick && (
                   <button
@@ -1406,6 +1554,12 @@ export default function App() {
               </div>
             )}
           </div>
+          {IS_OCR && (
+            <>
+              <div className="resize-handle" onMouseDown={startResultResize} />
+              <div className="resize-handle-v" onMouseDown={startResultResizeV} />
+            </>
+          )}
         </div>
       )}
     </div>

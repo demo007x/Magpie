@@ -89,10 +89,28 @@ pub fn is_dragging() -> bool {
 /// 钉住：OCR 窗口忽略 dismiss / 新选区，就地常驻
 static OCR_PINNED: AtomicBool = AtomicBool::new(false);
 
-/// 待显示的识别结果：文本 + 截图原图（原图供面板「钉图」，所有权随取走移交）
+/// 结果窗口最近一次的逻辑位置：窗口存活期间原地复用（内容刷新不跳位），
+/// 关闭后记住、下次（含重启后）在同一位置出现——「钉在我喜欢的位置」
+static LAST_RESULT_POS: Mutex<Option<(f64, f64)>> = Mutex::new(None);
+
+/// 用户手动设定过尺寸：宽度与高度上限交由用户控制，自动测高退位为「不超上限」
+static RESULT_SIZE_MANUAL: AtomicBool = AtomicBool::new(false);
+static LAST_RESULT_SIZE: Mutex<Option<(f64, f64)>> = Mutex::new(None);
+
+/// 把最近位置镜像写入设置持久化（低频调用：显示定位与关闭时）
+fn persist_result_pos(app: &AppHandle, pos: (f64, f64)) {
+    crate::settings::patch(app, |s| s.result_window_pos = Some([pos.0, pos.1]));
+}
+/// 结果窗口的定位模式：贴着胶囊锚点下方（划词结果）或屏幕居中（识图结果）
+static RESULT_BELOW_ANCHOR: AtomicBool = AtomicBool::new(false);
+
+/// 待显示的结果：文本 + 截图原图（原图供「钉图」）+ 可选的自动执行动作
+/// （划词结果导流：面板弹出后自动跑翻译/解释/总结，run = 动作 id + 服务）
 struct OcrPending {
     text: String,
     image: Option<std::path::PathBuf>,
+    from_ocr: bool,
+    run: Option<(String, Option<String>)>,
 }
 
 static OCR_PENDING: Mutex<Option<OcrPending>> = Mutex::new(None);
@@ -112,14 +130,49 @@ pub fn ocr_window_mode(window: WebviewWindow) -> bool {
     window.label() == "ocr"
 }
 
-/// 取走待显示的识别文本（App 挂载或收到事件时调用，只消费文本，原图留给「钉图」）
+/// 待显示结果视图（序列化给前端）
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingResult {
+    pub text: String,
+    pub from_ocr: bool,
+    pub pinned: bool,
+    pub manual_size: bool,
+    pub run: Option<PendingRun>,
+}
+
+/// 自动执行的动作（id + 可选翻译服务）
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingRun {
+    pub id: String,
+    pub service: Option<String>,
+}
+
+/// 取走待显示结果（App 挂载或收到事件时调用；消费式取走，原图留给「钉图」）
 #[tauri::command]
-pub fn ocr_take_pending() -> Option<String> {
-    OCR_PENDING
-        .lock()
-        .unwrap()
-        .as_ref()
-        .map(|p| p.text.clone())
+pub fn ocr_take_pending() -> Option<PendingResult> {
+    let mut guard = OCR_PENDING.lock().unwrap();
+    let p = guard.take()?;
+    let run = p.run.map(|(id, service)| PendingRun { id, service });
+    let from_ocr = p.from_ocr;
+    // run 不随 take 消费：动作执行期间新事件/挂载仍可拿到（由前端 phase 保证只跑一次）
+    if let Some(r) = &run {
+        let text = p.text.clone();
+        *guard = Some(OcrPending {
+            text,
+            image: p.image,
+            from_ocr,
+            run: Some((r.id.clone(), r.service.clone())),
+        });
+    }
+    Some(PendingResult {
+        text: p.text,
+        from_ocr,
+        pinned: ocr_pinned(),
+        manual_size: RESULT_SIZE_MANUAL.load(Ordering::Relaxed),
+        run,
+    })
 }
 
 /// 取走截图原图（「钉图」动作，所有权移交钉图窗口；取走后面板不再可钉）
@@ -138,7 +191,26 @@ pub fn ocr_set_pending(text: String, image: Option<std::path::PathBuf>) {
             }
         }
     }
-    *pending = Some(OcrPending { text, image });
+    *pending = Some(OcrPending { text, image, from_ocr: true, run: None });
+}
+
+/// 存入划词导流结果（面板弹出后自动执行 run；默认钉住防误触）
+pub fn set_selection_pending(text: String, action_id: String, service: Option<String>) {
+    let mut pending = OCR_PENDING.lock().unwrap();
+    if let Some(old) = pending.take() {
+        if let Some(old_path) = old.image {
+            let _ = std::fs::remove_file(old_path);
+        }
+    }
+    *pending = Some(OcrPending {
+        text,
+        image: None,
+        from_ocr: false,
+        run: Some((action_id, service)),
+    });
+    drop(pending);
+    set_ocr_pinned(true); // 默认钉住：阅读结果时误点不会消失
+    RESULT_BELOW_ANCHOR.store(true, Ordering::Relaxed);
 }
 
 /// OCR 窗口内容就绪：定位到主屏水平居中、上方 1/3 处并显示（不激活本进程）。
@@ -148,25 +220,137 @@ pub fn ocr_window_ready(window: WebviewWindow) {
     if window.label() != "ocr" {
         return;
     }
+    // 定位三级优先级：
+    // 1. 记忆位置（会话镜像 / 上次持久化）——窗口原地复用，「钉在喜欢的位置」
+    // 2. 划词导流：胶囊窗口正下方（左对齐 + 8pt 间隔）
+    // 3. 首次识图：主屏居中偏上
+    // 用胶囊窗口实际矩形（而非光标锚点），屏边翻转定位时也能精确对齐
+    let below_anchor = RESULT_BELOW_ANCHOR.swap(false, Ordering::Relaxed);
+    {
+        let saved = crate::settings::current(&window.app_handle());
+        let mut pos_m = LAST_RESULT_POS.lock().unwrap();
+        if pos_m.is_none() {
+            *pos_m = saved.result_window_pos.map(|p| (p[0], p[1]));
+        }
+        drop(pos_m);
+        if let Some(sz) = saved.result_window_size {
+            RESULT_SIZE_MANUAL.store(true, Ordering::Relaxed);
+            *LAST_RESULT_SIZE.lock().unwrap() = Some((sz[0], sz[1]));
+        }
+    }
+    let last = *LAST_RESULT_POS.lock().unwrap();
+    let (cap_x, cap_y, cap_h) = {
+        let st = window.app_handle().state::<FloatingState>();
+        let r = *st.lock().unwrap();
+        (r.x, r.y, r.h)
+    };
+    let (mw, mh) = window
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| {
+            let sc = m.scale_factor();
+            let sz = m.size();
+            (sz.width as f64 / sc, sz.height as f64 / sc)
+        })
+        .unwrap_or((1920.0, 1080.0));
+    let size_l = window.inner_size().map(|v| LogicalSize::new(v.width as f64 / 2.0, v.height as f64 / 2.0)).unwrap_or(LogicalSize::new(420.0, 340.0));
+    let (wx, wy) = (size_l.width, size_l.height);
+    let (nx, ny) = if let Some((lx, ly)) = last {
+        // 记忆位置：夹取在主屏内（跨屏记忆点落在副屏外时回退主屏）
+        (lx.clamp(0.0, (mw - wx).max(0.0)), ly.clamp(0.0, (mh - wy).max(0.0)))
+    } else if below_anchor {
+        // 胶囊正下方：左对齐、8pt 间隔；下方放不下翻转到胶囊上方
+        let nx = cap_x.clamp(0.0, (mw - wx).max(0.0));
+        let ny_top = cap_y + cap_h + 8.0;
+        let ny = if ny_top + wy > mh {
+            (cap_y - wy - 8.0).max(0.0)
+        } else {
+            ny_top
+        };
+        (nx, ny)
+    } else {
+        ((mw - wx) / 2.0, (mh - wy) / 3.0)
+    };
     if let Ok(Some(m)) = window.primary_monitor() {
         let s = m.scale_factor();
         let pos = m.position();
-        let size = m.size();
-        let (mw, mh) = (size.width as f64 / s, size.height as f64 / s);
-        let size_l = window.inner_size().map(|v| LogicalSize::new(v.width as f64 / s, v.height as f64 / s)).unwrap_or(LogicalSize::new(420.0, 340.0));
-        let (wx, wy) = (size_l.width, size_l.height);
         let _ = window.set_position(LogicalPosition::new(
-            pos.x as f64 / s + (mw - wx) / 2.0,
-            pos.y as f64 / s + (mh - wy) / 3.0,
+            pos.x as f64 / s + nx,
+            pos.y as f64 / s + ny,
         ));
+        persist_result_pos(&window.app_handle(), (nx, ny));
     }
     let _ = show_without_activation(&window);
+}
+
+/// 划词结果导流：结果送入独立结果窗口（复用识图窗口），默认钉住，
+/// 定位在胶囊锚点下方；胶囊随即隐藏，避免误触导致结果消失
+#[tauri::command]
+pub fn push_selection_result(
+    app: AppHandle,
+    text: String,
+    action_id: String,
+    service: Option<String>,
+) {
+    set_selection_pending(text, action_id, service);
+    let _ = app.emit(
+        "selection://captured",
+        serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
+    );
+}
+
+/// 结果窗口获得焦点：面板被点击后调用，使 Esc/⌘P/⌘W 键盘闭环生效
+/// （窗口默认不抢焦点——保持「不打断阅读」的设计，仅在用户主动点击时聚焦）
+#[tauri::command]
+pub fn focus_ocr_window(window: WebviewWindow) {
+    if window.label() == "ocr" {
+        let _ = window.set_focus();
+    }
+}
+
+/// 用户拖拽尺寸手柄：设定窗口尺寸并进入「手动尺寸」模式
+/// （宽度即内容宽度；高度为内容自适应上限，超出滚动）
+#[tauri::command]
+pub fn set_result_window_size(window: WebviewWindow, width: f64, height: f64) {
+    if window.label() != "ocr" {
+        return;
+    }
+    let w = width.clamp(320.0, 560.0);
+    let h = height.clamp(200.0, 800.0);
+    RESULT_SIZE_MANUAL.store(true, Ordering::Relaxed);
+    if let Ok(mut sz) = LAST_RESULT_SIZE.lock() {
+        *sz = Some((w, h));
+    }
+    let _ = window.set_size(LogicalSize::new(w, h));
+}
+
+/// 持久化结果窗口的位置与尺寸（拖拽尺寸结束时调用）
+#[tauri::command]
+pub fn persist_result_window_state(window: WebviewWindow) {
+    if window.label() != "ocr" {
+        return;
+    }
+    let app = window.app_handle();
+    let pos = *LAST_RESULT_POS.lock().unwrap();
+    let size = *LAST_RESULT_SIZE.lock().unwrap();
+    crate::settings::patch(app, |st| {
+        st.result_window_pos = pos.map(|p| [p.0, p.1]);
+        st.result_window_size = size.map(|s| [s.0, s.1]);
+    });
 }
 
 /// 收起 OCR 窗口（解锁/✕）
 #[tauri::command]
 pub fn hide_ocr_window(window: WebviewWindow) {
     if window.label() == "ocr" {
+        let app = window.app_handle();
+        let pos = *LAST_RESULT_POS.lock().unwrap();
+        let size = *LAST_RESULT_SIZE.lock().unwrap();
+        crate::settings::patch(app, |st| {
+            st.result_window_pos = pos.map(|p| [p.0, p.1]);
+            st.result_window_size = size.map(|s| [s.0, s.1]);
+        });
         let _ = window.hide();
     }
 }
@@ -177,9 +361,32 @@ pub fn resize_ocr(window: WebviewWindow, width: f64, height: f64) {
     if window.label() != "ocr" {
         return;
     }
-    let w = width.clamp(280.0, 520.0);
-    let h = height.clamp(80.0, 460.0);
+    let manual = RESULT_SIZE_MANUAL.load(Ordering::Relaxed);
+    let manual_size = *LAST_RESULT_SIZE.lock().unwrap();
+    let (w, h) = if manual {
+        // 用户设定过尺寸：宽度固定，高度自适应内容但不超过用户上限
+        let (mw2, mh2) = manual_size.unwrap_or((420.0, 300.0));
+        (mw2, height.clamp(200.0, mh2.max(200.0)))
+    } else {
+        (width.clamp(320.0, 520.0), height.clamp(200.0, 460.0))
+    };
     let _ = window.set_size(LogicalSize::new(w, h));
+    // 流式增高后底部越出屏幕则整体上移，保证结果始终可见
+    if let (Ok(pos), Ok(Some(m))) = (window.outer_position(), window.current_monitor()) {
+        let scale = window.scale_factor().unwrap_or(2.0);
+        let m_pos = m.position();
+        let m_size = m.size();
+        let mt = m_pos.y as f64 / scale;
+        let mb = (m_pos.y as f64 + m_size.height as f64) / scale;
+        let bottom = pos.y as f64 / scale + h;
+        if bottom > mb - 8.0 {
+            let ny = (mb - 8.0 - h).max(mt);
+            let _ = window.set_position(LogicalPosition::new(pos.x as f64 / scale, ny));
+            if let Ok(mut last) = LAST_RESULT_POS.lock() {
+                *last = Some((pos.x as f64 / scale, ny));
+            }
+        }
+    }
 }
 
 /// OCR 窗口当前是否可见（供 dismiss 判断）
@@ -208,6 +415,10 @@ pub fn ocr_rect_contains(app: &AppHandle, x: f64, y: f64, pad: f64) -> bool {
 /// 未钉住的 OCR 窗口随普通单击/新选区收起（钉住则保留）
 pub fn dismiss_ocr_if_unpinned(app: &AppHandle) {
     if !ocr_pinned() && ocr_visible(app) {
+        let last = *LAST_RESULT_POS.lock().unwrap();
+        if let Some(pos) = last {
+            persist_result_pos(app, pos);
+        }
         if let Some(w) = app.get_webview_window("ocr") {
             let _ = w.hide();
             let _ = app.emit_to("ocr", "selection://dismiss", json!({}));
@@ -295,6 +506,12 @@ pub fn move_ocr(window: WebviewWindow, x: f64, y: f64) {
         return;
     }
     clamp_move_window(&window, x, y);
+    if let Ok(pos) = window.outer_position() {
+        let scale = window.scale_factor().unwrap_or(2.0);
+        if let Ok(mut last) = LAST_RESULT_POS.lock() {
+            *last = Some((pos.x as f64 / scale, pos.y as f64 / scale));
+        }
+    }
 }
 
 /// (x, y)（逻辑坐标）所在显示器的逻辑矩形 `(left, top, right, bottom)`；找不到则回退主显示器
@@ -345,7 +562,9 @@ pub fn show_floating_bar(
 ) -> Result<(), String> {
     let win = window(&app)?;
     let w = width.unwrap_or(DEFAULT_W).max(120.0);
-    let h = height.unwrap_or(DEFAULT_H).max(40.0);
+    // 下限只需兜底极小值：窗口高度必须贴合表面，否则表面下缘落在窗口
+    // 内部、原生圆角裁不到，胶囊下角会变直角
+    let h = height.unwrap_or(DEFAULT_H).max(24.0);
     let (nx, ny) = place(&win, x, y, w, h);
     win.set_size(LogicalSize::new(w, h))
         .map_err(|e| e.to_string())?;
@@ -375,7 +594,7 @@ pub fn resize_floating(app: AppHandle, width: f64, height: f64) -> Result<(), St
     let mut r = state.lock().unwrap();
     let (ax, ay) = (r.anchor_x, r.anchor_y);
     let w = width.max(120.0);
-    let h = height.max(40.0);
+    let h = height.max(24.0);
     let (nx, ny) = place(&win, ax, ay, w, h);
     win.set_size(LogicalSize::new(w, h))
         .map_err(|e| e.to_string())?;

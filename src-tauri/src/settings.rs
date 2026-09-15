@@ -142,6 +142,12 @@ pub struct Settings {
     pub ocr_shortcut: String,
     pub app_blacklist: Vec<String>,
     pub debounce_ms: u64,
+    /// 结果窗口上次位置（逻辑坐标）：关闭后下次（含重启）在同位置出现
+    #[serde(default)]
+    pub result_window_pos: Option<[f64; 2]>,
+    /// 结果窗口用户自定义尺寸：宽度即内容宽度，高度为内容自适应上限
+    #[serde(default)]
+    pub result_window_size: Option<[f64; 2]>,
 }
 
 impl Default for Settings {
@@ -170,6 +176,8 @@ impl Default for Settings {
                 "Passwords".into(),
             ],
             debounce_ms: 200,
+            result_window_pos: None,
+            result_window_size: None,
         }
     }
 }
@@ -242,6 +250,17 @@ pub fn is_blacklisted(app: &AppHandle, proc_path: &str, bundle_id: Option<&str>)
 #[tauri::command]
 pub fn get_settings(state: tauri::State<'_, Mutex<Settings>>) -> Settings {
     state.lock().unwrap().clone()
+}
+
+/// 更新单个设置并落盘（低频调用，如结果窗口位置记忆）
+pub fn patch<F: FnOnce(&mut Settings)>(app: &AppHandle, f: F) {
+    let state = app.state::<Mutex<Settings>>();
+    let mut settings = state.lock().unwrap();
+    f(&mut settings);
+    if let Ok(json) = serde_json::to_string_pretty(&*settings) {
+        let path = app.state::<SettingsPath>().0.clone();
+        let _ = fs::write(&path, json);
+    }
 }
 
 #[tauri::command]

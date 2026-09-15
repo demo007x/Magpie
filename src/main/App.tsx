@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import {
@@ -162,6 +163,12 @@ const TRANSLATE_SERVICES: Array<[string, string, string]> = [
 
 export default function App() {
   const [page, setPage] = useState<Page>("model");
+  // 应用版本：运行时读取 tauri.conf.json 的权威值（不再手写，避免与配置漂移）
+  const [appVersion, setAppVersion] = useState("");
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => undefined);
+  }, []);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saved, setSaved] = useState(false);
   const [granted, setGranted] = useState<boolean | null>(null);
@@ -459,19 +466,19 @@ export default function App() {
           <img className="mark" src={markIcon} alt="拾趣" />
           <div className="brand-text">
             <div className="brand-name">拾趣</div>
-            <div className="brand-ver">0.1.0</div>
+            <div className="brand-ver">{appVersion || "—"}</div>
           </div>
         </div>
         <nav className="nav">
           {(
             [
-              ["model", "模型服务"],
               ["capture", "划词"],
               ["shortcuts", "快捷键"],
-              ["perms", "权限"],
+              ["model", "模型服务"],
               ["translate", "翻译"],
               ["search", "搜索引擎"],
               ["blocklist", "禁用应用"],
+              ["perms", "权限"],
               ["about", "关于"],
             ] as Array<[Page, string]>
           ).map(([id, label]) => (
@@ -1093,7 +1100,7 @@ export default function App() {
               <div className="about-slogan">划词拾趣，阅有所得</div>
               <div className="about-desc">拾趣 Magpie · 划词即懂的阅读伴侣</div>
               <div className="about-motto">得于阅，存于思</div>
-              <div className="about-ver">版本 0.1.0</div>
+              <div className="about-ver">版本 {appVersion || "—"}</div>
             </div>
             <h2 className="sec">应用</h2>
             <div className="card">

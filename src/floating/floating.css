@@ -10,9 +10,14 @@
   --press: rgba(94, 92, 230, 0.13);
   /* 品牌色：靛蓝紫 → 孔雀蓝（鹊羽渐变的两端） */
   --accent: #5e5ce6;
+  --accent-strong: #5e5ce6;
   --accent-soft: rgba(94, 92, 230, 0.1);
+  --accent-active: rgba(94, 92, 230, 0.16);
   --on-accent: #ffffff;
   --err: #e5484d;
+  --pulse: #ee8c2a; /* 呼吸/进行中指示：暖橙（区别品牌靛紫与错误红） */
+  --source: #4a63b0; /* 原文/选中文本：引用蓝，与结果正文区分 */
+  --ok: #2fa14c; /* 完成指示：生成结束瞬间的绿点 */
   --radius: 12px;
   --shadow: 0 1px 2px rgba(24, 24, 46, 0.06), 0 4px 12px rgba(24, 24, 46, 0.08),
     0 16px 40px rgba(24, 24, 46, 0.13);
@@ -20,16 +25,21 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --surf: #1d1d26; /* 微紫调深空底 */
+    --surf: #282828; /* macOS 深色浮层标准灰阶 */
     --text: #ededf4;
     --sec: #9a9aa8;
     --line: rgba(237, 237, 244, 0.1);
     --hov: rgba(125, 122, 255, 0.1);
     --press: rgba(125, 122, 255, 0.16);
     --accent: #8684ff;
+    --accent-strong: #a6a4ff; /* 深底上的选中文字/图标色（对比度 > 7:1） */
     --accent-soft: rgba(134, 132, 255, 0.14);
+    --accent-active: rgba(134, 132, 255, 0.22); /* 选中态背景 tint */
     --on-accent: #ffffff;
     --err: #ff6b61;
+    --pulse: #ff9f0a;
+    --source: #93a7e8;
+    --ok: #32d158;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.32),
       0 16px 40px rgba(0, 0, 0, 0.45);
     }
@@ -60,12 +70,9 @@ body,
   flex-direction: column;
   gap: 6px;
   /* 整个窗口是一块连续表面：胶囊/子菜单/结果面板都是它的区域，永不割裂。
-     padding 是表面到窗口边缘的透明边距（background-clip 排除在着色外）：
-     圆角在窗口内部渲染才有抗锯齿余量，直接顶满窗口边会出毛刺 */
-  padding: 2px;
+     圆角由原生图层裁切（Rust 侧 apply_native_corner_radius），表面必须
+     铺满窗口且 CSS 不画圆角——CSS 圆角压在透明窗口边缘必然出毛刺 */
   background: var(--surf);
-  background-clip: padding-box;
-  border-radius: var(--radius);
   box-shadow: var(--shadow);
   user-select: none;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
@@ -162,7 +169,9 @@ body,
 }
 
 .action:hover {
-  background: var(--accent-soft); /* 蓝 tint hover：给面板一点 accent 气息 */
+  /* hover 只变色不铺底：小面积胶囊上更安静精致（按下时才有 tint 反馈） */
+  background: transparent;
+  color: var(--accent);
 }
 
 .action:hover .ic {
@@ -171,6 +180,57 @@ body,
 
 .action:active {
   background: var(--press);
+}
+
+/* 手动尺寸模式：stage/panel 铺满窗口——
+   宽度即内容折行宽度，高度为面板高度（结果区弹性伸缩，短内容自动收缩） */
+.stage.manual-size {
+  width: 100%;
+  height: 100vh;
+}
+
+.stage.manual-size .panel {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.stage.manual-size .ocr-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.stage.manual-size .ocr-result-scroll {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
+}
+
+.stage.manual-size .ocr-actions {
+  flex: none;
+}
+
+/* 尺寸手柄：右下角斜向（nwse）、底边纵向（ns） */
+.resize-handle {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  z-index: 20;
+}
+
+.resize-handle-v {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 7px;
+  cursor: ns-resize;
+  z-index: 19;
 }
 
 /* ---- 引擎/翻译服务选择行 ---- */
@@ -198,12 +258,13 @@ body,
 }
 
 .chip:hover {
-  background: var(--hov);
+  /* 与主胶囊一致：hover 只变色不铺底 */
+  background: transparent;
+  color: var(--accent);
 }
 
 .chip.primary {
-  background: var(--accent);
-  color: var(--on-accent);
+  color: var(--accent-strong);
   font-weight: 590;
 }
 
@@ -272,8 +333,14 @@ body,
   height: 6px;
   margin-right: 4px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--pulse);
   animation: blink 0.9s ease-in-out infinite;
+}
+
+/* 完成态：橙点变绿停 2s 再消失——给结果一个明确的「完成时刻」 */
+.dot.done {
+  background: var(--ok);
+  animation: none;
 }
 
 @keyframes blink {
@@ -297,8 +364,9 @@ body,
 }
 
 .tool:hover {
-  background: var(--hov);
-  color: var(--text);
+  /* 与全局一致：hover 只变色不铺底 */
+  background: transparent;
+  color: var(--accent);
 }
 
 /* 复制成功反馈：图标短暂变对勾（强调色） */
@@ -402,7 +470,7 @@ body,
   padding: 2px 26px 2px 2px;
   font-size: 12px;
   line-height: 1.65;
-  color: var(--text); /* 识别文字就是结果本体：保持正文色，不能弱化 */
+  color: var(--source); /* 原文用引用蓝：与下方结果正文明确区分 */
   max-height: 63px; /* 约 3 行 */
   overflow: hidden;
   user-select: text;
@@ -443,9 +511,9 @@ body,
 /* OCR 结果区（原文下方）：上边界由 .ocr-source-wrap 的固定线承担，
    此处不再画线（画在滚动区内会随内容滚动） */
 .ocr-result {
-  font-size: 12.5px;
-  line-height: 1.8;
-  letter-spacing: 0.015em;
+  font-size: 13px;
+  line-height: 1.85;
+  letter-spacing: 0.02em;
   user-select: text;
 }
 
@@ -480,6 +548,7 @@ body,
   /* 固定下界线：与原文下缘线同宽，两线之间才是结果滚动区 */
   margin: 8px 0 0;
   padding-top: 5px;
+  padding-bottom: 3px; /* 与面板底边留一点呼吸位 */
   border-top: 0.5px solid var(--line);
 }
 
@@ -496,13 +565,13 @@ body,
 }
 
 .action.active {
-  background: var(--accent);
-  color: var(--on-accent);
+  /* 选中动作：无背景，彩色文字/图标即选中态 */
+  color: var(--accent-strong);
   font-weight: 590;
 }
 
 .action.active .ic {
-  color: var(--on-accent);
+  color: var(--accent-strong);
 }
 
 /* ---- 钉图窗口（pin-*）：无边框置顶图片 ---- */
@@ -553,7 +622,7 @@ body,
   height: 6px;
   margin-left: 4px;
   border-radius: 50%;
-  background: var(--sec);
+  background: var(--pulse);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
@@ -603,26 +672,26 @@ body,
 }
 
 .md p {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
 }
 
 .md h1,
 .md h2,
 .md h3,
 .md h4 {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 640;
-  margin: 12px 0 6px;
+  margin: 14px 0 7px;
 }
 
 .md ul,
 .md ol {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   padding-left: 18px;
 }
 
 .md li {
-  margin: 3px 0;
+  margin: 5px 0;
 }
 
 .md strong {
@@ -700,6 +769,29 @@ body,
 
 .placeholder {
   color: var(--sec);
+  /* 出场淡入 + 呼吸明暗（小元素 opacity 动画安全，不影响窗口合成） */
+  animation:
+    placeholder-in 260ms ease-out,
+    placeholder-breathe 1.8s ease-in-out 260ms infinite;
+}
+
+@keyframes placeholder-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes placeholder-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .error p {

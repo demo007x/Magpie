@@ -51,6 +51,18 @@ jobs:
             src-tauri/target/x86_64-apple-darwin/release/ocr_helper \
             -output src-tauri/target/universal-apple-darwin/release/ocr_helper
 
+      # 从 CHANGELOG.md 提取当前版本的段落作为 Release Note
+      # （发版说明的唯一来源 = CHANGELOG；tag 形如 v0.1.2，对应标题 [0.1.2]）
+      - name: 提取 Release Note
+        id: relnotes
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          {
+            echo "body<<RELEASE_BODY_EOF"
+            python3 -c "import os,re; tag=os.environ['GITHUB_REF_NAME'].lstrip('v'); t=open('CHANGELOG.md',encoding='utf-8').read(); m=re.search(r'## \['+re.escape(tag)+r'\][^\n]*\n(.*?)(?=\n## \[|\Z)',t,re.S); print(m.group(1).strip() if m else '拾趣 Magpie '+tag)"
+            echo "RELEASE_BODY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: 构建（Universal 2）
         uses: tauri-apps/tauri-action@v0
         env:
@@ -59,7 +71,8 @@ jobs:
           args: --target universal-apple-darwin
           # 标签推送时创建 Release 并挂载 dmg/app 产物
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Magpie {0}', github.ref_name) || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('拾趣 Magpie {0}', github.ref_name) || '' }}
+          releaseBody: ${{ steps.relnotes.outputs.body || '' }}
           releaseDraft: false
           prerelease: false
 

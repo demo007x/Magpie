@@ -1,6 +1,6 @@
 [package]
 name = "magpie"
-version = "0.1.0"
+version = "0.1.2"
 description = "拾趣 Magpie · 划词即理解的 AI 阅读伴侣"
 edition = "2021"
 rust-version = "1.80"
