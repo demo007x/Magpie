@@ -57,13 +57,11 @@ pub struct OcrShortcut(pub std::sync::Mutex<Option<Shortcut>>);
 fn start_ocr_flow(app: tauri::AppHandle) {
     eprintln!("[magpie:ocr] 文本识别开始");
     tauri::async_runtime::spawn(async move {
-        let result =
-            tauri::async_runtime::spawn_blocking(ocr::capture_and_recognize).await;
-        match result {
-            Ok(Ok((text, image))) => {
-                eprintln!("[magpie:ocr] 成功：len={}，推送 OCR 窗口", text.len());
-                ocr::push_text_to_ocr_window(&app, text, Some(image));
-            }
+        // 两段式（感知提速）：截图完成立即弹面板（图片预览 + 识别中占位），
+        // 识别完成后仅回填文本——用户感知等待从「全链路之和」降为「识别本身」
+        let image = match tauri::async_runtime::spawn_blocking(ocr::capture_region_to_file).await
+        {
+            Ok(Ok(image)) => image,
             Ok(Err(e)) => {
                 eprintln!("[magpie:ocr] 失败：{e}");
                 // 取消是正常交互，不弹提示；其余失败走全局 toast 窗口
@@ -71,6 +69,26 @@ fn start_ocr_flow(app: tauri::AppHandle) {
                 if e != "截图已取消" {
                     toast::show_toast(&app, &e, "err");
                 }
+                return;
+            }
+            Err(e) => {
+                eprintln!("[magpie:ocr] 任务失败: {e}");
+                return;
+            }
+        };
+        ocr::push_capturing_to_ocr_window(&app, image.clone());
+        eprintln!("[magpie:ocr] 截图完成，面板已推送，开始识别");
+        match tauri::async_runtime::spawn_blocking(move || ocr::recognize_file(&image)).await {
+            Ok(Ok(text)) => {
+                eprintln!("[magpie:ocr] 成功：len={}", text.len());
+                ocr::push_ocr_text(&app, text);
+            }
+            Ok(Err(e)) => {
+                eprintln!("[magpie:ocr] 失败：{e}");
+                if e != "截图已取消" {
+                    toast::show_toast(&app, &e, "err");
+                }
+                ocr::push_ocr_error(&app, e);
             }
             Err(e) => eprintln!("[magpie:ocr] 任务失败: {e}"),
         }
@@ -210,11 +228,14 @@ fn main() {
                     floating::apply_native_corner_radius(&w, 12.0);
                 }
             }
+            // macOS 26 Liquid Glass：挂载成功则前端切换半透明表面
+            let liquid_on = floating::enable_liquid_glass(&app.handle());
+            let _ = app.emit("theme://liquid-glass", liquid_on);
 
             // 划词捕获 → 高层事件（Selection/PlainClick）→ 过滤与转发
             let (tx, rx) = std::sync::mpsc::channel::<capture::CaptureEvent>();
             let debounce_ms = settings::current(&handle).debounce_ms;
-            capture::start(tx, debounce_ms);
+            capture::start(&handle, tx, debounce_ms);
             capture::spawn_worker(handle.clone(), rx);
 
             app.manage(floating::FloatingState::default());
@@ -287,11 +308,14 @@ fn main() {
             floating::ocr_take_pending,
             floating::ocr_window_ready,
             floating::hide_ocr_window,
-            floating::resize_ocr,
+            floating::set_result_menu_grow,
             floating::push_selection_result,
             floating::focus_ocr_window,
             floating::set_result_window_size,
             floating::persist_result_window_state,
+            floating::liquid_glass_enabled,
+            floating::set_liquid_glass,
+            floating::liquid_glass_available,
             floating::move_ocr,
             pin::pin_get_data,
             pin::pin_window_ready,

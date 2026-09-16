@@ -10,6 +10,7 @@ import {
   GripVertical,
   Info,
   Keyboard,
+  Palette,
   Languages,
   Search,
   ShieldCheck,
@@ -27,6 +28,7 @@ type Page =
   | "translate"
   | "search"
   | "blocklist"
+  | "appearance"
   | "about";
 
 const NAV_ICONS: Record<Page, React.ReactNode> = {
@@ -37,6 +39,7 @@ const NAV_ICONS: Record<Page, React.ReactNode> = {
   translate: <Languages size={15} strokeWidth={1.75} />,
   search: <Search size={15} strokeWidth={1.75} />,
   blocklist: <Ban size={15} strokeWidth={1.75} />,
+  appearance: <Palette size={15} strokeWidth={1.75} />,
   about: <Info size={15} strokeWidth={1.75} />,
 };
 
@@ -169,6 +172,29 @@ export default function App() {
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => undefined);
   }, []);
+
+  // 外观：Liquid Glass 可用性 + 开关
+  const [glassAvailable, setGlassAvailable] = useState<boolean | null>(null);
+  const [liquidGlass, setLiquidGlass] = useState<boolean>(true);
+
+  useEffect(() => {
+    invoke<boolean>("liquid_glass_available")
+      .then(setGlassAvailable)
+      .catch(() => setGlassAvailable(false));
+    invoke<{ liquidGlass?: boolean }>("get_settings")
+      .then((s) => setLiquidGlass(s.liquidGlass ?? true))
+      .catch(() => undefined);
+    // Rust 侧开关后广播最新状态，保持设置页与实际生效状态一致
+    const un = listen<boolean>("theme://liquid-glass", (e) => setLiquidGlass(e.payload));
+    return () => {
+      un.then((f) => f()).catch(() => undefined);
+    };
+  }, []);
+
+  const toggleLiquidGlass = (enabled: boolean) => {
+    setLiquidGlass(enabled);
+    invoke("set_liquid_glass", { enabled }).catch(() => undefined);
+  };
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saved, setSaved] = useState(false);
   const [granted, setGranted] = useState<boolean | null>(null);
@@ -478,6 +504,7 @@ export default function App() {
               ["translate", "翻译"],
               ["search", "搜索引擎"],
               ["blocklist", "禁用应用"],
+              ["appearance", "外观"],
               ["perms", "权限"],
               ["about", "关于"],
             ] as Array<[Page, string]>
@@ -1088,6 +1115,33 @@ export default function App() {
           </>
         )}
 
+        {page === "appearance" && (
+          <>
+            <h1>外观</h1>
+            <h2 className="sec">Liquid Glass</h2>
+            <div className="card">
+              <div className="row-between">
+                <div>
+                  <div className="row-title">启用 Liquid Glass 效果</div>
+                  <div className="row-sub">
+                    {glassAvailable === false
+                      ? "当前系统不支持 Liquid Glass（需 macOS 26），窗口保持实心样式。"
+                      : "在 macOS 26 的玻璃材质上渲染半透明浮动窗口（划词条、结果面板、提示），即时生效并持久保存。"}
+                  </div>
+                </div>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={liquidGlass}
+                    disabled={glassAvailable === false}
+                    onChange={(e) => toggleLiquidGlass(e.target.checked)}
+                  />
+                  <span className="knob" />
+                </label>
+              </div>
+            </div>
+          </>
+        )}
         {page === "about" && (
           <>
             <h1>关于</h1>

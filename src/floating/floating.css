@@ -23,6 +23,13 @@
     0 16px 40px rgba(24, 24, 46, 0.13);
 }
 
+/* Liquid Glass（macOS 26 NSGlassEffectView）生效时的半透明表面：
+   玻璃材质会采样背后内容亮度——表面必须自带足够遮盖力，
+   否则深色 UI 叠在亮色网页上会灰糊、文字不可读 */
+html.liquid-glass {
+  --surf: rgba(255, 255, 255, 0.55);
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --surf: #282828; /* macOS 深色浮层标准灰阶 */
@@ -45,6 +52,12 @@
     }
 }
 
+@media (prefers-color-scheme: dark) {
+  html.liquid-glass {
+    --surf: rgba(24, 24, 30, 0.62);
+  }
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -64,8 +77,10 @@ body,
 }
 
 .stage {
-  width: max-content; /* 动作条自适应内容；二级菜单/结果面板见各自规则 */
-  max-width: 640px; /* 上限兜底：仅二级菜单单行展开可能触及；超限时折行 */
+  /* 表面永远等于窗口（CSS 锁定，与 JS 窗口尺寸不可能失步）：
+     动作行贴底、工具栏贴顶、圆角贴边都是结构性保证 */
+  width: 100vw;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -182,36 +197,6 @@ body,
   background: var(--press);
 }
 
-/* 手动尺寸模式：stage/panel 铺满窗口——
-   宽度即内容折行宽度，高度为面板高度（结果区弹性伸缩，短内容自动收缩） */
-.stage.manual-size {
-  width: 100%;
-  height: 100vh;
-}
-
-.stage.manual-size .panel {
-  width: 100%;
-  flex: 1;
-  min-height: 0;
-}
-
-.stage.manual-size .ocr-main {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.stage.manual-size .ocr-result-scroll {
-  flex: 1;
-  max-height: none;
-  min-height: 0;
-}
-
-.stage.manual-size .ocr-actions {
-  flex: none;
-}
-
 /* 尺寸手柄：右下角斜向（nwse）、底边纵向（ns） */
 .resize-handle {
   position: absolute;
@@ -231,6 +216,22 @@ body,
   height: 7px;
   cursor: ns-resize;
   z-index: 19;
+}
+
+/* hover 挂起：胶囊/结果窗口弹出瞬间压在光标下，压制 hover/焦点残留样式，
+   首次移动鼠标后恢复（.suppress-hover 由 JS 在弹出时挂上、mousemove 摘除） */
+.stage.suppress-hover :is(.action, .action:hover, .action:active, .chip, .chip:hover) {
+  color: var(--text);
+  background: transparent;
+}
+
+.stage.suppress-hover .action .ic,
+.stage.suppress-hover .action:hover .ic {
+  color: var(--sec);
+}
+
+.stage.suppress-hover .chip.primary {
+  color: var(--accent-strong);
 }
 
 /* ---- 引擎/翻译服务选择行 ---- */
@@ -287,7 +288,9 @@ body,
 /* ---- 结果面板 ---- */
 .panel {
   position: relative; /* 跟随指示（回到底部按钮）的定位基准 */
-  width: 396px; /* 固定宽：文本折行、超高滚动，窗口不随内容横向膨胀 */
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
   color: var(--text);
@@ -518,10 +521,57 @@ body,
 }
 
 /* OCR 面板动作行：对识别文本执行的 AI 动作（紧凑版胶囊按钮） */
-/* OCR 面板主体：原文区固定，结果区独立滚动（动作行固定在面板底部不参与滚动） */
+/* OCR 面板主体：原文区固定，结果区独立滚动（动作行按常规流排在面板底部） */
 .ocr-main {
-  padding: 8px 13px 0;
+  flex: 1;
+  min-height: 0;
+  /* 动作行在流内占位，底部只留呼吸缝；二级菜单展开时排在动作行下方 */
+  padding: 8px 13px 3px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 底部动作行 = 窗口 footer：恒贴窗口底边。
+   有结果区时由其 flex:1 撑满（margin-top:auto 恒为 0）；
+   无结果区（文本识别未执行动作）时由 margin-top:auto 吸收剩余空间，
+   动作行同样贴底——不会悬在内容下方。position:relative 兼作
+   「回到底部」/二级菜单槽位的定位锚点 */
+.ocr-actions {
+  position: relative;
+  margin-top: auto;
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start; /* 动作按钮靠左（与正文同缘），不居中 */
+  gap: 1px;
+  padding-top: 5px;
+  border-top: 0.5px solid var(--line);
+}
+
+/* 二级菜单槽位：常规流内紧跟动作行（正下方），是 footer 的一部分。
+   margin-top 抵消 flex gap：主按钮与二级菜单的视觉间距 ≈6px，
+   与「二级菜单 → 底边」的 6px 一致（chips 3px 边距 + 面板 3px 底距）。
+   展开瞬间结果区被短暂冻结定高（见 App.tsx 菜单状态机）——
+   生长落地前由 .ocr-main 裁切兜底，落地后解冻，主菜单/内容零位移 */
+.ocr-menu-slot {
+  flex: none;
+  margin-top: -5px;
+}
+
+/* 识别中占位：截图预览（两段式推送，文本回填前显示） */
+.ocr-source-img {
+  display: block;
+  width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+.ocr-source-err {
+  color: #e5484d;
 }
 
 /* 固定上界线：识别原文区下缘——仅在下方有动作结果时显示（无结果时不画线，
@@ -531,25 +581,13 @@ body,
   padding-bottom: 7px;
 }
 
-/* 结果滚动区：夹在原文下缘线与动作行上缘线之间，内容超限仅此区域滚动 */
+/* 结果滚动区：弹性撑满原文区与 footer（动作行）之间的全部空间——
+   footer 恒贴窗口底边；内容超限仅此区域滚动 */
 .ocr-result-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  max-height: 240px;
-  margin-top: 8px;
   overscroll-behavior: contain; /* 滚到边界不外溢，避免带动窗口抖动 */
-}
-
-.ocr-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-start; /* 动作按钮靠左（与正文同缘），不居中 */
-  gap: 1px;
-  /* 固定下界线：与原文下缘线同宽，两线之间才是结果滚动区 */
-  margin: 8px 0 0;
-  padding-top: 5px;
-  padding-bottom: 3px; /* 与面板底边留一点呼吸位 */
-  border-top: 0.5px solid var(--line);
 }
 
 .action.sm {
@@ -636,11 +674,12 @@ body,
   }
 }
 
-/* 流式输出 + 用户上翻阅读时出现的「回到底部」按钮 */
+/* 流式输出 + 用户上翻阅读时出现的「回到底部」按钮：
+   锚在动作行上（position:relative），悬浮于结果区右下、动作行上方 */
 .jump-down {
   position: absolute;
-  right: 12px;
-  bottom: 10px;
+  right: 2px;
+  bottom: calc(100% + 6px);
   width: 22px;
   height: 22px;
   padding: 0;

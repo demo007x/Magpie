@@ -125,7 +125,8 @@ fn ocr_image_file(path: &Path) -> Result<String, String> {
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let request = VNRecognizeTextRequest::init(VNRecognizeTextRequest::alloc());
-            request.setRecognitionLevel(VNRequestTextRecognitionLevel::Accurate);
+            // Fast：屏幕截图文字源清晰，速度比 Accurate 快数倍且质量几乎无感差异
+            request.setRecognitionLevel(VNRequestTextRecognitionLevel::Fast);
 
             let langs = NSArray::from_slice(&[
                 &*NSString::from_str("zh-Hans"),

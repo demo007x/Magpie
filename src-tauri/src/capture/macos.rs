@@ -9,6 +9,8 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use tauri::AppHandle;
+
 use core_foundation::base::TCFType;
 use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
@@ -233,7 +235,7 @@ extern "C" fn tap_callback(
 
 // ---------- 对外接口 ----------
 
-pub fn start(tx: Sender<CaptureEvent>, debounce_ms: u64) {
+pub fn start(app: &AppHandle, tx: Sender<CaptureEvent>, debounce_ms: u64) {
     let (raw_tx, raw_rx) = channel::<MouseEvent>();
     if let Ok(mut g) = EVENT_TX.lock() {
         *g = Some(raw_tx);
@@ -242,9 +244,10 @@ pub fn start(tx: Sender<CaptureEvent>, debounce_ms: u64) {
         .name("capture-tap".into())
         .spawn(tap_thread)
         .expect("spawn capture-tap thread");
+    let detect_app = app.clone();
     std::thread::Builder::new()
         .name("capture-detect".into())
-        .spawn(move || detect_loop(raw_rx, tx, debounce_ms))
+        .spawn(move || detect_loop(&detect_app, raw_rx, tx, debounce_ms))
         .expect("spawn capture-detect thread");
     std::thread::Builder::new()
         .name("capture-heartbeat".into())
@@ -429,7 +432,7 @@ fn tap_mask() -> u64 {
 }
 
 /// 选词判定状态机（docs/03 §3.2）：拖选 > 6px 或双击 → 防抖 → AX 查询；普通单击 → PlainClick
-fn detect_loop(rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: u64) {
+fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: u64) {
     let mut down: Option<(f64, f64)> = None;
     let mut last_up: Option<(Instant, f64, f64)> = None;
     let mut last_emitted: Option<(String, f64, f64)> = None;
@@ -477,7 +480,7 @@ fn detect_loop(rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: 
                     ));
                     // 防抖：等应用完成选区更新
                     std::thread::sleep(Duration::from_millis(debounce_ms));
-                    if let Some((text, pid)) = unsafe { ax_selected_text(ev.x, ev.y) } {
+                    if let Some((text, pid)) = unsafe { ax_selected_text(app, ev.x, ev.y) } {
                         forward_selection(
                             &tx,
                             &mut last_emitted,
@@ -500,7 +503,7 @@ fn detect_loop(rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: 
                                 ev.y,
                                 "Safari 取词成功",
                             );
-                        } else if let Some((text, pid)) = force_fetch_via_copy() {
+                        } else if let Some((text, pid)) = force_fetch_via_copy(app) {
                             forward_selection(
                                 &tx,
                                 &mut last_emitted,
@@ -513,7 +516,7 @@ fn detect_loop(rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: 
                         } else {
                             debug_log("Safari + 兼容模式均未取到（静默，无事件）");
                         }
-                    } else if let Some((text, pid)) = force_fetch_via_copy() {
+                    } else if let Some((text, pid)) = force_fetch_via_copy(app) {
                         forward_selection(
                             &tx,
                             &mut last_emitted,
@@ -597,7 +600,7 @@ fn ax_error_name(rc: i32) -> &'static str {
 }
 
 /// AX 查询选中文本（默认路径），失败时按开关走兼容模式
-unsafe fn ax_selected_text(x: f64, y: f64) -> Option<(String, i32)> {
+unsafe fn ax_selected_text(app_handle: &AppHandle, x: f64, y: f64) -> Option<(String, i32)> {
     let consts = ax_consts();
     let sys = AXUIElementCreateSystemWide();
     if sys.is_null() {
@@ -660,7 +663,7 @@ unsafe fn ax_selected_text(x: f64, y: f64) -> Option<(String, i32)> {
     // 路径⑦：兼容模式（常开兜底）——模拟 ⌘C 读剪贴板，微信/Office 等自绘文本应用的行业通行解
     if out.is_none() {
         debug_log("AX 未取到 → 兼容模式：模拟 ⌘C 取词");
-        if let Some((text, pid)) = force_fetch_via_copy() {
+        if let Some((text, pid)) = force_fetch_via_copy(app_handle) {
             out = Some((text, pid));
         }
     }
@@ -870,21 +873,52 @@ unsafe fn post_cmd_c() {
     CFRelease(up);
 }
 
+// 剪贴板文本读写必须在主线程：来源应用以「懒加载 promise」提供剪贴板数据时，
+// 后台线程读取会触发 AppKit 警告（synchronous promise fulfillment … background
+// thread）并可能不稳定。经 Tauri 主线程派发执行，捕获线程阻塞等待结果。
+fn main_read_text(app: &AppHandle) -> Option<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let sent = app.run_on_main_thread(move || {
+        let text = arboard::Clipboard::new().ok().and_then(|mut b| b.get_text().ok());
+        let _ = tx.send(text);
+    });
+    if sent.is_err() {
+        return None;
+    }
+    rx.recv_timeout(Duration::from_millis(500)).ok().flatten()
+}
+
+fn main_write_text(app: &AppHandle, text: String) {
+    let _ = app.run_on_main_thread(move || {
+        if let Ok(mut b) = arboard::Clipboard::new() {
+            let _ = b.set_text(text);
+        }
+    });
+}
+
+fn main_clear_text(app: &AppHandle) {
+    let _ = app.run_on_main_thread(move || {
+        if let Ok(mut b) = arboard::Clipboard::new() {
+            let _ = b.clear();
+        }
+    });
+}
+
 /// 兼容模式取词：快照剪贴板 → 模拟 ⌘C → 轮询变化 → 取词 → 还原快照。
+/// 剪贴板操作全部走主线程（见上方 helpers）。
 /// 返回 (文本, 聚焦应用 pid（查不到为 0）)；失败 = None（静默）。
-pub fn force_fetch_via_copy() -> Option<(String, i32)> {
+pub fn force_fetch_via_copy(app: &AppHandle) -> Option<(String, i32)> {
     const POLL_TIMES: usize = 60; // 60 × 10ms = 600ms 上限；应用响应后首个周期即命中
     const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
-    let mut board = arboard::Clipboard::new().ok()?;
-    let snapshot = board.get_text().ok();
+    let snapshot = main_read_text(app);
 
     unsafe { post_cmd_c() };
 
     let mut fetched: Option<String> = None;
     for _ in 0..POLL_TIMES {
         std::thread::sleep(POLL_INTERVAL);
-        if let Ok(now) = board.get_text() {
+        if let Some(now) = main_read_text(app) {
             let changed = snapshot.as_ref().map_or(true, |s| *s != now);
             if changed && !now.trim().is_empty() {
                 fetched = Some(now);
@@ -894,9 +928,9 @@ pub fn force_fetch_via_copy() -> Option<(String, i32)> {
     }
 
     // 尽力还原快照（原剪贴板无文本则清空）
-    let _ = match &snapshot {
-        Some(s) => board.set_text(s.clone()),
-        None => board.clear(),
+    match &snapshot {
+        Some(s) => main_write_text(app, s.clone()),
+        None => main_clear_text(app),
     };
 
     let text = fetched?;

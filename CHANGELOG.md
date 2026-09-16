@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-09-16
+
+### Added
+
+- **Footer layout for the result window**: the action row is now a footer pinned to the window bottom edge — stable with or without results, during streaming, and while resizing. The secondary menu (service/engine chips) is part of the footer: expanding it grows the window downward by exactly the menu height and collapsing shrinks it back, while the footer and content never move.
+- **Window dragging from anywhere**: press and hold any blank area of the panel to drag it — works on the very first press, with no prior click needed to focus. Position and size are persisted on release, so the panel reopens where you left it.
+- **Two-phase text recognition**: the result panel pops up immediately after region selection, showing the captured screenshot preview with a "recognizing" placeholder; recognized text fills in automatically when done. Perceived wait drops from the whole pipeline to just the capture.
+- **Live Liquid Glass toggle**: theme settings now offer a single on/off switch (on by default); toggling mounts/unmounts the glass material at runtime with no restart. The tint picker was removed.
+
+### Changed
+
+- **Window size is user-owned**: width and height only change by dragging, clamped to 320–560 × 200–800; content never resizes the window. The one exception: expanding the secondary menu grows the window downward by the menu height, collapsing back on close.
+- **Secondary menu interaction rules**: clicking a menu item keeps the menu open and moves the selected highlight to it (no longer stuck on the default service); the chevron is the only open/close toggle; clicking any primary action button collapses an expanded menu; new results reset both menu and selection.
+- **Faster OCR**: recognition level switched from Accurate to Fast — several times quicker on screenshots with no noticeable quality difference.
+
+### Fixed
+
+- A family of result-panel layout desync bugs: the action row jumping when the secondary menu opened or closed, leftover empty space after collapsing, and the footer floating mid-window. Stale frozen heights now self-clear via resize confirmation, a timeout fallback, and result resets.
+- Secondary menu invisible in fresh OCR results before running any action.
+- First drag gesture on the result window swallowed by app activation; focus is now applied on plain clicks instead of presses.
+- Deprecation warning from an `objc2 msg_send!` call (missing commas between selector arguments); the build is now warning-free.
+
 ## [0.1.2] - 2026-09-14
 
 ### Added

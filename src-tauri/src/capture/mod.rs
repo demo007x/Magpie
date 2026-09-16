@@ -170,6 +170,11 @@ pub fn spawn_worker(app: AppHandle, rx: Receiver<CaptureEvent>) {
                         debug_log("selection 跳过：自身进程");
                         continue;
                     }
+                    // 无效选区：双击空白等场景取不到内容，不弹胶囊
+                    if text.trim().is_empty() {
+                        debug_log("selection 跳过：空选区");
+                        continue;
+                    }
                     if settings::is_blacklisted(&app, &app_path, Some(&bid)) {
                         debug_log(format!(
                             "selection 跳过：黑名单命中 app={app_path} bid={bid}"

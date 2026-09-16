@@ -45,6 +45,142 @@ pub(crate) fn show_without_activation(win: &WebviewWindow) -> Result<(), String>
     Ok(())
 }
 
+/// 弹出层毛玻璃材质：NSVisualEffectView（behind-window 模糊 + 强制 active 态）。
+/// 不用 macOS 26 的 NSGlassEffectView：它在非 key 窗口上会以 inactive 态渲染
+/// （更实更灰、不可控），且悬停会触发交互式外观变化——对「故意不抢焦点」的
+/// HUD 类面板是已知死穴。NSVisualEffectView 有 state 属性可强制激活外观，
+/// 材质跟随系统明暗自适应，外观稳定不受焦点与悬停影响
+#[cfg(target_os = "macos")]
+pub fn apply_liquid_glass(win: &WebviewWindow, radius: f64) -> bool {
+    use objc2::msg_send;
+    use objc2::runtime::{AnyClass, AnyObject};
+    use std::ffi::CString;
+
+    let Ok(cls_name) = CString::new("NSVisualEffectView") else {
+        return false;
+    };
+    let Some(cls) = AnyClass::get(&cls_name) else {
+        return false;
+    };
+    let Ok(ns_window) = win.ns_window() else {
+        return false;
+    };
+    let ns_window = ns_window as *mut AnyObject;
+
+    unsafe {
+        let content: *mut AnyObject = msg_send![ns_window, contentView];
+        if content.is_null() {
+            return false;
+        }
+        let bounds: objc2_foundation::NSRect = msg_send![content, bounds];
+        objc2::rc::autoreleasepool(|_| {
+            let view: *mut AnyObject = msg_send![cls, alloc];
+            let view: *mut AnyObject = msg_send![view, initWithFrame: bounds];
+            if view.is_null() {
+                return false;
+            }
+            // 材质 13 = hudWindow（HUD 风格，跟随系统明暗自适应）；
+            // 混合模式 0 = behindWindow（模糊窗口背后的内容）；
+            // 状态 1 = active：非 key 窗口也强制激活外观（稳定性的关键）
+            let _: () = msg_send![view, setMaterial: 13_isize];
+            let _: () = msg_send![view, setBlendingMode: 0_isize];
+            let _: () = msg_send![view, setState: 1_isize];
+            // 随窗口缩放（width|height sizable = 2|16）+ 原生圆角
+            let _: () = msg_send![view, setAutoresizingMask: 18usize];
+            let _: () = msg_send![view, setWantsLayer: true];
+            let layer: *mut AnyObject = msg_send![view, layer];
+            if !layer.is_null() {
+                let _: () = msg_send![layer, setCornerRadius: radius];
+            }
+            // 插到最底层（webview 之下）
+            let _: () = msg_send![content,
+                addSubview: view, positioned: -1_isize, relativeTo: std::ptr::null_mut::<AnyObject>()];
+            if let Ok(mut v) = GLASS_VIEWS.lock() {
+                v.push(GlassViewPtr(view));
+            }
+            true
+        })
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn apply_liquid_glass(_win: &WebviewWindow, _radius: f64) -> bool {
+    false
+}
+
+static LIQUID_GLASS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 已挂载的 NSGlassEffectView 指针（三个弹出层窗口与进程同生命周期）
+struct GlassViewPtr(*mut objc2::runtime::AnyObject);
+unsafe impl Send for GlassViewPtr {}
+static GLASS_VIEWS: Mutex<Vec<GlassViewPtr>> = Mutex::new(Vec::new());
+
+/// 卸载全部玻璃视图（关闭 Liquid Glass 时调用）
+#[cfg(target_os = "macos")]
+fn disable_liquid_glass_views() {
+    use objc2::msg_send;
+    let views = GLASS_VIEWS.lock().unwrap();
+    unsafe {
+        for g in views.iter() {
+            let _: () = msg_send![g.0, removeFromSuperview];
+        }
+    }
+}
+
+/// 前端初始化时查询 Liquid Glass 是否生效
+#[tauri::command]
+pub fn liquid_glass_enabled() -> bool {
+    LIQUID_GLASS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// 当前系统是否支持玻璃效果（NSVisualEffectView 全平台 macOS 可用）
+#[tauri::command]
+pub fn liquid_glass_available() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        true
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// 开关 Liquid Glass：持久化 → 挂载/卸载玻璃视图 → 广播状态给所有前端
+#[tauri::command]
+pub fn set_liquid_glass(app: AppHandle, enabled: bool) {
+    crate::settings::patch(&app, |st| st.liquid_glass = enabled);
+    let on = if enabled {
+        enable_liquid_glass(&app)
+    } else {
+        #[cfg(target_os = "macos")]
+        disable_liquid_glass_views();
+        GLASS_VIEWS.lock().unwrap().clear();
+        LIQUID_GLASS.store(false, std::sync::atomic::Ordering::Relaxed);
+        false
+    };
+    let _ = app.emit("theme://liquid-glass", on);
+}
+
+/// 给所有弹出层窗口挂 Liquid Glass；任一成功即返回 true。
+/// 受设置 liquid_glass 控制（默认启用）；已挂载时直接返回，避免重复叠层
+pub fn enable_liquid_glass(app: &AppHandle) -> bool {
+    if LIQUID_GLASS.load(std::sync::atomic::Ordering::Relaxed) {
+        return true;
+    }
+    if !crate::settings::current(app).liquid_glass {
+        return false;
+    }
+    let mut on = false;
+    for label in ["floating", "ocr", "toast"] {
+        if let Some(w) = app.get_webview_window(label) {
+            on |= apply_liquid_glass(&w, 12.0);
+        }
+    }
+    LIQUID_GLASS.store(on, std::sync::atomic::Ordering::Relaxed);
+    on
+}
+
 /// 原生圆角裁切：给 NSWindow contentView 的图层设 cornerRadius + masksToBounds。
 /// 透明窗口上 CSS 圆角压在窗口边界，WebKit 透明合成层不做边缘抗锯齿，必然出毛刺；
 /// 原生图层裁切由系统合成器完成，圆弧与原生 App 同级平滑。（社区共识方案）
@@ -93,9 +229,57 @@ static OCR_PINNED: AtomicBool = AtomicBool::new(false);
 /// 关闭后记住、下次（含重启后）在同一位置出现——「钉在我喜欢的位置」
 static LAST_RESULT_POS: Mutex<Option<(f64, f64)>> = Mutex::new(None);
 
-/// 用户手动设定过尺寸：宽度与高度上限交由用户控制，自动测高退位为「不超上限」
-static RESULT_SIZE_MANUAL: AtomicBool = AtomicBool::new(false);
+/// 结果窗口用户尺寸（逻辑坐标）：宽与高都只由用户拖动改变、内容不参与，
+/// 拖动钳制在默认 min/max 内；None = 尚未确定（显示时回退窗口当前尺寸）
 static LAST_RESULT_SIZE: Mutex<Option<(f64, f64)>> = Mutex::new(None);
+
+/// 二级菜单展开的生长高度（逻辑坐标）：唯一的内容相关尺寸例外——
+/// 展开时窗口向下长出菜单高度、收起即收回，主菜单（动作行）像素不动
+static RESULT_MENU_GROW: Mutex<f64> = Mutex::new(0.0);
+
+/// 结果窗口默认尺寸上下限（逻辑坐标）：用户怎么拖都不会超出
+pub const RESULT_MIN_W: f64 = 320.0;
+pub const RESULT_MAX_W: f64 = 560.0;
+pub const RESULT_MIN_H: f64 = 200.0;
+pub const RESULT_MAX_H: f64 = 800.0;
+/// 菜单生长的硬上限（防止极端长菜单把窗口顶出屏幕）
+pub const RESULT_MENU_MAX: f64 = 440.0;
+
+/// 结果窗口尺寸落位：用户尺寸 + 当前菜单生长高度，钳制后应用。
+/// 窗口尺寸只有两个来源——用户拖动、菜单展开生长；内容永不改变窗口尺寸
+fn apply_result_window_size(win: &WebviewWindow) {
+    let scale = win.scale_factor().unwrap_or(2.0);
+    let (uw, uh) = match *LAST_RESULT_SIZE.lock().unwrap() {
+        Some(sz) => sz,
+        None => win
+            .inner_size()
+            .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+            .unwrap_or((420.0, 340.0)),
+    };
+    let grow = *RESULT_MENU_GROW.lock().unwrap();
+    let w = uw.clamp(RESULT_MIN_W, RESULT_MAX_W);
+    let h = (uh + grow).clamp(RESULT_MIN_H, RESULT_MAX_H + RESULT_MENU_MAX);
+    let _ = win.set_size(LogicalSize::new(w, h));
+    #[cfg(debug_assertions)]
+    debug_log(&format!(
+        "[menu-grow] rust: user={uw}x{uh} grow={grow} -> set_size {w}x{h}"
+    ));
+    // 菜单生长后底部越出屏幕则整体上移，保证生长部分可见
+    if let (Ok(pos), Ok(Some(m))) = (win.outer_position(), win.current_monitor()) {
+        let m_pos = m.position();
+        let m_size = m.size();
+        let mt = m_pos.y as f64 / scale;
+        let mb = (m_pos.y as f64 + m_size.height as f64) / scale;
+        let bottom = pos.y as f64 / scale + h;
+        if bottom > mb - 8.0 {
+            let ny = (mb - 8.0 - h).max(mt);
+            let _ = win.set_position(LogicalPosition::new(pos.x as f64 / scale, ny));
+            if let Ok(mut last) = LAST_RESULT_POS.lock() {
+                *last = Some((pos.x as f64 / scale, ny));
+            }
+        }
+    }
+}
 
 /// 把最近位置镜像写入设置持久化（低频调用：显示定位与关闭时）
 fn persist_result_pos(app: &AppHandle, pos: (f64, f64)) {
@@ -137,7 +321,10 @@ pub struct PendingResult {
     pub text: String,
     pub from_ocr: bool,
     pub pinned: bool,
-    pub manual_size: bool,
+    /// 是否携带截图（文本识别流程：面板先以图片预览占位）
+    pub has_image: bool,
+    /// 截图路径（前端 convertFileSrc 预览用；不参与钉图所有权移交）
+    pub image: Option<String>,
     pub run: Option<PendingRun>,
 }
 
@@ -154,6 +341,12 @@ pub struct PendingRun {
 pub fn ocr_take_pending() -> Option<PendingResult> {
     let mut guard = OCR_PENDING.lock().unwrap();
     let p = guard.take()?;
+    // 截图路径先取（下面重插入 pending 时 image 所有权会被移走）
+    let has_image = p.image.is_some();
+    let image_path = p
+        .image
+        .as_deref()
+        .map(|path| path.to_string_lossy().into_owned());
     let run = p.run.map(|(id, service)| PendingRun { id, service });
     let from_ocr = p.from_ocr;
     // run 不随 take 消费：动作执行期间新事件/挂载仍可拿到（由前端 phase 保证只跑一次）
@@ -167,10 +360,11 @@ pub fn ocr_take_pending() -> Option<PendingResult> {
         });
     }
     Some(PendingResult {
+        has_image,
+        image: image_path,
         text: p.text,
         from_ocr,
         pinned: ocr_pinned(),
-        manual_size: RESULT_SIZE_MANUAL.load(Ordering::Relaxed),
         run,
     })
 }
@@ -213,6 +407,13 @@ pub fn set_selection_pending(text: String, action_id: String, service: Option<St
     RESULT_BELOW_ANCHOR.store(true, Ordering::Relaxed);
 }
 
+/// 更新待显示结果的识别文本（两段式推送：先图后文的第二段）
+pub fn ocr_set_pending_text(text: String) {
+    if let Some(p) = OCR_PENDING.lock().unwrap().as_mut() {
+        p.text = text;
+    }
+}
+
 /// OCR 窗口内容就绪：定位到主屏水平居中、上方 1/3 处并显示（不激活本进程）。
 /// 顺序保证"先渲染后显示"——用户看不到白屏/动画。
 #[tauri::command]
@@ -233,9 +434,25 @@ pub fn ocr_window_ready(window: WebviewWindow) {
             *pos_m = saved.result_window_pos.map(|p| (p[0], p[1]));
         }
         drop(pos_m);
-        if let Some(sz) = saved.result_window_size {
-            RESULT_SIZE_MANUAL.store(true, Ordering::Relaxed);
-            *LAST_RESULT_SIZE.lock().unwrap() = Some((sz[0], sz[1]));
+        // 用户尺寸：会话内拖拽过的优先，其次持久化值；
+        // 都没有则把当前（配置默认）尺寸确立为用户尺寸。
+        // 有值时先落到窗口上再定位显示（窗口创建尺寸是配置默认值）
+        let mut user = *LAST_RESULT_SIZE.lock().unwrap();
+        if user.is_none() {
+            user = saved.result_window_size.map(|s| (s[0], s[1]));
+        }
+        if user.is_none() {
+            let scale = window.scale_factor().unwrap_or(2.0);
+            user = window
+                .inner_size()
+                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+                .ok();
+        }
+        if let Some((uw, uh)) = user {
+            let w = uw.clamp(RESULT_MIN_W, RESULT_MAX_W);
+            let h = uh.clamp(RESULT_MIN_H, RESULT_MAX_H);
+            *LAST_RESULT_SIZE.lock().unwrap() = Some((w, h));
+            let _ = window.set_size(LogicalSize::new(w, h));
         }
     }
     let last = *LAST_RESULT_POS.lock().unwrap();
@@ -309,20 +526,34 @@ pub fn focus_ocr_window(window: WebviewWindow) {
     }
 }
 
-/// 用户拖拽尺寸手柄：设定窗口尺寸并进入「手动尺寸」模式
-/// （宽度即内容宽度；高度为内容自适应上限，超出滚动）
+/// 用户拖拽尺寸手柄：更新用户尺寸并落位。
+/// 宽高只由拖动改变，钳制在默认 min/max 内；若二级菜单正展开，
+/// 拖到的总高度扣除菜单生长部分后才是「用户高度」
 #[tauri::command]
 pub fn set_result_window_size(window: WebviewWindow, width: f64, height: f64) {
     if window.label() != "ocr" {
         return;
     }
-    let w = width.clamp(320.0, 560.0);
-    let h = height.clamp(200.0, 800.0);
-    RESULT_SIZE_MANUAL.store(true, Ordering::Relaxed);
+    let grow = *RESULT_MENU_GROW.lock().unwrap();
+    let w = width.clamp(RESULT_MIN_W, RESULT_MAX_W);
+    let h = (height - grow).clamp(RESULT_MIN_H, RESULT_MAX_H);
     if let Ok(mut sz) = LAST_RESULT_SIZE.lock() {
         *sz = Some((w, h));
     }
-    let _ = window.set_size(LogicalSize::new(w, h));
+    apply_result_window_size(&window);
+}
+
+/// 二级菜单展开/收起：设置菜单生长高度（0 = 收起）并落位。
+/// 窗口向下生长/收回恰好菜单高度——主菜单（动作行）随窗口底边固定，像素不动
+#[tauri::command]
+pub fn set_result_menu_grow(window: WebviewWindow, grow: f64) {
+    if window.label() != "ocr" {
+        return;
+    }
+    *RESULT_MENU_GROW.lock().unwrap() = grow.clamp(0.0, RESULT_MENU_MAX);
+    apply_result_window_size(&window);
+    #[cfg(debug_assertions)]
+    debug_log(&format!("[menu-grow] rust: 收到 grow={grow}"));
 }
 
 /// 持久化结果窗口的位置与尺寸（拖拽尺寸结束时调用）
@@ -352,40 +583,6 @@ pub fn hide_ocr_window(window: WebviewWindow) {
             st.result_window_size = size.map(|s| [s.0, s.1]);
         });
         let _ = window.hide();
-    }
-}
-
-/// 内容测量 → 缩放 OCR 窗口（窗口尺寸贴合面板内容，毛玻璃材质填满窗口即面板）
-#[tauri::command]
-pub fn resize_ocr(window: WebviewWindow, width: f64, height: f64) {
-    if window.label() != "ocr" {
-        return;
-    }
-    let manual = RESULT_SIZE_MANUAL.load(Ordering::Relaxed);
-    let manual_size = *LAST_RESULT_SIZE.lock().unwrap();
-    let (w, h) = if manual {
-        // 用户设定过尺寸：宽度固定，高度自适应内容但不超过用户上限
-        let (mw2, mh2) = manual_size.unwrap_or((420.0, 300.0));
-        (mw2, height.clamp(200.0, mh2.max(200.0)))
-    } else {
-        (width.clamp(320.0, 520.0), height.clamp(200.0, 460.0))
-    };
-    let _ = window.set_size(LogicalSize::new(w, h));
-    // 流式增高后底部越出屏幕则整体上移，保证结果始终可见
-    if let (Ok(pos), Ok(Some(m))) = (window.outer_position(), window.current_monitor()) {
-        let scale = window.scale_factor().unwrap_or(2.0);
-        let m_pos = m.position();
-        let m_size = m.size();
-        let mt = m_pos.y as f64 / scale;
-        let mb = (m_pos.y as f64 + m_size.height as f64) / scale;
-        let bottom = pos.y as f64 / scale + h;
-        if bottom > mb - 8.0 {
-            let ny = (mb - 8.0 - h).max(mt);
-            let _ = window.set_position(LogicalPosition::new(pos.x as f64 / scale, ny));
-            if let Ok(mut last) = LAST_RESULT_POS.lock() {
-                *last = Some((pos.x as f64 / scale, ny));
-            }
-        }
     }
 }
 

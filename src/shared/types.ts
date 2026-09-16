@@ -61,6 +61,12 @@ export interface Settings {
   ocrShortcut: string;
   appBlacklist: string[];
   debounceMs: number;
+  /** 结果窗口位置记忆（逻辑坐标） */
+  resultWindowPos?: [number, number] | null;
+  /** 结果窗口尺寸记忆 */
+  resultWindowSize?: [number, number] | null;
+  /** Liquid Glass 效果（macOS 26 玻璃材质）：默认启用 */
+  liquidGlass?: boolean;
 }
 
 export interface ChatMessage {

@@ -9,21 +9,6 @@ use tauri::Emitter;
 
 use crate::capture::CaptureMuteGuard;
 
-/// 框选截图 → OCR 识别，返回（文本, 截图临时文件）。
-/// 截图文件不删除：OCR 面板的「钉图」动作要用它钉回屏幕，
-/// 所有权随 pending 移交，钉图关闭或被新识别替换时才清理。
-/// 阻塞调用（在 spawn_blocking 线程执行）。
-pub fn capture_and_recognize() -> Result<(String, PathBuf), String> {
-    let image = capture_region_to_file()?;
-    match recognize_file(&image) {
-        Ok(text) => Ok((text, image)),
-        Err(e) => {
-            let _ = std::fs::remove_file(&image);
-            Err(e)
-        }
-    }
-}
-
 /// 交互式框选屏幕区域 → PNG 临时文件。阻塞调用（在 spawn_blocking 线程执行）。
 /// 取消 / 权限缺失 = Err。
 pub fn capture_region_to_file() -> Result<std::path::PathBuf, String> {
@@ -101,16 +86,40 @@ pub fn recognize_file(path: &Path) -> Result<String, String> {
     Ok(text)
 }
 
-/// 把识别文本推给 OCR 独立窗口显示。
-/// 文本与截图原图经 pending 存取，事件仅作唤醒——用全局广播而不是 emit_to：
-/// JS listen() 注册的是 Any 目标，emit_to 的按窗口过滤不匹配 Any 监听器
-/// （此前识别面板因此永不出现）。其他窗口收到后按 app=="ocr" 忽略。
+/// 推送「截图完成、识别中」状态给 OCR 独立窗口：面板立即弹出，
+/// 原文区显示截图预览（文本为空 = 前端进入识别中占位态）。
+/// 事件用全局广播而不是 emit_to：JS listen() 注册的是 Any 目标，
+/// emit_to 的按窗口过滤不匹配 Any 监听器（此前识别面板因此永不出现）。
+/// 其他窗口收到后按 app=="ocr" 忽略。
+pub fn push_capturing_to_ocr_window(app: &tauri::AppHandle, image: PathBuf) {
+    super::floating::ocr_set_pending(String::new(), Some(image));
+    let _ = app.emit(
+        "selection://captured",
+        serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
+    );
+}
+
+/// 把识别文本推给 OCR 独立窗口显示（钉图→识别文字流程：文本就绪、无图）。
+/// 事件用全局广播而不是 emit_to：JS listen() 注册的是 Any 目标，
+/// emit_to 的按窗口过滤不匹配 Any 监听器（此前识别面板因此永不出现）。
+/// 其他窗口收到后按 app=="ocr" 忽略。
 pub fn push_text_to_ocr_window(app: &tauri::AppHandle, text: String, image: Option<PathBuf>) {
     super::floating::ocr_set_pending(text, image);
     let _ = app.emit(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
     );
+}
+
+/// 识别完成：回填文本（同时更新 pending，供后续取走路径拿到完整数据）
+pub fn push_ocr_text(app: &tauri::AppHandle, text: String) {
+    super::floating::ocr_set_pending_text(text.clone());
+    let _ = app.emit("ocr://update", serde_json::json!({ "text": text }));
+}
+
+/// 识别失败：面板原文区展示原因（全局 toast 由调用方负责）
+pub fn push_ocr_error(app: &tauri::AppHandle, reason: String) {
+    let _ = app.emit("ocr://update", serde_json::json!({ "error": reason }));
 }
 
 fn helper_path() -> Result<std::path::PathBuf, String> {

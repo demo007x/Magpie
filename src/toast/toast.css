@@ -6,12 +6,23 @@
   --surf: #ffffff;
 }
 
+/* Liquid Glass（macOS 26）生效时：半透明表面 */
+html.liquid-glass {
+  --surf: rgba(255, 255, 255, 0.42);
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --text: #ededf4;
     --accent: #8684ff;
     --err: #ff6b61;
     --surf: #282828;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  html.liquid-glass {
+    --surf: rgba(22, 22, 28, 0.3);
   }
 }
 

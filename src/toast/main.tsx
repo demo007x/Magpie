@@ -5,6 +5,7 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, Info } from "lucide-react";
 import "./toast.css";
 
@@ -22,6 +23,14 @@ function ToastApp() {
   useEffect(() => {
     window.__toastShow = (message: string, kind: Kind = "info") =>
       setToast({ message, kind });
+    // Liquid Glass（macOS 26）：生效则表面切半透明让玻璃透出；
+    // 监听设置页开关的广播，运行时切换即时生效
+    const applyGlass = (on: boolean) =>
+      document.documentElement.classList.toggle("liquid-glass", on);
+    invoke<boolean>("liquid_glass_enabled")
+      .then(applyGlass)
+      .catch(() => undefined);
+    listen<boolean>("theme://liquid-glass", (e) => applyGlass(e.payload)).catch(() => undefined);
   }, []);
 
   // 内容测量 → 缩放窗口（材质层由原生填满窗口，窗口尺寸即面板尺寸）

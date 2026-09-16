@@ -148,6 +148,13 @@ pub struct Settings {
     /// 结果窗口用户自定义尺寸：宽度即内容宽度，高度为内容自适应上限
     #[serde(default)]
     pub result_window_size: Option<[f64; 2]>,
+    /// Liquid Glass 效果（macOS 26 玻璃材质）：默认启用
+    #[serde(default = "default_true")]
+    pub liquid_glass: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -178,6 +185,7 @@ impl Default for Settings {
             debounce_ms: 200,
             result_window_pos: None,
             result_window_size: None,
+            liquid_glass: true,
         }
     }
 }
