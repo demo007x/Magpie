@@ -112,6 +112,16 @@ fn create_pin_window(
             cleanup(&label);
             e.to_string()
         })?;
+    // 运行时建窗赶不上启动时的外观批量应用：按当前设置补原生主题
+    // （CSS 变量由前端 get_settings 初始化时自行挂 class，无需在此处理）
+    let native = match crate::settings::current(app).appearance.as_str() {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    };
+    if let Some(win) = app.get_webview_window(&label) {
+        let _ = win.set_theme(native);
+    }
     Ok(())
 }
 
@@ -181,25 +191,44 @@ pub fn pin_window_ready(window: WebviewWindow, width: f64, height: f64) -> Resul
     crate::floating::show_without_activation(&window)
 }
 
-/// 滚轮缩放后的窗口尺寸同步（前端传逻辑尺寸；左上角保持、屏内钳制）
+/// 滚轮缩放后的窗口尺寸同步（前端传逻辑尺寸 + 光标锚点比例）。
+/// 以光标下的点为锚缩放（fx/fy = 光标在窗口内的相对位置）：光标指着哪，
+/// 哪一点保持不动——图不会「向右下跑」；之后仍做屏内钳制
 #[tauri::command]
-pub fn resize_pin(window: WebviewWindow, width: f64, height: f64) -> Result<(), String> {
+pub fn resize_pin(
+    window: WebviewWindow,
+    width: f64,
+    height: f64,
+    fx: Option<f64>,
+    fy: Option<f64>,
+) -> Result<(), String> {
     if !window.label().starts_with("pin-") {
         return Ok(());
     }
     let w = width.max(48.0);
     let h = height.max(36.0);
+    let scale = window.scale_factor().unwrap_or(2.0);
+    // 旧尺寸（物理像素换算逻辑）：用于锚点补偿计算，需在 set_size 前读取
+    let (old_w, old_h) = window
+        .inner_size()
+        .ok()
+        .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+        .unwrap_or((w, h));
     window.set_size(LogicalSize::new(w, h)).map_err(|e| e.to_string())?;
     if let Ok(pos) = window.outer_position() {
-        let scale = window.scale_factor().unwrap_or(2.0);
-        let (cx, cy) = (pos.x as f64 / scale + w / 2.0, pos.y as f64 / scale + h / 2.0);
-        let (m_l, m_t, m_r, m_b) = crate::floating::monitor_rect(&window, cx, cy);
-        let nx = pos.x as f64 / scale;
-        let ny = pos.y as f64 / scale;
-        let cx2 = nx.clamp(m_l, (m_r - w).max(m_l));
-        let cy2 = ny.clamp(m_t, (m_b - h).max(m_t));
-        if (cx2 - nx).abs() > 0.5 || (cy2 - ny).abs() > 0.5 {
-            let _ = window.set_position(tauri::LogicalPosition::new(cx2, cy2));
+        let (m_l, m_t, m_r, m_b) = {
+            let cx = pos.x as f64 / scale + w / 2.0;
+            let cy = pos.y as f64 / scale + h / 2.0;
+            crate::floating::monitor_rect(&window, cx, cy)
+        };
+        let fx = fx.unwrap_or(0.0).clamp(0.0, 1.0);
+        let fy = fy.unwrap_or(0.0).clamp(0.0, 1.0);
+        let mut nx = pos.x as f64 / scale + fx * (old_w - w);
+        let mut ny = pos.y as f64 / scale + fy * (old_h - h);
+        nx = nx.clamp(m_l, (m_r - w).max(m_l));
+        ny = ny.clamp(m_t, (m_b - h).max(m_t));
+        if (nx - pos.x as f64 / scale).abs() > 0.5 || (ny - pos.y as f64 / scale).abs() > 0.5 {
+            let _ = window.set_position(tauri::LogicalPosition::new(nx, ny));
         }
     }
     Ok(())

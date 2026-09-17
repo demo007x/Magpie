@@ -15,6 +15,7 @@ import {
   Search,
   ShieldCheck,
   TextCursorInput,
+  Trash2,
 } from "lucide-react";
 import { ACTIONS } from "../shared/actions";
 import markIcon from "./assets/mark.svg";
@@ -148,6 +149,9 @@ const ACTION_DESC: Record<string, string> = {
 
 const isAiAction = (id: string) => ACTIONS.find((a) => a.id === id)?.kind !== "local";
 
+// 系统内置引擎（与 Rust default_engines 同名单）：不可删除，只可停用/排序
+const BUILTIN_ENGINES = new Set(["百度AI", "百度", "GoogleAI", "Google", "必应", "GitHub"]);
+
 const ENGINE_PRESETS: Array<[string, string]> = [
   ["百度AI", "https://wenxin.baidu.com/search?word={q}"],
   ["百度", "https://www.baidu.com/s?wd={q}"],
@@ -176,24 +180,47 @@ export default function App() {
   // 外观：Liquid Glass 可用性 + 开关
   const [glassAvailable, setGlassAvailable] = useState<boolean | null>(null);
   const [liquidGlass, setLiquidGlass] = useState<boolean>(true);
+  // 应用外观（auto=跟随系统 | light | dark）：主窗口自身也要应用
+  const [appearance, setAppearance] = useState<string>("auto");
+
+  const applyAppearance = (t: string) => {
+    const el = document.documentElement;
+    el.classList.toggle("theme-light", t === "light");
+    el.classList.toggle("theme-dark", t === "dark");
+  };
 
   useEffect(() => {
     invoke<boolean>("liquid_glass_available")
       .then(setGlassAvailable)
       .catch(() => setGlassAvailable(false));
-    invoke<{ liquidGlass?: boolean }>("get_settings")
-      .then((s) => setLiquidGlass(s.liquidGlass ?? true))
+    invoke<{ liquidGlass?: boolean; appearance?: string }>("get_settings")
+      .then((s) => {
+        setLiquidGlass(s.liquidGlass ?? true);
+        setAppearance(s.appearance ?? "auto");
+        applyAppearance(s.appearance ?? "auto");
+      })
       .catch(() => undefined);
     // Rust 侧开关后广播最新状态，保持设置页与实际生效状态一致
-    const un = listen<boolean>("theme://liquid-glass", (e) => setLiquidGlass(e.payload));
+    const unGlass = listen<boolean>("theme://liquid-glass", (e) => setLiquidGlass(e.payload));
+    const unTheme = listen<string>("theme://appearance", (e) => {
+      setAppearance(e.payload);
+      applyAppearance(e.payload);
+    });
     return () => {
-      un.then((f) => f()).catch(() => undefined);
+      unGlass.then((f) => f()).catch(() => undefined);
+      unTheme.then((f) => f()).catch(() => undefined);
     };
   }, []);
 
   const toggleLiquidGlass = (enabled: boolean) => {
     setLiquidGlass(enabled);
     invoke("set_liquid_glass", { enabled }).catch(() => undefined);
+  };
+
+  const setAppearanceMode = (mode: string) => {
+    setAppearance(mode); // 主窗口即时反馈（Rust 广播回来值相同，幂等）
+    applyAppearance(mode);
+    invoke("set_appearance", { theme: mode }).catch(() => undefined);
   };
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saved, setSaved] = useState(false);
@@ -406,6 +433,24 @@ export default function App() {
     if (!settings) return;
     if (settings.searchEngines.some((e) => e.name === name)) return;
     patchEngines([...settings.searchEngines, { name, url, enabled: true }]);
+  };
+
+  const removeEngine = (idx: number) => {
+    if (!settings) return;
+    const eng = settings.searchEngines[idx];
+    if (BUILTIN_ENGINES.has(eng.name)) return; // 内置引擎不可删（按钮也不渲染，双保险）
+    // 至少保留一个启用的引擎，保证「搜索」按钮始终可用（与停用守卫一致）
+    if (eng.enabled && settings.searchEngines.filter((x) => x.enabled).length <= 1) {
+      alert("至少保留一个启用的搜索引擎");
+      return;
+    }
+    const rest = settings.searchEngines.filter((_, i) => i !== idx);
+    // 删除的是默认引擎：默认顺延到首个启用引擎
+    const defaultSearch =
+      settings.defaultSearch === eng.name
+        ? (rest.find((x) => x.enabled)?.name ?? "")
+        : settings.defaultSearch;
+    patch({ searchEngines: rest, defaultSearch });
   };
 
   const onEngineGripDown = (e: ReactMouseEvent, id: string) => {
@@ -1030,6 +1075,16 @@ export default function App() {
                     />
                     <span className="knob" />
                   </label>
+                  {/* 仅自定义引擎可删除；内置引擎为系统默认，只可停用/排序 */}
+                  {!BUILTIN_ENGINES.has(eng.name) && (
+                    <button
+                      className="eng-del"
+                      title="删除该引擎"
+                      onClick={() => removeEngine(idx)}
+                    >
+                      <Trash2 size={13} strokeWidth={1.75} />
+                    </button>
+                  )}
                 </div>
               ))}
 
@@ -1118,6 +1173,32 @@ export default function App() {
         {page === "appearance" && (
           <>
             <h1>外观</h1>
+            <h2 className="sec">主题</h2>
+            <div className="card">
+              <div className="row-between">
+                <div>
+                  <div className="row-title">应用外观</div>
+                  <div className="row-sub">
+                    选择亮色或暗色，或跟随系统外观自动切换。即时生效，对划词条、识别面板、提示全部生效。
+                  </div>
+                </div>
+                <div className="seg" role="radiogroup" aria-label="应用外观">
+                  {[
+                    ["auto", "跟随系统"],
+                    ["light", "亮色"],
+                    ["dark", "暗色"],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      className={appearance === value ? "on" : ""}
+                      onClick={() => setAppearanceMode(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
             <h2 className="sec">Liquid Glass</h2>
             <div className="card">
               <div className="row-between">

@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-09-17
+
+### Added
+
+- **Appearance setting**: the appearance page now offers a Light / Dark / Follow-system theme switch. Applies instantly to every surface — main window, selection capsule, result panel, pinned images, and toasts — on both the CSS variable layer and the native window theme (NSAppearance), so glass materials stay in sync. Follow-system keeps the previous behavior untouched.
+- **Editable OCR source text**: the recognized text in the result panel is now editable (plain-text only). OCR mistakes can be corrected in place before running follow-up actions like translate, explain, or search — a one-character fix instead of a re-screenshot. Caret position survives re-renders; new recognitions reset the content.
+- **Two-mode source area in the result panel**: before any action runs, the source text fills the panel (scrollable) so large captures are readable without a wall of blank space; running an action smoothly collapses it to a 3-line fold (expandable up to 220px, height follows content) and hands the space to the result. Mode switches, expand, and collapse are all animated via CSS `max-height`/`flex` transitions (respects reduced-motion).
+- **Delete custom search engines**: custom engines in the search engine list now show a delete button on hover. The six built-in engines are system defaults — they can be disabled and reordered but not deleted. Deleting the default engine falls the default to the next enabled one; deleting the last enabled engine is blocked.
+- **Pinned-image polish**: the hover toolbar (recognize / copy / close) now uses a frosted-glass background (semi-transparent + backdrop blur) instead of an opaque patch; pinned images get a hairline border so light screenshots stay visible on light wallpapers.
+- **Cursor-anchored zoom for pinned images**: scrolling now zooms around the point under the cursor (the anchored spot stays put) instead of growing from the top-left corner; zoom sensitivity is continuous and gentler — trackpad micro-scrolls no longer overshoot.
+
+### Changed
+
+- **Text recognition results are pinned by default**: the OCR result panel no longer vanishes on a stray click while you read the source, pin the image, or run actions — consistent with selection-result panels. Closing it (✕) still unpins for the next session.
+- **Typography consistency**: 11px Chinese labels (extract groups, mini buttons) raised to 12px to avoid blurry rendering on 1x displays; footer action buttons slightly taller (24px → 26px) for a more forgiving click target.
+
+### Fixed
+
+- Expanding the OCR source in a small window pushed the footer action row and result area out of the panel — the expanded height was a hard 220px that couldn't flex; it now yields to the window and scrolls internally.
+- The source area was not scrollable while collapsed; long source text can now be scrolled in the 3-line fold.
+- Pin-image from the result panel silently did nothing: the screenshot was consumed together with the OCR pending result before the pin command could take ownership. Image ownership now lives in its own store and survives panel consumption.
+- The source expand/collapse toggle disappeared after one expand-collapse round trip: overflow was measured against the container height mid-transition; it is now measured against the fold height constant.
+- Wheel-zoomed pinned images drifting on screen: position is now compensated per zoom anchor and clamped to the monitor.
+
 ## [0.1.3] - 2026-09-16
 
 ### Added

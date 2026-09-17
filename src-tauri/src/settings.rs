@@ -151,10 +151,17 @@ pub struct Settings {
     /// Liquid Glass 效果（macOS 26 玻璃材质）：默认启用
     #[serde(default = "default_true")]
     pub liquid_glass: bool,
+    /// 应用外观："auto"（跟随系统，默认）| "light" | "dark"
+    #[serde(default)]
+    pub appearance: String,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_appearance() -> String {
+    "auto".into()
 }
 
 impl Default for Settings {
@@ -186,6 +193,7 @@ impl Default for Settings {
             result_window_pos: None,
             result_window_size: None,
             liquid_glass: true,
+            appearance: default_appearance(),
         }
     }
 }
@@ -296,4 +304,29 @@ pub fn save_settings(
     // 文本识别快捷键即时生效（改键/清空禁用都会重新注册）
     crate::apply_ocr_shortcut(&app);
     Ok(())
+}
+
+/// 应用外观到原生窗口层（NSAppearance，影响原生材质）并广播给所有 webview
+/// （前端挂/摘 html class 切换 CSS 变量）。
+/// "auto" = 撤销强制：原生跟随系统，CSS 走 prefers-color-scheme 媒体查询
+pub fn apply_appearance(app: &AppHandle) {
+    let theme = current(app).appearance;
+    let native = match theme.as_str() {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    };
+    for (_, win) in app.webview_windows() {
+        let _ = win.set_theme(native);
+    }
+    let _ = app.emit("theme://appearance", theme);
+}
+
+#[tauri::command]
+pub fn set_appearance(app: AppHandle, theme: String) {
+    if !matches!(theme.as_str(), "auto" | "light" | "dark") {
+        return;
+    }
+    patch(&app, |s| s.appearance = theme);
+    apply_appearance(&app);
 }

@@ -288,16 +288,31 @@ fn persist_result_pos(app: &AppHandle, pos: (f64, f64)) {
 /// 结果窗口的定位模式：贴着胶囊锚点下方（划词结果）或屏幕居中（识图结果）
 static RESULT_BELOW_ANCHOR: AtomicBool = AtomicBool::new(false);
 
-/// 待显示的结果：文本 + 截图原图（原图供「钉图」）+ 可选的自动执行动作
-/// （划词结果导流：面板弹出后自动跑翻译/解释/总结，run = 动作 id + 服务）
+/// 待显示的结果：文本 + 可选的自动执行动作
+/// （划词结果导流：面板弹出后自动跑翻译/解释/总结，run = 动作 id + 服务）。
+/// 识别截图原图不在此保存——见 OCR_IMAGE（钉图数据源）
 struct OcrPending {
     text: String,
-    image: Option<std::path::PathBuf>,
     from_ocr: bool,
     run: Option<(String, Option<String>)>,
 }
 
 static OCR_PENDING: Mutex<Option<OcrPending>> = Mutex::new(None);
+
+/// 识别截图原图路径（独立于 pending：面板消费 pending 后仍保留，
+/// 供「钉图」取走所有权；新识别/划词导流时清理旧文件）
+static OCR_IMAGE: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
+
+/// 替换 OCR_IMAGE 内容，旧路径与新路径不同时删除旧临时文件
+fn replace_ocr_image(image: Option<std::path::PathBuf>) {
+    let mut slot = OCR_IMAGE.lock().unwrap();
+    if let Some(old_path) = slot.as_ref() {
+        if image.as_deref() != Some(old_path.as_path()) {
+            let _ = std::fs::remove_file(old_path);
+        }
+    }
+    *slot = image;
+}
 
 pub fn ocr_pinned() -> bool {
     OCR_PINNED.load(Ordering::Relaxed)
@@ -336,25 +351,27 @@ pub struct PendingRun {
     pub service: Option<String>,
 }
 
-/// 取走待显示结果（App 挂载或收到事件时调用；消费式取走，原图留给「钉图」）
+/// 取走待显示结果（App 挂载或收到事件时调用；消费式取走文本，
+/// 截图原图留在 OCR_IMAGE 里供「钉图」随时取走）
 #[tauri::command]
 pub fn ocr_take_pending() -> Option<PendingResult> {
     let mut guard = OCR_PENDING.lock().unwrap();
     let p = guard.take()?;
-    // 截图路径先取（下面重插入 pending 时 image 所有权会被移走）
-    let has_image = p.image.is_some();
-    let image_path = p
-        .image
-        .as_deref()
-        .map(|path| path.to_string_lossy().into_owned());
     let run = p.run.map(|(id, service)| PendingRun { id, service });
     let from_ocr = p.from_ocr;
+    // 截图路径从 OCR_IMAGE 读取（peek 不取走，钉图时才移交所有权）
+    let (has_image, image_path) = {
+        let slot = OCR_IMAGE.lock().unwrap();
+        (
+            slot.is_some(),
+            slot.as_ref().map(|p| p.to_string_lossy().into_owned()),
+        )
+    };
     // run 不随 take 消费：动作执行期间新事件/挂载仍可拿到（由前端 phase 保证只跑一次）
     if let Some(r) = &run {
         let text = p.text.clone();
         *guard = Some(OcrPending {
             text,
-            image: p.image,
             from_ocr,
             run: Some((r.id.clone(), r.service.clone())),
         });
@@ -371,34 +388,27 @@ pub fn ocr_take_pending() -> Option<PendingResult> {
 
 /// 取走截图原图（「钉图」动作，所有权移交钉图窗口；取走后面板不再可钉）
 pub fn ocr_take_image() -> Option<std::path::PathBuf> {
-    OCR_PENDING.lock().unwrap().as_mut().and_then(|p| p.image.take())
+    OCR_IMAGE.lock().unwrap().take()
 }
 
 /// 存入待显示识别结果（托盘「文本识别」流程调用）。
-/// 替换旧 pending 时顺带清理其遗留的截图临时文件。
+/// 截图原图存入独立的 OCR_IMAGE（替换时顺带清理旧文件）。
+/// 默认钉住：识别后的操作是多步的（看原文/钉图/跑动作），
+/// 点空即消失会打断流程——与划词导流的默认钉住保持一致
 pub fn ocr_set_pending(text: String, image: Option<std::path::PathBuf>) {
+    replace_ocr_image(image);
+    set_ocr_pinned(true);
     let mut pending = OCR_PENDING.lock().unwrap();
-    if let Some(old) = pending.take() {
-        if let Some(old_path) = old.image {
-            if image.as_deref() != Some(old_path.as_path()) {
-                let _ = std::fs::remove_file(old_path);
-            }
-        }
-    }
-    *pending = Some(OcrPending { text, image, from_ocr: true, run: None });
+    *pending = Some(OcrPending { text, from_ocr: true, run: None });
 }
 
 /// 存入划词导流结果（面板弹出后自动执行 run；默认钉住防误触）
 pub fn set_selection_pending(text: String, action_id: String, service: Option<String>) {
+    // 划词不带图：清掉上一次识别遗留的截图
+    replace_ocr_image(None);
     let mut pending = OCR_PENDING.lock().unwrap();
-    if let Some(old) = pending.take() {
-        if let Some(old_path) = old.image {
-            let _ = std::fs::remove_file(old_path);
-        }
-    }
     *pending = Some(OcrPending {
         text,
-        image: None,
         from_ocr: false,
         run: Some((action_id, service)),
     });

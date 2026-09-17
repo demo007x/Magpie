@@ -26,6 +26,30 @@ html.liquid-glass {
   }
 }
 
+/* 用户强制外观（设置页：亮色/暗色）：html 挂 theme-light/theme-dark，
+   特异性高于媒体查询 :root；liquid-glass 需显式组合避免被反超 */
+:root.theme-light {
+  --text: #1c1c24;
+  --accent: #5e5ce6;
+  --err: #e5484d;
+  --surf: #ffffff;
+}
+
+:root.theme-dark {
+  --text: #ededf4;
+  --accent: #8684ff;
+  --err: #ff6b61;
+  --surf: #282828;
+}
+
+html.theme-light.liquid-glass {
+  --surf: rgba(255, 255, 255, 0.42);
+}
+
+html.theme-dark.liquid-glass {
+  --surf: rgba(22, 22, 28, 0.3);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

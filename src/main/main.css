@@ -41,6 +41,51 @@
   }
 }
 
+/* ---- 用户强制外观（设置页：亮色/暗色/跟随系统）----
+   「跟随系统」不挂 class，纯走媒体查询；「亮色/暗色」由前端在 html 挂
+   theme-light/theme-dark（特异性 0,2,0 > 媒体查询 :root 的 0,1,0）。
+   同时固定 color-scheme：原生控件/滚动条渲染跟随强制主题 */
+:root.theme-light {
+  color-scheme: light;
+  --bg: #f5f5f7;
+  --side: #f5f5f7;
+  --card: #ffffff;
+  --text: #1d1d1f;
+  --sec: #6e6e73;
+  --line: rgba(0, 0, 0, 0.08);
+  --hov: rgba(0, 0, 0, 0.05);
+  --accent: #0a7aff;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(10, 122, 255, 0.12);
+  --knob: #ffffff;
+  --danger: #d92f2f;
+  --ok: #1f9d4d;
+  --bad: #d92f2f;
+}
+
+:root.theme-dark {
+  color-scheme: dark;
+  --bg: #1c1c1e;
+  --side: #1c1c1e;
+  --card: #28282a;
+  --text: #f5f5f7;
+  --sec: #98989f;
+  --line: rgba(255, 255, 255, 0.1);
+  --hov: rgba(255, 255, 255, 0.07);
+  --accent: #3f8cff;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(63, 140, 255, 0.16);
+  --knob: #ffffff;
+  --danger: #ff6b61;
+  --ok: #32ad62;
+  --bad: #ff6b61;
+}
+
+/* 强制暗色时与系统暗色同款的灰度抗锯齿（原媒体查询只覆盖跟随系统的路径） */
+:root.theme-dark body {
+  -webkit-font-smoothing: antialiased;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -485,6 +530,26 @@ input[type="radio"] {
   box-shadow: none;
 }
 
+/* 自定义引擎删除按钮：幽灵图标钮，hover 才显红色提示可删 */
+.eng-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sec);
+  cursor: pointer;
+}
+
+.eng-del:hover {
+  background: rgba(217, 47, 47, 0.1);
+  color: var(--danger);
+}
+
 .radio.sm {
   font-size: 11px;
   white-space: nowrap;
@@ -595,6 +660,42 @@ input[type="radio"] {
 
 .switch input:checked + .knob::after {
   transform: translateX(15px);
+}
+
+/* ---- 分段选择器（外观：跟随系统/亮色/暗色）----
+   macOS 风格：发丝线外壳 + 选中段 accent-soft 底 + 白色凸起块 */
+.seg {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 2px;
+  gap: 2px;
+  background: var(--hov);
+  border: 0.5px solid var(--line);
+  border-radius: 8px;
+}
+
+.seg button {
+  font: inherit;
+  font-size: 12px;
+  height: 24px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sec);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.seg button:hover {
+  color: var(--text);
+}
+
+.seg button.on {
+  background: var(--card);
+  color: var(--text);
+  font-weight: 590;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 /* ---- 按钮 ---- */

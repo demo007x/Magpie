@@ -58,6 +58,59 @@ html.liquid-glass {
   }
 }
 
+/* ---- 用户强制外观（设置页：亮色/暗色/跟随系统）----
+   「跟随系统」不挂 class，纯走上面的媒体查询；「亮色/暗色」由前端在 html
+   挂 theme-light/theme-dark。类选择器特异性（0,2,0）高于媒体查询里的 :root
+   （0,1,0），可覆盖系统偏好；liquid-glass 表面必须与 theme 类显式组合——
+   否则 html.liquid-glass（0,1,1）会被 :root.theme-*（0,2,0）反超，玻璃失效 */
+:root.theme-light {
+  --surf: #ffffff;
+  --text: #1c1c24;
+  --sec: #85858f;
+  --line: rgba(28, 28, 46, 0.08);
+  --hov: rgba(94, 92, 230, 0.07);
+  --press: rgba(94, 92, 230, 0.13);
+  --accent: #5e5ce6;
+  --accent-strong: #5e5ce6;
+  --accent-soft: rgba(94, 92, 230, 0.1);
+  --accent-active: rgba(94, 92, 230, 0.16);
+  --on-accent: #ffffff;
+  --err: #e5484d;
+  --pulse: #ee8c2a;
+  --source: #4a63b0;
+  --ok: #2fa14c;
+  --shadow: 0 1px 2px rgba(24, 24, 46, 0.06), 0 4px 12px rgba(24, 24, 46, 0.08),
+    0 16px 40px rgba(24, 24, 46, 0.13);
+}
+
+:root.theme-dark {
+  --surf: #282828;
+  --text: #ededf4;
+  --sec: #9a9aa8;
+  --line: rgba(237, 237, 244, 0.1);
+  --hov: rgba(125, 122, 255, 0.1);
+  --press: rgba(125, 122, 255, 0.16);
+  --accent: #8684ff;
+  --accent-strong: #a6a4ff;
+  --accent-soft: rgba(134, 132, 255, 0.14);
+  --accent-active: rgba(134, 132, 255, 0.22);
+  --on-accent: #ffffff;
+  --err: #ff6b61;
+  --pulse: #ff9f0a;
+  --source: #93a7e8;
+  --ok: #32d158;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.32),
+    0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+html.theme-light.liquid-glass {
+  --surf: rgba(255, 255, 255, 0.55);
+}
+
+html.theme-dark.liquid-glass {
+  --surf: rgba(24, 24, 30, 0.62);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -258,6 +311,26 @@ body,
   white-space: nowrap;
 }
 
+/* 二级菜单入场：轻微上滑 + 淡入（160ms），只做内容动画——
+   高度生长由 Rust 侧窗口 grow 承担，动画高度会与窗口生长打架。
+   收起为瞬时：撤销语义 + 窗口同步回缩，滞留动画反而显得拖沓 */
+.ocr-menu-slot .chips {
+  animation: menu-in 160ms ease;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ocr-menu-slot .chips {
+    animation: none;
+  }
+}
+
 .chip:hover {
   /* 与主胶囊一致：hover 只变色不铺底 */
   background: transparent;
@@ -406,7 +479,8 @@ body,
 /* 多值提取列表（链接/邮箱/验证码/号码） */
 .extract-group {
   margin: 2px 0 4px;
-  font-size: 11px;
+  /* 11px 中文在 1x 低分屏上发虚：统一 12px，层级靠 --sec 颜色+字重表达 */
+  font-size: 12px;
   font-weight: 590;
   color: var(--sec);
 }
@@ -446,7 +520,7 @@ body,
 }
 
 .extract-acts button {
-  font-size: 11px;
+  font-size: 12px; /* 与分组标签一致，避免 11px 中文低分屏发虚 */
   font-weight: 510;
   padding: 3px 9px;
   border-radius: 6px;
@@ -462,29 +536,70 @@ body,
   color: var(--surf);
 }
 
-/* OCR 文本识别：识别原文区（默认 3 行折叠，可展开） */
+/* OCR 文本识别：识别原文区（两种模式随动作状态切换）：
+   原文模式（未执行动作）= 撑满面板全量展示；结果模式（已执行动作）= 折叠 3 行让位。
+   高度约束用 max-height 表达（可平滑过渡，实际高度 = min(内容, 上限)）：
+   展开态跟随内容自适应、上限 220px，而非固定高度 */
 .ocr-source-wrap {
   position: relative;
+  /* flex 列内的子项：min-height:0 解除 min-content 卡死，
+     小窗口下允许被压缩，保证 footer 动作行不被裁出窗口 */
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  transition:
+    flex-grow 240ms ease,
+    max-height 240ms ease;
 }
 
-/* 识别原文：无背景色块，与面板无缝一致（折叠/展开仅通过高度与箭头表达）。
-   pre-wrap 保留 OCR 按行输出的换行结构（JSX 渲染会折叠 \n） */
+/* 原文模式：grow 撑满剩余空间；max-height 100% 只是给模式切换
+   一个可插值的起点（结果模式折叠高度从它过渡下来），本身不约束 */
+.ocr-source-wrap.full {
+  flex: 1 1 0px;
+  max-height: 100%;
+}
+
+/* 结果模式折叠：3 行（63px 内容 + 7px 下缝 + 0.5px 边线）。
+   basis 用 auto——高度完全由 max-height 钳制，内容不足时区域随之收窄 */
+.ocr-source-wrap.has-result {
+  border-bottom: 0.5px solid var(--line);
+  padding-bottom: 7px;
+  flex: 0 1 auto;
+  max-height: calc(63px + 7px + 0.5px);
+}
+
+/* 结果模式展开：上限抬到 220px（+7px 下缝 + 0.5px 边线），
+   高度跟随内容（不足 220px 时收缩到内容高度），超出部分自身滚动 */
+.ocr-source-wrap.has-result.expanded {
+  max-height: calc(220px + 7px + 0.5px);
+}
+
+/* 系统减弱动态效果时跳过模式切换过渡 */
+@media (prefers-reduced-motion: reduce) {
+  .ocr-source-wrap {
+    transition: none;
+  }
+}
+
+/* 识别原文：无背景色块，与面板无缝一致。
+   高度完全由 wrap 的 flex 基数钳制，内部只负责溢出滚动 */
 .ocr-source {
   padding: 2px 26px 2px 2px;
   font-size: 12px;
   line-height: 1.65;
   color: var(--source); /* 原文用引用蓝：与下方结果正文明确区分 */
-  max-height: 63px; /* 约 3 行 */
-  overflow: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   user-select: text;
   cursor: text;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.ocr-source.expanded {
-  max-height: 220px;
-  overflow-y: auto;
+/* 可编辑原文（contentEditable）：去掉默认聚焦描边，保持与面板无缝 */
+.ocr-source:focus {
+  outline: none;
 }
 
 .ocr-toggle {
@@ -574,12 +689,7 @@ body,
   color: #e5484d;
 }
 
-/* 固定上界线：识别原文区下缘——仅在下方有动作结果时显示（无结果时不画线，
-   避免与动作行上缘线形成空夹层） */
-.ocr-source-wrap.has-result {
-  border-bottom: 0.5px solid var(--line);
-  padding-bottom: 7px;
-}
+/* 固定上界线已并入上方 .ocr-source-wrap.has-result（边线 + 折叠基数） */
 
 /* 结果滚动区：弹性撑满原文区与 footer（动作行）之间的全部空间——
    footer 恒贴窗口底边；内容超限仅此区域滚动 */
@@ -591,7 +701,7 @@ body,
 }
 
 .action.sm {
-  height: 24px;
+  height: 26px; /* 24px 点击容错偏紧，抬到 26px 更稳 */
   padding: 0 6px;
   gap: 3px;
   font-size: 12px;
@@ -622,13 +732,18 @@ body,
 .pin img {
   display: block;
   border-radius: 8px;
+  /* 发丝线描边：浅色截图在浅色壁纸上边缘会融进背景，一圈 hairline 勾出轮廓 */
+  border: 0.5px solid var(--line);
+  /* 双层投影：近距小投影定形 + 远距大投影定悬浮景深（macOS 浮层惯例） */
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.22);
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
 }
 
-/* 悬停工具条：默认隐藏，悬停浮现（识别文字 / 复制 / 关闭） */
+/* 悬停工具条：默认隐藏，悬停浮现（识别文字 / 复制 / 关闭）。
+   半透明磨砂底（macOS 悬浮控件惯例）：backdrop-filter 把底下图像磨成色块，
+   比实心底遮挡感低、又保住图标对比度；saturate 防透出的颜色发灰 */
 .pin-tools {
   position: absolute;
   top: 6px;
@@ -636,12 +751,20 @@ body,
   display: flex;
   gap: 2px;
   padding: 3px;
-  background: var(--surf);
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
   border: 0.5px solid var(--line);
   border-radius: 9px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pin-tools {
+    background: rgba(40, 40, 44, 0.68);
+  }
 }
 
 .pin:hover .pin-tools {

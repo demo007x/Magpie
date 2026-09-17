@@ -31,6 +31,15 @@ function ToastApp() {
       .then(applyGlass)
       .catch(() => undefined);
     listen<boolean>("theme://liquid-glass", (e) => applyGlass(e.payload)).catch(() => undefined);
+    // 用户强制外观（亮/暗）：html 挂 theme class；广播早于挂载会漏听，主动读一次
+    const applyTheme = (t: string) => {
+      document.documentElement.classList.toggle("theme-light", t === "light");
+      document.documentElement.classList.toggle("theme-dark", t === "dark");
+    };
+    invoke<{ appearance?: string }>("get_settings")
+      .then((s) => applyTheme(s.appearance ?? "auto"))
+      .catch(() => undefined);
+    listen<string>("theme://appearance", (e) => applyTheme(e.payload)).catch(() => undefined);
   }, []);
 
   // 内容测量 → 缩放窗口（材质层由原生填满窗口，窗口尺寸即面板尺寸）

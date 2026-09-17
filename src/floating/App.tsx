@@ -184,10 +184,19 @@ function PinView() {
 
   const logical = nat ? { w: (nat.w * zoom) / data!.scale, h: (nat.h * zoom) / data!.scale } : null;
 
-  // 缩放（含首帧）后同步窗口尺寸；Rust 侧保持左上角并做屏内钳制
+  // 缩放锚点：光标在窗口内的相对位置（0..1）——缩放时该点保持不动。
+  // 首帧 resize（naturalWidth 上报）时为 0,0 = 左上角，尺寸不变无影响
+  const zoomAnchorRef = useRef({ fx: 0, fy: 0 });
+
+  // 缩放（含首帧）后同步窗口尺寸；Rust 侧按锚点补偿位置并做屏内钳制
   useEffect(() => {
     if (logical) {
-      invoke("resize_pin", { width: logical.w, height: logical.h }).catch(() => undefined);
+      invoke("resize_pin", {
+        width: logical.w,
+        height: logical.h,
+        fx: zoomAnchorRef.current.fx,
+        fy: zoomAnchorRef.current.fy,
+      }).catch(() => undefined);
     }
   }, [logical?.w, logical?.h]);
 
@@ -201,8 +210,16 @@ function PinView() {
   };
 
   const onWheel = (e: React.WheelEvent) => {
-    // 页面本身不可滚动（overflow hidden），滚轮纯粹驱动缩放
-    setZoom((z) => Math.min(5, Math.max(0.25, z * (e.deltaY < 0 ? 1.1 : 1 / 1.1))));
+    // 页面本身不可滚动（overflow hidden），滚轮纯粹驱动缩放。
+    // 按 deltaY 连续映射（指数曲线）：鼠标一档 ≈×0.9，触控板微滑微缩，
+    // 不再用固定步进——触控板连发事件也不会「唰一下」缩过头
+    const rect = e.currentTarget.getBoundingClientRect();
+    zoomAnchorRef.current = {
+      fx: e.clientX / rect.width,
+      fy: e.clientY / rect.height,
+    };
+    const factor = Math.min(1.15, Math.max(0.87, Math.exp(-e.deltaY * 0.0009)));
+    setZoom((z) => Math.min(5, Math.max(0.25, z * factor)));
   };
 
   // ---- 自定义拖拽：不用系统拖动（无法钳制边界），位移换算成窗口目标位置，
@@ -295,6 +312,35 @@ function PinView() {
         </button>
       </div>
     </div>
+  );
+}
+
+// 识别原文（可编辑）：OCR 可能识别错字，错字会静默传导给后续动作——
+// 允许在原地用 contentEditable 纯文本修正，onInput 同步回 phase.text。
+// DOM 回写仅在文本「外部变化」（新识别/重置）时发生：用户输入引发的重渲染里
+// DOM 与 state 已一致，跳过回写以保住光标位置（受控 contentEditable 的经典坑）
+function EditableSource({
+  text,
+  sourceRef,
+  onEdit,
+}: {
+  text: string;
+  sourceRef: React.RefObject<HTMLDivElement | null>;
+  onEdit: (t: string) => void;
+}) {
+  useLayoutEffect(() => {
+    const el = sourceRef.current;
+    if (el && el.textContent !== text) el.textContent = text;
+  }, [text, sourceRef]);
+  return (
+    <div
+      ref={sourceRef as React.RefObject<HTMLDivElement>}
+      className="ocr-source"
+      contentEditable="plaintext-only"
+      suppressContentEditableWarning
+      onInput={(e) => onEdit(e.currentTarget.textContent ?? "")}
+      title="识别原文（可编辑，改后重新执行动作）"
+    />
   );
 }
 
@@ -561,6 +607,16 @@ export default function App() {
       .then(applyGlass)
       .catch(() => undefined);
     listen<boolean>("theme://liquid-glass", (e) => applyGlass(e.payload)).catch(() => undefined);
+    // 用户强制外观（亮/暗）：html 挂 theme class 切 CSS 变量；
+    // 广播早于挂载会漏听，启动时主动读一次设置
+    const applyTheme = (t: string) => {
+      document.documentElement.classList.toggle("theme-light", t === "light");
+      document.documentElement.classList.toggle("theme-dark", t === "dark");
+    };
+    invoke<{ appearance?: string }>("get_settings")
+      .then((s) => applyTheme(s.appearance ?? "auto"))
+      .catch(() => undefined);
+    listen<string>("theme://appearance", (e) => applyTheme(e.payload)).catch(() => undefined);
     // 文本识别第二段：识别完成后回填文本/错误（仅 OCR 窗口消费）
     listen<{ text?: string; error?: string }>("ocr://update", (e) => {
       if (!IS_OCR) return;
@@ -781,13 +837,15 @@ export default function App() {
 
   // （OCR 窗口的定位+显示已改由尺寸测量 effect 在 resize 完成后链式触发，见下）
 
-  // 识别原文是否溢出折叠高度（超 3 行）：决定展开/收起按钮显示与否
+  // 识别原文是否超过折叠高度：决定展开/收起按钮显示与否。
+  // 基准是折叠高度常量（63px，与 CSS 的 flex-basis 折叠基数一致）而非 clientHeight——
+  // flex-basis 有 240ms 过渡，展开→收起瞬间测 clientHeight 仍是动画中间值，
+  // 会把「有溢出」误判成「无溢出」导致切换按钮消失
   useLayoutEffect(() => {
     if (phase.kind !== "ocr") return;
     const el = sourceRef.current;
     if (!el) return;
-    // 收起态下 scrollHeight 为完整文本高度，clientHeight 被 max-height 钳在 3 行
-    setSourceOverflow(el.scrollHeight > el.clientHeight + 1);
+    setSourceOverflow(el.scrollHeight > 63 + 1);
   }, [phase]);
 
   // 结果窗口尺寸模型：宽高只由用户拖动决定（内容永不改变窗口尺寸），
@@ -802,7 +860,7 @@ export default function App() {
   }, [phase]);
 
   // 二级菜单开合（footer 模型 + 短命冻结）：
-  // 布局 = [原文][结果区 flex:1][动作行][菜单槽位]。
+  // 布局 = [原文（仅 fromOcr 识别流）][结果区 flex:1][动作行][菜单槽位]。
   // 展开 = ①先把结果区当前高度读出并冻结（必须先读后写）②菜单进入流内。
   //   冻结期间列内容超出窗口的部分被 .ocr-main 裁切——主菜单/内容零位移；
   // 解冻有三重保障，冻结不可能长期残留（过期高度 → footer 悬空的根源）：
@@ -1680,25 +1738,40 @@ export default function App() {
             </span>
           </header>
           <div className="ocr-main" ref={ocrMainRef}>
-            <div className={`ocr-source-wrap ${phase.actionId ? "has-result" : ""}`}>
-              <div
-                ref={sourceRef}
-                className={`ocr-source ${phase.expanded ? "expanded" : ""}`}
-              >
-                {phase.recognizing
-                  ? phase.imagePath
-                    ? <img
-                        className="ocr-source-img"
-                        src={convertFileSrc(phase.imagePath)}
-                        alt="识别中"
-                      />
-                    : "识别中…"
-                  : phase.recognizeError
-                    ? <span className="ocr-source-err">{phase.recognizeError}</span>
-                    : phase.text}
-              </div>
-              {/* 原文超 3 行（或已展开）才显示折叠切换，短文本不显示 */}
-              {(sourceOverflow || phase.expanded) && (
+            {/* 原文区两种模式（class 切换由 CSS flex 过渡出动画）：
+                原文模式（!actionId）：撑满面板全量展示，超长滚动；
+                结果模式（actionId）：折叠 3 行，可展开至 220px，让位结果区。
+                仅截图/钉图识别（fromOcr）展示；划词导流的原文在用户屏幕上，
+                phase.text 仍保留作为动作源 */}
+            {phase.fromOcr && (
+            <div
+              className={`ocr-source-wrap ${
+                phase.actionId ? "has-result" : "full"
+              } ${phase.actionId && phase.expanded ? "expanded" : ""}`}
+            >
+              {phase.recognizing || phase.recognizeError ? (
+                <div ref={sourceRef} className="ocr-source">
+                  {phase.recognizing
+                    ? phase.imagePath
+                      ? <img
+                          className="ocr-source-img"
+                          src={convertFileSrc(phase.imagePath)}
+                          alt="识别中"
+                        />
+                      : "识别中…"
+                    : <span className="ocr-source-err">{phase.recognizeError}</span>}
+                </div>
+              ) : (
+                <EditableSource
+                  text={phase.text}
+                  sourceRef={sourceRef}
+                  onEdit={(t) =>
+                    setPhase((p) => (p.kind === "ocr" ? { ...p, text: t } : p))
+                  }
+                />
+              )}
+              {/* 仅结果模式显示折叠切换；原文模式本就是全量，无需切换 */}
+              {phase.actionId && (sourceOverflow || phase.expanded) && (
                 <button
                   className="ocr-toggle"
                   onClick={guarded(() =>
@@ -1714,6 +1787,7 @@ export default function App() {
                 </button>
               )}
             </div>
+            )}
             {phase.actionId && (
               <div className="ocr-result-scroll" ref={ocrBodyRef} onScroll={onOcrResultScroll}>
                 <div className="ocr-result md">

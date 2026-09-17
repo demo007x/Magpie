@@ -232,6 +232,10 @@ fn main() {
             let liquid_on = floating::enable_liquid_glass(&app.handle());
             let _ = app.emit("theme://liquid-glass", liquid_on);
 
+            // 用户强制外观（亮/暗）：原生窗口主题 + 前端 CSS 变量双轨同步。
+            // 广播此刻未必有人听（webview 可能未挂载），各前端启动时也会主动读一次
+            settings::apply_appearance(&app.handle());
+
             // 划词捕获 → 高层事件（Selection/PlainClick）→ 过滤与转发
             let (tx, rx) = std::sync::mpsc::channel::<capture::CaptureEvent>();
             let debounce_ms = settings::current(&handle).debounce_ms;
@@ -297,6 +301,7 @@ fn main() {
             floating::begin_floating_drag,
             settings::get_settings,
             settings::save_settings,
+            settings::set_appearance,
             capture::capture_status,
             capture::open_accessibility_settings,
             capture::prompt_accessibility,
