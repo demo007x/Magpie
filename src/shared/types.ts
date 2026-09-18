@@ -57,8 +57,14 @@ export interface Settings {
   translate: TranslateConfig;
   /** 是否在 macOS Dock 显示图标（关 = 纯菜单栏常驻模式） */
   showDockIcon: boolean;
-  /** 文本识别全局快捷键（如 "Alt+O"、"CmdOrCtrl+Shift+O"；空串 = 禁用） */
+  /** 识图取字全局快捷键（如 "Alt+O"、"CmdOrCtrl+Shift+O"；空串 = 禁用） */
   ocrShortcut: string;
+  /** 识图翻译全局快捷键（截图→识别→默认翻译服务；空串 = 禁用） */
+  ocrTranslateShortcut: string;
+  /** 识图解释全局快捷键（截图→识别→AI 解释；空串 = 禁用） */
+  ocrExplainShortcut: string;
+  /** 识图总结全局快捷键（截图→识别→AI 总结；空串 = 禁用） */
+  ocrSummarizeShortcut: string;
   appBlacklist: string[];
   debounceMs: number;
   /** 结果窗口位置记忆（逻辑坐标） */

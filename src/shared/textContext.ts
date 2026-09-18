@@ -4,6 +4,9 @@
 // 识别原则（强一致性）：只识别符合各自规范的形态，不规范的宁可不识别——
 // URL 以「带 scheme（http/https）」为规范形态；无协议裸域名（vue.js / a.id）与
 // 代码属性访问结构上不可区分，一律不识别（产品决策 2026-09）。
+// 带 scheme 的 URL 不做 TLD 白名单校验：scheme 是用户显式选中的强信号，
+// 白名单只会误杀小众 ccTLD（.sh/.md 等域名服务，2026-09-18 实测误杀），
+// 仅要求 host 含点（排除 https://localhost 类无意义主机）。
 
 export type TextContext = "url" | "email" | null;
 
@@ -23,31 +26,13 @@ const TEL_CN_ALL_RE =
 
 const TRAIL_PUNCT_RE = /[.,;:!?、。，；：！？…"'’”]+$/;
 
-// 常用顶级域（TLD）白名单：强一致原则——TLD 不在表中的 URL 不识别（如 vue.js / a.id）。
-// 覆盖全球常见 gTLD/ccTLD 与中文场景，漏了往里加即可。
-const KNOWN_TLDS = new Set([
-  // 通用
-  "com", "net", "org", "info", "biz", "name", "pro", "xyz", "top", "site",
-  "online", "tech", "store", "cloud", "vip", "wiki", "club", "fun", "icu",
-  "app", "dev", "io", "ai", "co", "me", "tv", "cc", "so", "link", "one",
-  "blog", "art", "design", "live", "space", "world", "zone", "email", "run",
-  // 中国
-  "cn", "hk", "mo", "tw",
-  // 国家/地区常见
-  "us", "uk", "jp", "kr", "de", "fr", "ru", "in", "au", "ca", "br", "se",
-  "nl", "es", "it", "ch", "at", "be", "dk", "fi", "no", "pt", "pl", "cz",
-  "ua", "tr", "mx", "ar", "cl", "id", "th", "sg", "my", "vn", "ph", "ie",
-  "nz", "il", "eu", "asia",
-]);
-
-/** URL 的顶级域是否在白名单中（剥 scheme/路径/端口后取末段） */
-function hasKnownTld(url: string): boolean {
+/** host 是否可信：剥 scheme/路径/端口后必须含点（排除 localhost 类单段主机） */
+function hasPlausibleHost(url: string): boolean {
   const host = url
     .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
     .split(/[/?#]/)[0]
     .split(":")[0];
-  const tld = host.split(".").pop()?.toLowerCase() ?? "";
-  return KNOWN_TLDS.has(tld);
+  return host.includes(".");
 }
 
 /** 剥离 URL 尾部标点；右括号仅在括号不平衡时剥离（保留 Wikipedia 式链接的括号） */
@@ -62,25 +47,42 @@ function trimUrlTail(url: string): string {
   return out;
 }
 
-/** 提取首个 URL（规范形态：带 scheme 且 TLD 可信；可嵌在句中）；无 = null */
+/** 剪掉粘连进 host 段的页面文案：选区常把 URL 和周边文案连在一起
+ *（如 Google 结果行「https://obsidian.md · 翻译此页」→「https://obsidian.md·翻译此页」，
+ * 正则遇中文不停止），打开即空白页。host 段出现非 ASCII 一律从首个非 ASCII 截断——
+ * 合法 IRI 的中文只出现在路径段（如 zh.wikipedia.org/wiki/维基百科），host 段
+ * 纯 ASCII 时整体保留 */
+function trimGluedText(url: string): string {
+  const schemeEnd = url.indexOf("://");
+  if (schemeEnd < 0) return url;
+  const hostStart = schemeEnd + 3;
+  const rest = url.slice(hostStart);
+  const authLen = rest.search(/[/?#]/);
+  const authority = authLen < 0 ? rest : rest.slice(0, authLen);
+  const bad = authority.search(/[^\x00-\x7F]/);
+  if (bad < 0) return url;
+  return url.slice(0, hostStart + bad);
+}
+
+/** 提取首个 URL（规范形态：带 scheme 且 host 含点；可嵌在句中）；无 = null */
 export function extractUrl(raw: string): string | null {
   const t = raw.trim();
   if (!t) return null;
   const m = t.match(SCHEME_URL_RE);
   if (!m) return null;
-  const url = trimUrlTail(m[0]);
-  if (!url || !hasKnownTld(url)) return null;
+  const url = trimUrlTail(trimGluedText(m[0]));
+  if (!url || !hasPlausibleHost(url)) return null;
   return url;
 }
 
-/** 提取全部 URL（TLD 可信；去重保序，上限 20） */
+/** 提取全部 URL（host 含点；去重保序，上限 20） */
 export function extractUrls(raw: string): string[] {
   const t = raw.trim();
   if (!t) return [];
   const out: string[] = [];
   for (const m of t.matchAll(SCHEME_URL_RE)) {
-    const u = trimUrlTail(m[0]);
-    if (u && hasKnownTld(u)) out.push(u);
+    const u = trimUrlTail(trimGluedText(m[0]));
+    if (u && hasPlausibleHost(u)) out.push(u);
   }
   return cap(dedupe(out));
 }
@@ -167,8 +169,8 @@ export function extractAll(raw: string): Extracted {
 
   const urls: string[] = [];
   for (const m of t.matchAll(SCHEME_URL_RE)) {
-    const u = trimUrlTail(m[0]);
-    if (u && hasKnownTld(u)) {
+    const u = trimUrlTail(trimGluedText(m[0]));
+    if (u && hasPlausibleHost(u)) {
       urls.push(u);
       protectedRanges.push([m.index ?? 0, (m.index ?? 0) + m[0].length]);
     }

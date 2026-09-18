@@ -10,7 +10,7 @@ mod settings;
 mod toast;
 
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, RunEvent,
 };
@@ -32,30 +32,74 @@ fn shortcut_display(s: &str) -> String {
         .collect()
 }
 
-/// 托盘右键菜单（快捷键变更后重建，让「文本识别」旁始终显示当前设定的键）
+/// 托盘右键菜单（快捷键变更后重建，让识图类各项旁始终显示当前设定的键）。
+/// 按功能分组：识图动作 / 应用导航 / 退出，组间用分隔线
 fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let ocr_label = {
-        let display = shortcut_display(&settings::current(app).ocr_shortcut);
+    let s = settings::current(app);
+    let label = |base: &str, shortcut: &str| {
+        let display = shortcut_display(shortcut);
         if display.is_empty() {
-            "文本识别".to_string()
+            base.to_string()
         } else {
-            format!("文本识别  {display}")
+            format!("{base}  {display}")
         }
     };
+    let ocr_item = MenuItem::with_id(app, "ocr", &label("识图取字", &s.ocr_shortcut), true, None::<&str>)?;
+    let tr_item = MenuItem::with_id(app, "ocr_translate", &label("识图翻译", &s.ocr_translate_shortcut), true, None::<&str>)?;
+    let ex_item = MenuItem::with_id(app, "ocr_explain", &label("识图解释", &s.ocr_explain_shortcut), true, None::<&str>)?;
+    let su_item = MenuItem::with_id(app, "ocr_summarize", &label("识图总结", &s.ocr_summarize_shortcut), true, None::<&str>)?;
     let home_item = MenuItem::with_id(app, "home", "主页面", true, None::<&str>)?;
-    let ocr_item = MenuItem::with_id(app, "ocr", &ocr_label, true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "settings", "功能设置", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "退出应用", true, None::<&str>)?;
-    Menu::with_items(app, &[&home_item, &ocr_item, &settings_item, &quit_item])
+    let sep1 = PredefinedMenuItem::separator(app)?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
+    Menu::with_items(app, &[
+        &ocr_item,
+        &tr_item,
+        &ex_item,
+        &su_item,
+        &sep1,
+        &home_item,
+        &settings_item,
+        &sep2,
+        &quit_item,
+    ])
 }
 
-/// 文本识别当前注册的全局快捷键（None = 未启用）；handler 据此比对触发
-pub struct OcrShortcut(pub std::sync::Mutex<Option<Shortcut>>);
+/// 识图类快捷键槽位表：(settings 字段, 识别完成后自动执行的动作)。
+/// action = None → 只弹结果面板；Some(id) → 面板弹出后自动执行该动作
+/// （service 传 None，由前端按各动作既有的默认服务逻辑选择）
+const OCR_SHORTCUT_SLOTS: [(&str, Option<&str>); 4] = [
+    ("ocr_shortcut", None),
+    ("ocr_translate_shortcut", Some("translate")),
+    ("ocr_explain_shortcut", Some("explain")),
+    ("ocr_summarize_shortcut", Some("summarize")),
+];
 
-/// 文本识别流程（托盘菜单与全局快捷键共用）：
-/// 后台线程执行框选+识别，完成后推给 OCR 独立窗口（原图供「钉图」）
-fn start_ocr_flow(app: tauri::AppHandle) {
-    eprintln!("[magpie:ocr] 文本识别开始");
+/// 各槽位当前注册的全局快捷键（action = None 表示只识别不执行动作）；
+/// handler 据此比对触发
+pub struct OcrShortcuts(pub std::sync::Mutex<Vec<(Shortcut, Option<&'static str>)>>);
+
+/// 识图取字流程（托盘菜单与全局快捷键共用）：
+/// 后台线程执行框选+识别，完成后推给 OCR 独立窗口（原图供「钉图」）。
+/// action 不为空时随 pending 携带自动执行的动作（识图翻译/解释/总结）
+fn start_ocr_flow(app: tauri::AppHandle, action: Option<&'static str>) {
+    eprintln!(
+        "[magpie:ocr] 识图取字开始{}",
+        action.map_or(String::new(), |a| format!("（自动执行 {a}）"))
+    );
+    // 翻译动作：此处按设置解析默认翻译服务（default 不在启用列表则顺延到首个启用项），
+    // 显式随 pending 传递——结果窗口设置可能尚未加载完，不能依赖前端自行解析默认值
+    //（与划词导流由浮动条侧解析 service 同理）。无启用服务传空串，前端提示「未启用翻译服务」。
+    let service = action.filter(|a| *a == "translate").map(|_| {
+        let s = settings::current(&app);
+        let d = s.translate.default;
+        if s.translate.enabled.iter().any(|e| e == &d) {
+            d
+        } else {
+            s.translate.enabled.first().cloned().unwrap_or_default()
+        }
+    });
     tauri::async_runtime::spawn(async move {
         let image = match tauri::async_runtime::spawn_blocking(ocr::capture_region_to_file).await
         {
@@ -85,7 +129,12 @@ fn start_ocr_flow(app: tauri::AppHandle) {
             Ok(Ok(text)) => {
                 eprintln!("[magpie:ocr] 成功：len={}", text.len());
                 toast::hide_toast(&app);
-                ocr::push_ocr_result(&app, text, image);
+                ocr::push_ocr_result(
+                    &app,
+                    text,
+                    image,
+                    action.map(|a| (a.to_string(), Some(service.clone().unwrap_or_default()))),
+                );
             }
             Ok(Err(e)) => {
                 eprintln!("[magpie:ocr] 失败：{e}");
@@ -106,36 +155,44 @@ fn start_ocr_flow(app: tauri::AppHandle) {
     });
 }
 
-/// 按当前设置注册文本识别快捷键（启动与保存设置时调用；清空 = 禁用）。
-/// 注册失败（格式错误/被系统占用）不阻塞启动，仅记日志并在 UI 上不生效。
-pub fn apply_ocr_shortcut(app: &tauri::AppHandle) {
+/// 按当前设置注册全部识图类全局快捷键（启动与保存设置时调用；清空 = 禁用）。
+/// 单个槽位注册失败（格式错误/被系统占用）不影响其他槽位，仅记日志并不生效。
+pub fn apply_ocr_shortcuts(app: &tauri::AppHandle) {
     use tauri::State;
     let gs = app.global_shortcut();
     let _ = gs.unregister_all();
-    let state: State<OcrShortcut> = app.state();
-    let text = settings::current(app).ocr_shortcut.trim().to_string();
-    if text.is_empty() {
-        *state.0.lock().unwrap() = None;
-        eprintln!("[magpie:ocr] 快捷键已禁用");
-        rebuild_tray_menu(app);
-        return;
-    }
-    match text.parse::<Shortcut>() {
-        Ok(sc) => match gs.register(sc.clone()) {
-            Ok(_) => {
-                *state.0.lock().unwrap() = Some(sc);
-                eprintln!("[magpie:ocr] 快捷键已注册：{text}");
-            }
+    let state: State<OcrShortcuts> = app.state();
+    let s = settings::current(app);
+    let mut registered = Vec::new();
+    for (field, action) in OCR_SHORTCUT_SLOTS {
+        let text = match field {
+            "ocr_shortcut" => s.ocr_shortcut.clone(),
+            "ocr_translate_shortcut" => s.ocr_translate_shortcut.clone(),
+            "ocr_explain_shortcut" => s.ocr_explain_shortcut.clone(),
+            _ => s.ocr_summarize_shortcut.clone(),
+        }
+        .trim()
+        .to_string();
+        if text.is_empty() {
+            eprintln!("[magpie:ocr] 快捷键已禁用：{field}");
+            continue;
+        }
+        match text.parse::<Shortcut>() {
+            Ok(sc) => match gs.register(sc.clone()) {
+                Ok(_) => {
+                    eprintln!("[magpie:ocr] 快捷键已注册：{text}（{field}）");
+                    registered.push((sc, action));
+                }
+                Err(e) => {
+                    eprintln!("[magpie:ocr] 快捷键注册失败（可能被其他应用占用）：{text}: {e}");
+                }
+            },
             Err(e) => {
-                *state.0.lock().unwrap() = None;
-                eprintln!("[magpie:ocr] 快捷键注册失败（可能被其他应用占用）：{text}: {e}");
+                eprintln!("[magpie:ocr] 快捷键格式无法解析：{text}: {e}");
             }
-        },
-        Err(e) => {
-            *state.0.lock().unwrap() = None;
-            eprintln!("[magpie:ocr] 快捷键格式无法解析：{text}: {e}");
         }
     }
+    *state.0.lock().unwrap() = registered;
     rebuild_tray_menu(app);
 }
 
@@ -199,15 +256,16 @@ fn main() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
                     if event.state == ShortcutState::Pressed {
-                        let target = app.state::<OcrShortcut>();
-                        let hit = target
+                        let hit = app
+                            .state::<OcrShortcuts>()
                             .0
                             .lock()
                             .unwrap()
-                            .as_ref()
-                            .map_or(false, |s| s == shortcut);
-                        if hit {
-                            start_ocr_flow(app.clone());
+                            .iter()
+                            .find(|(s, _)| s == shortcut)
+                            .map(|(_, action)| *action);
+                        if let Some(action) = hit {
+                            start_ocr_flow(app.clone(), action);
                         }
                     }
                 })
@@ -229,9 +287,9 @@ fn main() {
                 let _ = handle.set_activation_policy(policy);
             }
 
-            // 文本识别全局快捷键（设置页可配，保存即时生效）
-            app.manage(OcrShortcut(std::sync::Mutex::new(None)));
-            apply_ocr_shortcut(&handle);
+            // 识图类全局快捷键（设置页可配，保存即时生效）：识别 + 可选自动执行动作
+            app.manage(OcrShortcuts(std::sync::Mutex::new(Vec::new())));
+            apply_ocr_shortcuts(&handle);
 
             // 弹出层窗口原生圆角（CSS 圆角压在透明窗口边界必出毛刺，见 floating.rs）
             for label in ["floating", "ocr", "toast"] {
@@ -255,7 +313,7 @@ fn main() {
 
             app.manage(floating::FloatingState::default());
 
-            // 状态栏常驻图标：左键进主页面；右键菜单含「文本识别」当前快捷键提示
+            // 状态栏常驻图标：左键进主页面；右键菜单含「识图取字」当前快捷键提示
             let menu = build_tray_menu(&handle)?;
             TrayIconBuilder::with_id("main")
                 // 状态栏专用模板图（单色鹊形 + alpha，白斑/眼为镂空）：
@@ -274,7 +332,10 @@ fn main() {
                         show_main_window(app);
                         let _ = app.emit_to("main", "nav://page", "model");
                     }
-                    "ocr" => start_ocr_flow(app.clone()),
+                    "ocr" => start_ocr_flow(app.clone(), None),
+                    "ocr_translate" => start_ocr_flow(app.clone(), Some("translate")),
+                    "ocr_explain" => start_ocr_flow(app.clone(), Some("explain")),
+                    "ocr_summarize" => start_ocr_flow(app.clone(), Some("summarize")),
                     "quit" => app.exit(0),
                     _ => {}
                 })

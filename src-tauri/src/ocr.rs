@@ -86,12 +86,19 @@ pub fn recognize_file(path: &Path) -> Result<String, String> {
     Ok(text)
 }
 
-/// 识别完成，一次性推送结果（文本 + 原图）：面板出现即有完整内容，
-/// 原图随 pending 保留供「钉图」。事件用全局广播而不是 emit_to：
-/// JS listen() 注册的是 Any 目标，emit_to 的按窗口过滤不匹配 Any 监听器
-/// （此前识别面板因此永不出现）。其他窗口收到后按 app=="ocr" 忽略。
-pub fn push_ocr_result(app: &tauri::AppHandle, text: String, image: PathBuf) {
-    super::floating::ocr_set_pending(text, Some(image));
+/// 识别完成，一次性推送结果（文本 + 原图 + 可选自动执行动作）：面板出现即有
+/// 完整内容，原图随 pending 保留供「钉图」。run = (动作 id, 服务)，
+/// 传 (id, None) 时由前端按该动作既有的默认服务逻辑选择。
+/// 事件用全局广播而不是 emit_to：JS listen() 注册的是 Any 目标，
+/// emit_to 的按窗口过滤不匹配 Any 监听器（此前识别面板因此永不出现）。
+/// 其他窗口收到后按 app=="ocr" 忽略。
+pub fn push_ocr_result(
+    app: &tauri::AppHandle,
+    text: String,
+    image: PathBuf,
+    run: Option<(String, Option<String>)>,
+) {
+    super::floating::ocr_set_pending(text, Some(image), run);
     let _ = app.emit(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
@@ -103,7 +110,7 @@ pub fn push_ocr_result(app: &tauri::AppHandle, text: String, image: PathBuf) {
 /// emit_to 的按窗口过滤不匹配 Any 监听器（此前识别面板因此永不出现）。
 /// 其他窗口收到后按 app=="ocr" 忽略。
 pub fn push_text_to_ocr_window(app: &tauri::AppHandle, text: String, image: Option<PathBuf>) {
-    super::floating::ocr_set_pending(text, image);
+    super::floating::ocr_set_pending(text, image, None);
     let _ = app.emit(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),

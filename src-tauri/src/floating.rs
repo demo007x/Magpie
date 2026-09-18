@@ -406,15 +406,21 @@ pub fn ocr_take_image() -> Option<std::path::PathBuf> {
     OCR_IMAGE.lock().unwrap().take()
 }
 
-/// 存入待显示识别结果（托盘「文本识别」流程调用）。
+/// 存入待显示识别结果（托盘「识图取字」与识图快捷键流程调用）。
+/// run = (动作 id, 服务)：Some 时面板弹出后自动执行该动作（识图翻译/解释/总结）；
+/// None 时只展示识别文本等用户操作。
 /// 截图原图存入独立的 OCR_IMAGE（替换时顺带清理旧文件）。
 /// 默认钉住：识别后的操作是多步的（看原文/钉图/跑动作），
 /// 点空即消失会打断流程——与划词导流的默认钉住保持一致
-pub fn ocr_set_pending(text: String, image: Option<std::path::PathBuf>) {
+pub fn ocr_set_pending(
+    text: String,
+    image: Option<std::path::PathBuf>,
+    run: Option<(String, Option<String>)>,
+) {
     replace_ocr_image(image);
     set_ocr_pinned(true);
     let mut pending = OCR_PENDING.lock().unwrap();
-    *pending = Some(OcrPending { text, from_ocr: true, run: None });
+    *pending = Some(OcrPending { text, from_ocr: true, run });
 }
 
 /// 存入划词导流结果（面板弹出后自动执行 run；默认钉住防误触）

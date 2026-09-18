@@ -44,17 +44,42 @@ const NAV_ICONS: Record<Page, React.ReactNode> = {
   about: <Info size={15} strokeWidth={1.75} />,
 };
 
-// 快捷键条目注册表：新增全局快捷键 = 加一行配置 + settings 加对应字段
-// （文案面向用户描述触发后的行为，不描述按键本身）
+// 快捷键条目注册表：新增全局快捷键 = 加一行配置 + settings 加对应字段。
+// desc 只描述「按下去会发生什么」（用户视角）；录制操作说明放在页面顶部 hint
 const SHORTCUT_ITEMS: Array<{
-  key: "ocrShortcut";
+  key:
+    | "ocrShortcut"
+    | "ocrTranslateShortcut"
+    | "ocrExplainShortcut"
+    | "ocrSummarizeShortcut";
   label: string;
   desc: string;
+  /** 出厂默认键位：重置按钮的目标值 */
+  default: string;
 }> = [
   {
     key: "ocrShortcut",
-    label: "文本识别",
-    desc: "点击右侧框后按下组合键即完成录制（需含 Alt / ⌘ / Ctrl / Shift 至少一个修饰键，如 ⌥S、⌘⇧O；Esc 取消）。任意应用内按下即拉起框选识别，托盘菜单旁会同步显示当前设定的键。注册失败（被其他应用占用）时不会生效，可换一个组合。",
+    label: "识图取字",
+    default: "Alt+S",
+    desc: "框选屏幕任意区域，识别其中的文字——在结果面板中查看、复制、钉住原图，或继续执行翻译等操作。默认 ⌥S。",
+  },
+  {
+    key: "ocrTranslateShortcut",
+    label: "识图翻译",
+    default: "Alt+T",
+    desc: "一步直达：框选截图，识别出的文字自动用默认翻译服务翻译，结果直接呈现在面板中。默认 ⌥T。",
+  },
+  {
+    key: "ocrExplainShortcut",
+    label: "识图解释",
+    default: "Alt+E",
+    desc: "一步直达：框选截图，AI 自动解释识别出的内容。默认 ⌥E。",
+  },
+  {
+    key: "ocrSummarizeShortcut",
+    label: "识图总结",
+    default: "Alt+D",
+    desc: "一步直达：框选截图，AI 自动总结识别出的要点。默认 ⌥D。",
   },
 ];
 
@@ -718,19 +743,33 @@ export default function App() {
           <>
             <h1>快捷键</h1>
             <p className="page-hint">
-              全局快捷键在任意应用内生效。改动点击「保存更改」后即时生效；若组合被其他应用占用导致注册失败，可换一个组合。
+              在任意应用中按下即可触发。点击右侧输入框后按下组合键完成录制（需含 ⌘ / Ctrl / Alt
+              / Shift 修饰键，Esc 取消），点击「保存更改」后生效；若组合被其他应用占用则不会生效，换一个即可。
             </p>
             <div className="card">
-              {SHORTCUT_ITEMS.map((item) => (
-                <div className="row-between" key={item.key}>
+              {SHORTCUT_ITEMS.map((item, i) => (
+                <div className={`row-between${i > 0 ? " sep" : ""}`} key={item.key}>
                   <div>
                     <div className="row-title">{item.label}</div>
                     <div className="row-sub">{item.desc}</div>
                   </div>
-                  <ShortcutRecorder
-                    value={settings[item.key]}
-                    onChange={(v) => patch({ [item.key]: v } as Partial<Settings>)}
-                  />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    <ShortcutRecorder
+                      value={settings[item.key]}
+                      onChange={(v) => patch({ [item.key]: v } as Partial<Settings>)}
+                    />
+                    {settings[item.key] !== item.default && (
+                      <button
+                        className="btn sm"
+                        title="重置为默认快捷键"
+                        onClick={() =>
+                          patch({ [item.key]: item.default } as Partial<Settings>)
+                        }
+                      >
+                        重置
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -805,7 +844,7 @@ export default function App() {
                 <div>
                   <div className="row-title">屏幕录制</div>
                   <div className="row-sub">
-                    托盘「文本识别」需要读取屏幕画面并离线识别文字。未授权时点下方「授权屏幕录制」开启。
+                    托盘「识图取字」需要读取屏幕画面并离线识别文字。未授权时点下方「授权屏幕录制」开启。
                   </div>
                 </div>
                 <span className={`pill ${screenAccess ? "ok" : screenAccess === false ? "bad" : ""}`}>

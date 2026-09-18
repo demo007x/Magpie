@@ -495,12 +495,26 @@ body,
   margin-top: 10px;
 }
 
+/* 组计数徽标：随分组标签同行，弱化样式（灰底灰字）只作辅助信息 */
+.extract-count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--hov);
+  color: var(--sec);
+  font-size: 11px; /* 纯数字无低分屏发虚问题 */
+  line-height: 16px;
+  vertical-align: 1px;
+}
+
 .extract-item {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 7px 0;
+  padding: 5px 0;
   border-bottom: 0.5px solid var(--line);
 }
 
@@ -519,10 +533,33 @@ body,
   color: var(--text);
 }
 
+/* URL 路径弱化：域名保持正文字色，路径/查询灰——并列多条链接时快速分辨站点 */
+.url-path {
+  color: var(--sec);
+}
+
+/* 行操作默认隐藏（悬停浮现）：多行列表里常驻按钮成列重复、喧宾夺主。
+   按钮悬浮覆盖在行右端（absolute，脱离文档流）——值文本用满整行，
+   不为按钮预留空列；浮现时自带表面色底遮住身下的文字。
+   focus-within 让键盘聚焦时同样可见 */
 .extract-acts {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   gap: 6px;
-  flex-shrink: 0;
+  padding: 2px 0 2px 14px;
+  background: var(--surf);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.extract-item:hover .extract-acts,
+.extract-item:focus-within .extract-acts {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .extract-acts button {
@@ -590,7 +627,7 @@ body,
 /* 识别原文：无背景色块，与面板无缝一致。
    高度完全由 wrap 的 flex 基数钳制，内部只负责溢出滚动 */
 .ocr-source {
-  padding: 2px 26px 2px 2px;
+  padding: 2px 8px 2px 2px;
   font-size: 12px;
   line-height: 1.65;
   color: var(--source); /* 原文用引用蓝：与下方结果正文明确区分 */
@@ -608,12 +645,17 @@ body,
   outline: none;
 }
 
+/* 折叠切换骑在原文区底部分隔线上（右端）：不占文字排版空间，
+   自带表面色遮住身下的分隔线；下探的半截覆盖在结果区首行右端，
+   面积仅一个 13px 图标，不影响结果阅读 */
 .ocr-toggle {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  bottom: 0;
+  right: 10px;
+  transform: translateY(50%);
+  z-index: 2;
   border: none;
-  background: transparent;
+  background: var(--surf);
   color: var(--sec);
   cursor: pointer;
   padding: 2px;
@@ -621,7 +663,7 @@ body,
 }
 
 .ocr-toggle:hover {
-  background: var(--line);
+  background: var(--hov);
 }
 
 .ocr-toggle .chev-svg {

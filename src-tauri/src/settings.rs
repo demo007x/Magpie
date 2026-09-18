@@ -138,8 +138,17 @@ pub struct Settings {
     pub translate: TranslateConfig,
     /// 是否在 macOS Dock 显示图标（关 = 纯菜单栏常驻模式）
     pub show_dock_icon: bool,
-    /// 文本识别全局快捷键（如 "Alt+O"、"CmdOrCtrl+Shift+O"）；空串 = 禁用
+    /// 识图取字全局快捷键（如 "Alt+O"、"CmdOrCtrl+Shift+O"）；空串 = 禁用
     pub ocr_shortcut: String,
+    /// 识图翻译全局快捷键（截图→识别→默认翻译服务）；空串 = 禁用
+    #[serde(default = "default_ocr_translate_shortcut")]
+    pub ocr_translate_shortcut: String,
+    /// 识图解释全局快捷键（截图→识别→AI 解释）；空串 = 禁用
+    #[serde(default = "default_ocr_explain_shortcut")]
+    pub ocr_explain_shortcut: String,
+    /// 识图总结全局快捷键（截图→识别→AI 总结）；空串 = 禁用
+    #[serde(default = "default_ocr_summarize_shortcut")]
+    pub ocr_summarize_shortcut: String,
     pub app_blacklist: Vec<String>,
     pub debounce_ms: u64,
     /// 结果窗口上次位置（逻辑坐标）：关闭后下次（含重启）在同位置出现
@@ -158,6 +167,18 @@ pub struct Settings {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_ocr_translate_shortcut() -> String {
+    "Alt+T".into()
+}
+
+fn default_ocr_explain_shortcut() -> String {
+    "Alt+E".into()
+}
+
+fn default_ocr_summarize_shortcut() -> String {
+    "Alt+D".into()
 }
 
 fn default_appearance() -> String {
@@ -183,6 +204,9 @@ impl Default for Settings {
             translate: TranslateConfig::default(),
             show_dock_icon: false,
             ocr_shortcut: "Alt+S".into(),
+            ocr_translate_shortcut: default_ocr_translate_shortcut(),
+            ocr_explain_shortcut: default_ocr_explain_shortcut(),
+            ocr_summarize_shortcut: default_ocr_summarize_shortcut(),
             app_blacklist: vec![
                 "Terminal".into(),
                 "iTerm".into(),
@@ -301,8 +325,8 @@ pub fn save_settings(
         let _ = app.set_activation_policy(policy);
     }
     let _ = app.emit("settings://changed", ());
-    // 文本识别快捷键即时生效（改键/清空禁用都会重新注册）
-    crate::apply_ocr_shortcut(&app);
+    // 识图类全局快捷键即时生效（改键/清空禁用都会重新注册）
+    crate::apply_ocr_shortcuts(&app);
     Ok(())
 }
 

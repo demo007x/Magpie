@@ -7,16 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.5] - 2026-09-18
 
+### Added
+
+- **Three one-step recognition shortcuts**: 识图翻译 / 识图解释 / 识图总结 — press the shortcut, select a screen region, and the recognized text is automatically translated (via your default translate service), explained, or summarized in the result panel. Each has a customizable global shortcut (default ⌥T / ⌥E / ⌥D) with reset-to-default in the settings page.
+- **All recognition actions in the tray menu**: 识图取字 / 识图翻译 / 识图解释 / 识图总结 now appear in the right-click tray menu (grouped, each showing its current shortcut), so every shortcut-triggerable action is also reachable by mouse.
+
 ### Changed
 
 - **Fixed Chinese text recognition**: recognized Chinese text came out garbled or empty. Recognition now uses an accurate level with automatic language detection, which also handles mixed-language content better. Supersedes the Fast-level switch from 0.1.3.
 - **Toast width adapts to content**: short messages hug the text instead of filling a fixed-width slot; long messages cap at a maximum width, wrap to two lines, then truncate.
 - **Smoother toast show/hide animation**: replaced the per-frame native shadow (the jank source) with a CSS-drawn shadow and an ease-out curve.
+- **Recognition features renamed for clarity**: 文本识别 → 识图取字, and the new one-step actions follow the same 识图X naming across the tray menu, settings, and result panel.
+- **识图翻译 follows your translate settings**: the one-step shortcut and tray item use the configured default translate service (Baidu / DeepL / AI) instead of always using AI.
+- **Extract panel polish**: row actions (打开 / 邮件 / 复制) appear on hover as an overlay instead of occupying a permanent column; each group shows an item count; rows are tighter; URLs show the domain emphasized with the path dimmed, and long links are collapsed to head + tail (hover shows the full address).
+- **Source expand toggle moved**: the recognized-text expand/collapse chevron now sits on the divider below the source area instead of floating over the text, so every line uses the full width.
+- **Shortcuts settings rows match the other pages** in spacing and hairline dividers.
 
 ### Fixed
 
 - Toast appearing at inconsistent positions across runs.
 - Toast glass material showing a frosted band around the card, or lagging one size behind after the width changed.
+- Text selected together with surrounding page content (e.g. a Google result line "https://obsidian.md · 翻译此页") produced a broken URL that opened a blank page; page text glued onto the domain is now trimmed off.
+- URLs with less common domains (such as `.sh` / `.md`) were not recognized at all; URL detection is now pattern-based (scheme + host) instead of a fixed domain-suffix list.
 
 ## [0.1.4] - 2026-09-17
 

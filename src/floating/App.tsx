@@ -68,6 +68,43 @@ function dominantGroup(groups: ExtractGroups): string {
   return best;
 }
 
+/** URL 展示：域名正文字色、路径弱化灰，并列多条时一眼分辨站点。
+ * 超长 URL（如贴图床/markdown 图片链接）中段省略：保目录头 + 尾段（文件名），
+ * hash 类文件名的差异在开头，故尾段超长时掐中段保留开头；
+ * 原始完整值始终用于复制（提取值不改动），悬停 tooltip 看全文。
+ * 切分交给 URL 标准解析器，解析失败退回纯文本 */
+function renderUrl(item: string): React.ReactNode {
+  let u: URL;
+  try {
+    u = new URL(item);
+  } catch {
+    return item;
+  }
+  const path = item.slice(u.origin.length);
+  if (!path) return item;
+  if (item.length <= 46) {
+    return (
+      <>
+        {u.origin}
+        <span className="url-path">{path}</span>
+      </>
+    );
+  }
+  const cut = path.lastIndexOf("/");
+  const dir = cut <= 0 ? "" : path.slice(0, cut);
+  const file = cut <= 0 ? path : path.slice(cut);
+  const dirShow = dir.length > 16 ? dir.slice(0, 16) : dir;
+  const fileShow = file.length > 26 ? file.slice(0, 12) + "…" + file.slice(-9) : file;
+  return (
+    <>
+      {u.origin}
+      <span className="url-path">
+        {dirShow}…{fileShow}
+      </span>
+    </>
+  );
+}
+
 // ---- 图标（lucide-react 图标库，统一 15px / 1.75 描边，随文字色） ----
 const ICONS: Record<string, React.ReactNode> = {
   copy: <Copy size={14} strokeWidth={1.75} />,
@@ -103,8 +140,8 @@ type Phase =
     groups: ExtractGroups;
   }
   | {
-    /** OCR 文本识别：合并面板（文本可见 + 动作内嵌 + 结果流式）。
-        fromOcr = 识别来源（显示钉图/文本识别标题）；false = 划词导流结果 */
+    /** OCR 识图取字：合并面板（文本可见 + 动作内嵌 + 结果流式）。
+        fromOcr = 识别来源（显示钉图/识图取字标题）；false = 划词导流结果 */
     kind: "ocr";
     text: string;
     fromOcr: boolean;
@@ -1567,10 +1604,16 @@ export default function App() {
           <div className="panel-body extract-list">
             {EXTRACT_GROUPS.filter((g) => phase.groups[g.id].length > 0).map((g) => (
               <div key={g.id}>
-                <div className="extract-group">{g.label}</div>
+                <div className="extract-group">
+                  {g.label}
+                  {/* 计数徽标：一眼知道该组提取了几条，不必逐行数 */}
+                  <span className="extract-count">{phase.groups[g.id].length}</span>
+                </div>
                 {phase.groups[g.id].map((item, i) => (
                   <div className="extract-item" key={`${item}-${i}`}>
-                    <span className="extract-text">{item}</span>
+                    <span className="extract-text" title={g.id === "link" ? item : undefined}>
+                      {g.id === "link" ? renderUrl(item) : item}
+                    </span>
                     <span className="extract-acts">
                       {g.id === "link" && (
                         <button
@@ -1633,7 +1676,7 @@ export default function App() {
                   ICONS[phase.actionId ?? ""]
                 )}
               </span>
-              {phase.fromOcr ? "文本识别" : (actionById(phase.actionId ?? "")?.label ?? "结果")}
+              {phase.fromOcr ? "识图取字" : (actionById(phase.actionId ?? "")?.label ?? "结果")}
               {(phase.streaming || doneFlash) && (
                 <span className={`dot ${doneFlash ? "done" : ""}`} title={phase.streaming ? "生成中" : "已完成"} />
               )}
