@@ -63,43 +63,126 @@ body,
   overflow: hidden;
 }
 
-/* 材质层由原生提供（填满窗口），CSS 无需背景与投影；
-   不要在此层加 transform/opacity 动画——WebKit 透明窗口下会合成出黑色浮层 */
+/* 材质层由原生提供（填满窗口），CSS 无需背景；
+   不要在此层加 transform/opacity 动画——WebKit 透明窗口下会合成出黑色浮层。
+   窗口无原生阴影（透明窗口的原生阴影逐帧重算，窗口动画时严重掉帧），
+   改用 .toast-pop 的 CSS box-shadow 自绘，.stage 的 padding 就是给阴影留的
+   出血区（窗口恰好裁住元素边界，无 padding 阴影会被裁掉） */
 .stage {
   user-select: none;
+  padding: 12px;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
 }
 
 .toast-pop {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
+  /* 宽度随文案自适应：短文案贴内容，长文案封顶 420 后折行（见 .toast-main）。
+     必须用 max-content 而非 fit-content——测量发生在窗口还停着「上一条 toast
+     尺寸」的时候，fit-content 会参考视口可用宽度，上一条窄本条就会跟着窄
+     （折行 + 量出下限宽，再也无法撑开）；max-content 是内在尺寸，与视口无关。
+     旧方案「宽度恒定」是为了避免换装横向漂移——现滚入定位已在量尺寸之后
+     （Rust try_roll_in 据最新尺寸计算居中），该顾虑不存在了。
+     数值与 Rust 侧 resize_toast 的宽度上限协调 */
   width: max-content;
-  max-width: 428px;
-  padding: 5px 12px;
+  max-width: 420px;
+  /* 高度下限 53px = 两行文案的自然高度（主行 18.2 + gap 1 + 次行 16.8 +
+     padding 16 + 边框 1）：单行垂直居中、两行恰好填满，底边位置确定。
+     实在太长的文案折行后超过 53 也没关系——量尺寸回调会随内容放大窗口，
+     底边随之变化但滚入停留位钉的是顶缘 */
+  min-height: 53px;
+  padding: 8px 14px;
   background: var(--surf);
+  border: 0.5px solid var(--line);
+  border-radius: 12px;
   color: var(--text);
   font-size: 13px;
   line-height: 1.4;
-  white-space: nowrap;
+  /* 自绘投影（原生阴影已关，见 .stage 注释）：柔和的近距阴影 */
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.16), 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .toast-pop svg {
   flex: none;
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
 }
 
-.toast-pop.is-err svg {
+.toast-pop.err svg {
   color: var(--err);
+  width: 16px;
+  height: 16px;
 }
 
-.toast-pop:not(.is-err) svg {
-  color: var(--accent);
+/* 原生通知的信息图标不带彩色（品牌紫是交互色，不是状态色） */
+.toast-pop.info svg,
+.toast-pop.progress svg {
+  color: var(--sec, #85858f);
+}
+
+/* 识别中：旋转的 Loader——动效本身就是「活着」的信号 */
+.toast-pop.progress svg.spin {
+  animation: ic-spin 700ms linear infinite;
+}
+
+@keyframes ic-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 状态衔接：新内容自顶部滑入 + 淡入登场（磨砂底面原地不动） */
+.toast-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: toast-swap 160ms ease;
+}
+
+/* 旧内容退场：缓慢淡出 + 微上浮（「识别中」给「失败」让位） */
+.toast-body.out {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+@keyframes toast-swap {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
 }
 
 .toast-text {
-  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  /* 内在宽度（max-content）：不参考视口，理由同 .toast-pop；
+     容器封顶 420 时靠 flex-shrink 收缩，触发子元素折行 */
+  width: max-content;
+  max-width: 420px;
+}
+
+/* 主行：发生了什么；次行：该怎么办（原生通知的 title/subtitle 层级）。
+   宽度策略：正常文案单行放完；超长的先折行（至多 2 行），再长才省略号截断 */
+.toast-main {
+  font-weight: 510; /* 半档字重：醒目但不突兀（中文加字重优于加字号） */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
+
+.toast-sub {
+  font-size: 12px;
+  color: var(--sec, #85858f);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }

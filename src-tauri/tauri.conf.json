@@ -55,14 +55,14 @@
       {
         "label": "toast",
         "url": "toast.html",
-        "width": 200,
-        "height": 48,
+        "width": 384,
+        "height": 77,
         "visible": false,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "shadow": true,
+        "shadow": false,
         "focus": false
       }
     ],
@@ -85,6 +85,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "infoPlist": "Info.plist"
+    }
   }
 }

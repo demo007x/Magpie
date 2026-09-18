@@ -116,7 +116,17 @@ fn screen_capture_preflight() -> bool {
     unsafe { CGPreflightScreenCaptureAccess() != 0 }
 }
 
-/// Vision OCR：准确级别、中英文、语言校正，按行拼接
+/// Vision OCR：按行拼接识别结果。
+///
+/// VNRecognizeTextRequest 正确用法（本项目实测踩坑记录，改回去会复发）：
+/// 1. 识别级别必须 Accurate —— Fast 级别在 macOS 上只内置拉丁语系模型
+///    （supportedRecognitionLanguages 实测仅 en/fr/it/de/es/pt），
+///    请求 zh-Hans 不会报错，而是静默回退到拉丁模型：中文输出乱码或为空。
+/// 2. 语言要么开 automaticallyDetectsLanguage，要么显式列出目标语种 ——
+///    两者都不做时默认仅 en-US，中日文整行丢失。
+///    注意显式列表是硬约束：列表外语种（如日文）会被排除，自动检测则无此限制，
+///    多语种混排场景优先用自动检测。
+/// 3. usesLanguageCorrection 只在 Accurate 下生效，Fast 下静默无效。
 fn ocr_image_file(path: &Path) -> Result<String, String> {
     use objc2_vision::VNRequestTextRecognitionLevel;
 
@@ -125,14 +135,9 @@ fn ocr_image_file(path: &Path) -> Result<String, String> {
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let request = VNRecognizeTextRequest::init(VNRecognizeTextRequest::alloc());
-            // Fast：屏幕截图文字源清晰，速度比 Accurate 快数倍且质量几乎无感差异
-            request.setRecognitionLevel(VNRequestTextRecognitionLevel::Fast);
-
-            let langs = NSArray::from_slice(&[
-                &*NSString::from_str("zh-Hans"),
-                &*NSString::from_str("en-US"),
-            ]);
-            request.setRecognitionLanguages(&langs);
+            // 三个参数的取值依据见上方函数文档：Accurate + 自动检测语言 + 语言校正
+            request.setRecognitionLevel(VNRequestTextRecognitionLevel::Accurate);
+            request.setAutomaticallyDetectsLanguage(true);
             request.setUsesLanguageCorrection(true);
 
             let url = NSURL::fileURLWithPath(&NSString::from_str(

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import type { MouseEvent as ReactMouseEvent } from "react";import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import ReactMarkdown from "react-markdown";
@@ -113,11 +113,6 @@ type Phase =
     streaming: boolean;
     error: string | null;
     expanded: boolean;
-    /** 文本识别两段式：截图已入面板、文本未回填（原文区显示截图预览） */
-    recognizing?: boolean;
-    imagePath?: string | null;
-    /** 文本识别失败原因（识别中占位的错误态） */
-    recognizeError?: string | null;
   };
 
 // 重复查询缓存：同动作 + 同服务 + 同文本，5 分钟内直接复用结果
@@ -617,22 +612,6 @@ export default function App() {
       .then((s) => applyTheme(s.appearance ?? "auto"))
       .catch(() => undefined);
     listen<string>("theme://appearance", (e) => applyTheme(e.payload)).catch(() => undefined);
-    // 文本识别第二段：识别完成后回填文本/错误（仅 OCR 窗口消费）
-    listen<{ text?: string; error?: string }>("ocr://update", (e) => {
-      if (!IS_OCR) return;
-      setPhase((p) => {
-        if (p.kind !== "ocr") return p;
-        if (e.payload.error) {
-          return { ...p, recognizing: false, recognizeError: e.payload.error };
-        }
-        return {
-          ...p,
-          text: e.payload.text ?? p.text,
-          recognizing: false,
-          recognizeError: null,
-        };
-      });
-    }).catch(() => undefined);
     // OCR 独立窗口：取走 Rust 侧存好的识别文本（推送可能早于 webview 挂载）
     if (IS_OCR) {
       invoke<PendingView | null>("ocr_take_pending")
@@ -655,8 +634,6 @@ export default function App() {
             streaming: false,
             error: null,
             expanded: false,
-            recognizing: !p.text && p.hasImage,
-            imagePath: p.imagePath,
           });
           if (p.run?.id === "__extract") {
             // 提取信息：结果窗口本地从文本计算分组
@@ -683,8 +660,6 @@ export default function App() {
               streaming: false,
               error: null,
               expanded: false,
-              recognizing: !p.text && p.hasImage,
-              imagePath: p.imagePath,
             });
             if (p.run) runAction(p.run.id, p.run.service ?? undefined, p.text);
           }
@@ -745,8 +720,6 @@ export default function App() {
               streaming: false,
               error: null,
               expanded: false,
-              recognizing: !p.text && p.hasImage,
-              imagePath: p.imagePath,
             });
             if (p.run?.id === "__extract") {
               const all = extractAll(p.text);
@@ -1706,6 +1679,7 @@ export default function App() {
               )}
               <button
                 className="tool"
+                disabled={!phase.output && !phase.text}
                 onClick={guarded(() => {
                   const payload = phase.output
                     ? phase.actionId === "translate"
@@ -1749,27 +1723,13 @@ export default function App() {
                 phase.actionId ? "has-result" : "full"
               } ${phase.actionId && phase.expanded ? "expanded" : ""}`}
             >
-              {phase.recognizing || phase.recognizeError ? (
-                <div ref={sourceRef} className="ocr-source">
-                  {phase.recognizing
-                    ? phase.imagePath
-                      ? <img
-                          className="ocr-source-img"
-                          src={convertFileSrc(phase.imagePath)}
-                          alt="识别中"
-                        />
-                      : "识别中…"
-                    : <span className="ocr-source-err">{phase.recognizeError}</span>}
-                </div>
-              ) : (
-                <EditableSource
-                  text={phase.text}
-                  sourceRef={sourceRef}
-                  onEdit={(t) =>
-                    setPhase((p) => (p.kind === "ocr" ? { ...p, text: t } : p))
-                  }
-                />
-              )}
+              <EditableSource
+                text={phase.text}
+                sourceRef={sourceRef}
+                onEdit={(t) =>
+                  setPhase((p) => (p.kind === "ocr" ? { ...p, text: t } : p))
+                }
+              />
               {/* 仅结果模式显示折叠切换；原文模式本就是全量，无需切换 */}
               {phase.actionId && (sourceOverflow || phase.expanded) && (
                 <button

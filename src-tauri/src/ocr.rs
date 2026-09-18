@@ -23,7 +23,7 @@ pub fn capture_region_to_file() -> Result<std::path::PathBuf, String> {
         let _ = Command::new("open")
             .arg("x-apple.systempreferences:com.apple.preference.security?ScreenCapture")
             .spawn();
-        return Err("需要屏幕录制权限：已打开系统设置，授权后重新使用".into());
+        return Err("需要屏幕录制权限\n已打开系统设置，授权后重试".into());
     }
 
     let dir = std::env::temp_dir();
@@ -86,13 +86,12 @@ pub fn recognize_file(path: &Path) -> Result<String, String> {
     Ok(text)
 }
 
-/// 推送「截图完成、识别中」状态给 OCR 独立窗口：面板立即弹出，
-/// 原文区显示截图预览（文本为空 = 前端进入识别中占位态）。
-/// 事件用全局广播而不是 emit_to：JS listen() 注册的是 Any 目标，
-/// emit_to 的按窗口过滤不匹配 Any 监听器（此前识别面板因此永不出现）。
-/// 其他窗口收到后按 app=="ocr" 忽略。
-pub fn push_capturing_to_ocr_window(app: &tauri::AppHandle, image: PathBuf) {
-    super::floating::ocr_set_pending(String::new(), Some(image));
+/// 识别完成，一次性推送结果（文本 + 原图）：面板出现即有完整内容，
+/// 原图随 pending 保留供「钉图」。事件用全局广播而不是 emit_to：
+/// JS listen() 注册的是 Any 目标，emit_to 的按窗口过滤不匹配 Any 监听器
+/// （此前识别面板因此永不出现）。其他窗口收到后按 app=="ocr" 忽略。
+pub fn push_ocr_result(app: &tauri::AppHandle, text: String, image: PathBuf) {
+    super::floating::ocr_set_pending(text, Some(image));
     let _ = app.emit(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
@@ -109,17 +108,6 @@ pub fn push_text_to_ocr_window(app: &tauri::AppHandle, text: String, image: Opti
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
     );
-}
-
-/// 识别完成：回填文本（同时更新 pending，供后续取走路径拿到完整数据）
-pub fn push_ocr_text(app: &tauri::AppHandle, text: String) {
-    super::floating::ocr_set_pending_text(text.clone());
-    let _ = app.emit("ocr://update", serde_json::json!({ "text": text }));
-}
-
-/// 识别失败：面板原文区展示原因（全局 toast 由调用方负责）
-pub fn push_ocr_error(app: &tauri::AppHandle, reason: String) {
-    let _ = app.emit("ocr://update", serde_json::json!({ "error": reason }));
 }
 
 fn helper_path() -> Result<std::path::PathBuf, String> {

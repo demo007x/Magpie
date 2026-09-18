@@ -51,7 +51,7 @@ pub(crate) fn show_without_activation(win: &WebviewWindow) -> Result<(), String>
 /// HUD 类面板是已知死穴。NSVisualEffectView 有 state 属性可强制激活外观，
 /// 材质跟随系统明暗自适应，外观稳定不受焦点与悬停影响
 #[cfg(target_os = "macos")]
-pub fn apply_liquid_glass(win: &WebviewWindow, radius: f64) -> bool {
+pub fn apply_liquid_glass(win: &WebviewWindow, radius: f64, inset: f64) -> bool {
     use objc2::msg_send;
     use objc2::runtime::{AnyClass, AnyObject};
     use std::ffi::CString;
@@ -75,7 +75,16 @@ pub fn apply_liquid_glass(win: &WebviewWindow, radius: f64) -> bool {
         let bounds: objc2_foundation::NSRect = msg_send![content, bounds];
         objc2::rc::autoreleasepool(|_| {
             let view: *mut AnyObject = msg_send![cls, alloc];
-            let view: *mut AnyObject = msg_send![view, initWithFrame: bounds];
+            // inset > 0：材质内缩（toast 窗口带 CSS 阴影出血边，材质须与
+            // 卡片对齐，否则磨砂层会从卡片四周露出一圈）
+            let frame = objc2_foundation::NSRect::new(
+                objc2_foundation::NSPoint::new(inset, inset),
+                objc2_foundation::NSSize::new(
+                    (bounds.size.width - 2.0 * inset).max(0.0),
+                    (bounds.size.height - 2.0 * inset).max(0.0),
+                ),
+            );
+            let view: *mut AnyObject = msg_send![view, initWithFrame: frame];
             if view.is_null() {
                 return false;
             }
@@ -104,7 +113,7 @@ pub fn apply_liquid_glass(win: &WebviewWindow, radius: f64) -> bool {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn apply_liquid_glass(_win: &WebviewWindow, _radius: f64) -> bool {
+pub fn apply_liquid_glass(_win: &WebviewWindow, _radius: f64, _inset: f64) -> bool {
     false
 }
 
@@ -174,7 +183,13 @@ pub fn enable_liquid_glass(app: &AppHandle) -> bool {
     let mut on = false;
     for label in ["floating", "ocr", "toast"] {
         if let Some(w) = app.get_webview_window(label) {
-            on |= apply_liquid_glass(&w, 12.0);
+            // toast 窗口带 12px CSS 阴影出血边，材质须内缩与卡片对齐
+            let inset = if label == "toast" {
+                crate::toast::TOAST_PAD
+            } else {
+                0.0
+            };
+            on |= apply_liquid_glass(&w, 12.0, inset);
         }
     }
     LIQUID_GLASS.store(on, std::sync::atomic::Ordering::Relaxed);
@@ -418,12 +433,6 @@ pub fn set_selection_pending(text: String, action_id: String, service: Option<St
 }
 
 /// 更新待显示结果的识别文本（两段式推送：先图后文的第二段）
-pub fn ocr_set_pending_text(text: String) {
-    if let Some(p) = OCR_PENDING.lock().unwrap().as_mut() {
-        p.text = text;
-    }
-}
-
 /// OCR 窗口内容就绪：定位到主屏水平居中、上方 1/3 处并显示（不激活本进程）。
 /// 顺序保证"先渲染后显示"——用户看不到白屏/动画。
 #[tauri::command]

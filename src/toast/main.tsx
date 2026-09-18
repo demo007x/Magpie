@@ -6,10 +6,10 @@ import { useEffect, useLayoutEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { AlertCircle, Info } from "lucide-react";
+import { AlertCircle, Info, LoaderCircle } from "lucide-react";
 import "./toast.css";
 
-type Kind = "err" | "info";
+type Kind = "err" | "info" | "progress";
 
 declare global {
   interface Window {
@@ -21,6 +21,9 @@ function ToastApp() {
   const [toast, setToast] = useState<{ message: string; kind: Kind } | null>(null);
 
   useEffect(() => {
+    // message 支持「主行\n次行」两段：主行说发生了什么，次行（次要灰）说怎么办。
+    // 「识别中→失败」的先后出场由 Rust 侧编排（旧条滚出隐藏后新条滚入），
+    // 前端收到调用时窗口处于隐藏间隙，直接渲染新内容即可
     window.__toastShow = (message: string, kind: Kind = "info") =>
       setToast({ message, kind });
     // Liquid Glass（macOS 26）：生效则表面切半透明让玻璃透出；
@@ -42,24 +45,34 @@ function ToastApp() {
     listen<string>("theme://appearance", (e) => applyTheme(e.payload)).catch(() => undefined);
   }, []);
 
-  // 内容测量 → 缩放窗口（材质层由原生填满窗口，窗口尺寸即面板尺寸）
+  // 内容测量 → 缩放窗口（材质层由原生填满窗口，窗口尺寸即面板尺寸）。
+  // 宽高都随内容：短文案贴内容宽，长文案封顶后折行增高（上限在 Rust 侧钳制）
   useLayoutEffect(() => {
     if (!toast) return;
     const el = document.querySelector<HTMLElement>(".toast-pop");
     if (!el) return;
     invoke("resize_toast", {
-      width: el.scrollWidth,
+      width: el.offsetWidth,
       height: el.offsetHeight,
     }).catch(() => undefined);
   }, [toast]);
 
   if (!toast) return null;
-  const Icon = toast.kind === "err" ? AlertCircle : Info;
+  const Icon =
+    toast.kind === "err" ? AlertCircle : toast.kind === "progress" ? LoaderCircle : Info;
+  const [main, ...rest] = toast.message.split("\n");
   return (
     <div className="stage">
-      <div className={`toast-pop ${toast.kind === "err" ? "is-err" : ""}`}>
-        <Icon />
-        <span className="toast-text">{toast.message}</span>
+      {/* key 随内容变化：状态换装（如 识别中→失败）时触发滑入动画。
+          动画挂在 .toast-body（图标+文字整体），磨砂底面原地不动 */}
+      <div className={`toast-pop ${toast.kind}`}>
+        <div className="toast-body">
+          <Icon className={`ic ${toast.kind === "progress" ? "spin" : ""}`} />
+          <span className="toast-text">
+            <span className="toast-main">{main}</span>
+            {rest.length > 0 && <span className="toast-sub">{rest.join("\n")}</span>}
+          </span>
+        </div>
       </div>
     </div>
   );

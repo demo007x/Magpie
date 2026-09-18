@@ -57,8 +57,6 @@ pub struct OcrShortcut(pub std::sync::Mutex<Option<Shortcut>>);
 fn start_ocr_flow(app: tauri::AppHandle) {
     eprintln!("[magpie:ocr] 文本识别开始");
     tauri::async_runtime::spawn(async move {
-        // 两段式（感知提速）：截图完成立即弹面板（图片预览 + 识别中占位），
-        // 识别完成后仅回填文本——用户感知等待从「全链路之和」降为「识别本身」
         let image = match tauri::async_runtime::spawn_blocking(ocr::capture_region_to_file).await
         {
             Ok(Ok(image)) => image,
@@ -76,19 +74,32 @@ fn start_ocr_flow(app: tauri::AppHandle) {
                 return;
             }
         };
-        ocr::push_capturing_to_ocr_window(&app, image.clone());
-        eprintln!("[magpie:ocr] 截图完成，面板已推送，开始识别");
-        match tauri::async_runtime::spawn_blocking(move || ocr::recognize_file(&image)).await {
+        // 识别完成后一次性呈现（识别级别 Fast，通常亚秒级）：
+        // 面板出现即有结果，失败则只有 toast——没有「弹出又消失」的闪烁。
+        // 「正在识别…」无条件立即常驻（不设延时阈值），填补串行化的感知空窗；
+        // 成功 → 撤场让位面板，失败 → 原位换装为错误两段话术
+        eprintln!("[magpie:ocr] 截图完成，开始识别");
+        toast::show_toast_sticky(&app, "正在识别…", "progress");
+        let img = image.clone(); // 识别在闭包内消费，image 留给失败清理与钉图
+        match tauri::async_runtime::spawn_blocking(move || ocr::recognize_file(&img)).await {
             Ok(Ok(text)) => {
                 eprintln!("[magpie:ocr] 成功：len={}", text.len());
-                ocr::push_ocr_text(&app, text);
+                toast::hide_toast(&app);
+                ocr::push_ocr_result(&app, text, image);
             }
             Ok(Err(e)) => {
                 eprintln!("[magpie:ocr] 失败：{e}");
+                // 面板未创建，临时截图也没有存在价值：直接清理
+                let _ = std::fs::remove_file(&image);
                 if e != "截图已取消" {
-                    toast::show_toast(&app, &e, "err");
+                    // 统一话术：主行说发生了什么，次行说该怎么办（toast 两段式）
+                    let msg = if e == "未识别到文字" {
+                        "未检测到文字\n重新框选，确认区域内有清晰的文字".to_string()
+                    } else {
+                        e.clone()
+                    };
+                    toast::show_toast(&app, &msg, "err");
                 }
-                ocr::push_ocr_error(&app, e);
             }
             Err(e) => eprintln!("[magpie:ocr] 任务失败: {e}"),
         }

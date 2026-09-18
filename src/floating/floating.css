@@ -456,6 +456,12 @@ body,
   background: var(--hov);
 }
 
+/* 禁用（如无文本可复制）：压暗并去掉交互反馈 */
+.tool:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 /* 钉图失败反馈 */
 .tool.err {
   color: var(--err);
@@ -685,9 +691,7 @@ body,
   border-radius: 6px;
 }
 
-.ocr-source-err {
-  color: #e5484d;
-}
+/* （识别失败的展示已收敛到全局 toast，原文区不再有错误态样式） */
 
 /* 固定上界线已并入上方 .ocr-source-wrap.has-result（边线 + 折叠基数） */
 

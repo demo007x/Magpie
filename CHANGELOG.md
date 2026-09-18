@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-09-18
+
+### Changed
+
+- **Fixed Chinese text recognition**: recognized Chinese text came out garbled or empty. Recognition now uses an accurate level with automatic language detection, which also handles mixed-language content better. Supersedes the Fast-level switch from 0.1.3.
+- **Toast width adapts to content**: short messages hug the text instead of filling a fixed-width slot; long messages cap at a maximum width, wrap to two lines, then truncate.
+- **Smoother toast show/hide animation**: replaced the per-frame native shadow (the jank source) with a CSS-drawn shadow and an ease-out curve.
+
+### Fixed
+
+- Toast appearing at inconsistent positions across runs.
+- Toast glass material showing a frosted band around the card, or lagging one size behind after the width changed.
+
 ## [0.1.4] - 2026-09-17
 
 ### Added

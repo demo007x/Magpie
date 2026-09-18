@@ -24,12 +24,21 @@ md-5 = "0.10"
 arboard = "3"
 rfd = "0.15"
 objc2 = "0.6"
+block2 = "0.6"
+objc2-app-kit = { version = "0.3", features = [
+  "NSWindow",
+  "NSAnimation",
+  "NSAnimationContext",
+  "block2",
+] }
 objc2-foundation = { version = "0.3", features = [
   "NSArray",
   "NSDictionary",
   "NSString",
   "NSURL",
 ] }
+# toast 动画的 ease-out 缓动曲线（CAMediaTimingFunction）
+objc2-quartz-core = { version = "0.3", features = ["CAMediaTimingFunction"] }
 objc2-vision = { version = "0.3", features = [
   "VNRecognizeTextRequest",
   "VNRequest",

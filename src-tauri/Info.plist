@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- 与 Tauri 生成的 Info.plist 合并。
+     Vision OCR 依赖 bundle 的本地化声明：缺失时打包后的应用被当作纯英文
+     环境，usesLanguageCorrection 的中文识别输出乱码/空结果（dev 裸二进制
+     不受影响）。声明中英混排本地化是官方修法 -->
+<dict>
+	<key>CFBundleAllowMixedLocalizations</key>
+	<true/>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>zh-Hans</string>
+		<string>en-US</string>
+	</array>
+</dict>
+</plist>

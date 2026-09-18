@@ -5,3 +5,4 @@ src-tauri/gen/
 *.log
 .DS_Store
 .zcode/*
+todo.md
