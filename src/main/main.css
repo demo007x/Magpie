@@ -300,8 +300,8 @@ input:focus {
 }
 
 input[type="radio"] {
-  width: auto;
-  height: auto;
+  width: 13px;
+  height: 13px;
   accent-color: var(--accent);
 }
 
@@ -328,10 +328,27 @@ input[type="radio"] {
   padding: 4px 0;
 }
 
-.row-between.sep + .row-between.sep {
+/* 分隔线规则：sep 标记"非首行"。不能用 .sep + .sep 邻接选择器——
+   首行（无 sep）后接的 sep 行会漏线（权限页 辅助功能→输入监控、
+   快捷键页第 1-2 行都因此缺线）；:not(:first-child) 防御未来
+   某卡片以 sep 行开头的情况。
+   间距对齐：基础行 padding-bottom 4px + margin-top 10px = 分隔线上方 14px，
+   与行内 padding-top 14px 对称；否则上 14 / 下 4 的 padding 会让内容
+   （尤其右侧单独的开关）在分隔带里肉眼可见地偏下 */
+.row-between.sep:not(:first-child) {
   border-top: 0.5px solid var(--line);
   padding-top: 14px;
-  margin-top: 14px;
+  margin-top: 10px;
+}
+
+/* 紧凑变体：单行名称类列表（禁用应用），6px 留白 + 小号按钮压行高，
+   相邻行贴发丝线、无 margin——sep 的 14px 大留白是给多行说明文案的，纯名称行太松 */
+.row-between.tight {
+  padding: 6px 0;
+}
+
+.row-between.tight + .row-between.tight {
+  border-top: 0.5px solid var(--line);
 }
 
 /* 左侧说明文字弹性收缩，右侧控件（pill/开关）不被挤压变形 */
@@ -615,8 +632,8 @@ input[type="radio"] {
 /* ---- 开关 ---- */
 .switch {
   position: relative;
-  width: 38px;
-  height: 23px;
+  width: 32px;
+  height: 19px;
   flex-shrink: 0;
 }
 
@@ -635,7 +652,10 @@ input[type="radio"] {
   inset: 0;
   border-radius: 99px;
   background: var(--hov);
-  border: 0.5px solid var(--line);
+  /* 发丝线必须用 inset box-shadow 而非 border：绝对定位的白钮（::after）以
+     padding box 为定位原点，0.5px border 会把原点内挤——钮上下留边变成
+     2.5px/1.5px，肉眼可见地偏下偏右。box-shadow 不参与布局，原点不偏移 */
+  box-shadow: inset 0 0 0 0.5px var(--line);
   transition: background 150ms;
   pointer-events: none;
 }
@@ -645,8 +665,8 @@ input[type="radio"] {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 17px;
-  height: 17px;
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
   background: var(--knob);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
@@ -655,11 +675,11 @@ input[type="radio"] {
 
 .switch input:checked + .knob {
   background: var(--accent);
-  border-color: transparent;
+  box-shadow: none;
 }
 
 .switch input:checked + .knob::after {
-  transform: translateX(15px);
+  transform: translateX(13px);
 }
 
 /* ---- 分段选择器（外观：跟随系统/亮色/暗色）----

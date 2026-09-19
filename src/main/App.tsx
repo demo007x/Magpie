@@ -61,25 +61,25 @@ const SHORTCUT_ITEMS: Array<{
     key: "ocrShortcut",
     label: "识图取字",
     default: "Alt+S",
-    desc: "框选屏幕任意区域，识别其中的文字——在结果面板中查看、复制、钉住原图，或继续执行翻译等操作。默认 ⌥S。",
+    desc: "框选屏幕任意区域，识别其中的文字，在结果面板中查看、复制、钉住原图，或继续翻译等后续操作。默认 ⌥S。",
   },
   {
     key: "ocrTranslateShortcut",
     label: "识图翻译",
     default: "Alt+T",
-    desc: "一步直达：框选截图，识别出的文字自动用默认翻译服务翻译，结果直接呈现在面板中。默认 ⌥T。",
+    desc: "框选截图，识别出的文字自动交给默认翻译服务，结果直接呈现在面板中。默认 ⌥T。",
   },
   {
     key: "ocrExplainShortcut",
     label: "识图解释",
     default: "Alt+E",
-    desc: "一步直达：框选截图，AI 自动解释识别出的内容。默认 ⌥E。",
+    desc: "框选截图，AI 自动解释识别出的内容——术语、代码、生僻概念一看就懂。默认 ⌥E。",
   },
   {
     key: "ocrSummarizeShortcut",
     label: "识图总结",
     default: "Alt+D",
-    desc: "一步直达：框选截图，AI 自动总结识别出的要点。默认 ⌥D。",
+    desc: "框选截图，AI 自动提炼识别出的文字要点，长文一眼抓住重点。默认 ⌥D。",
   },
 ];
 
@@ -743,8 +743,8 @@ export default function App() {
           <>
             <h1>快捷键</h1>
             <p className="page-hint">
-              在任意应用中按下即可触发。点击右侧输入框后按下组合键完成录制（需含 ⌘ / Ctrl / Alt
-              / Shift 修饰键，Esc 取消），点击「保存更改」后生效；若组合被其他应用占用则不会生效，换一个即可。
+              在任意应用中按下组合键即可触发对应功能，无需切到拾趣窗口。点击输入框录制新组合键（需含
+              ⌘ / Ctrl / Alt / Shift 修饰键，Esc 取消），点「保存更改」后生效；若组合已被其他应用占用则不会生效，换一个即可。
             </p>
             <div className="card">
               {SHORTCUT_ITEMS.map((item, i) => (
@@ -793,7 +793,7 @@ export default function App() {
                 <div>
                   <div className="row-title">辅助功能</div>
                   <div className="row-sub">
-                    划词的根基：读取你在任何应用中选中的文字。未授权时点下方「授权划词」开启。
+                    在任何应用中读取你选中的文字——划词翻译、解释、总结都从这里开始。未授权时划词没有反应，点下方「授权划词」开启。
                   </div>
                 </div>
                 <span className={`pill ${granted ? "ok" : granted === false ? "bad" : ""}`}>
@@ -823,7 +823,7 @@ export default function App() {
                 <div>
                   <div className="row-title">输入监控</div>
                   <div className="row-sub">
-                    让拾趣感知你的划词动作，缺失时浮动条不会弹出。未授权时点下方「授权输入监控」开启。
+                    感知你的选择动作，在你选完文字的一瞬弹出拾趣浮动条。未授权时选中文字同样没有反应，点下方「授权输入监控」开启。
                   </div>
                 </div>
                 <span className={`pill ${listenAccess ? "ok" : listenAccess === false ? "bad" : ""}`}>
@@ -844,7 +844,7 @@ export default function App() {
                 <div>
                   <div className="row-title">屏幕录制</div>
                   <div className="row-sub">
-                    托盘「识图取字」需要读取屏幕画面并离线识别文字。未授权时点下方「授权屏幕录制」开启。
+                    识图取字的前提：看到屏幕才能框选识别，全程离线完成，画面不会离开你的电脑。未授权时点下方「授权屏幕录制」开启。
                   </div>
                 </div>
                 <span className={`pill ${screenAccess ? "ok" : screenAccess === false ? "bad" : ""}`}>
@@ -867,7 +867,7 @@ export default function App() {
                 <div>
                   <div className="row-title">取词健康自检</div>
                   <div className="row-sub">
-                    保障划词稳定的健康检查。若已授权仍显示异常：在系统设置「辅助功能」中取消再重新勾选拾趣，然后重启应用。
+                    划词失灵时的自我诊断：各项权限都已授权却仍弹不出浮动条，多半是系统权限状态失效——到系统设置「辅助功能」里取消再勾选拾趣，重启应用即可恢复。
                   </div>
                 </div>
                 <span className={`pill ${axServiceOk ? "ok" : axServiceOk === false ? "bad" : ""}`}>
@@ -1153,22 +1153,25 @@ export default function App() {
           <>
             <h1>禁用应用</h1>
             <p className="page-hint">
-              让拾趣在敏感场景保持安静：黑名单应用内划词不触发浮动条，适合终端、密码管理器等应用。点「选择应用…」从应用列表挑选，保存后立即生效。
+              在终端、密码管理器这类应用里，你可能不希望划词弹出浮动条——把它们加入禁用列表，拾趣在这些应用中保持安静。点「选择应用…」从应用列表挑选，保存后立即生效。
             </p>
 
             <div className="card">
               {settings.appBlacklist.length === 0 ? (
-                <div className="row-between">
-                  <div className="row-title" style={{ color: "var(--sec)" }}>
-                    暂无禁用应用
+                <div className="row-between tight">
+                  <div>
+                    <div className="row-title" style={{ color: "var(--sec)" }}>
+                      暂无禁用应用
+                    </div>
+                    <div className="row-sub">目前所有应用中划词都会弹出拾趣浮动条。</div>
                   </div>
                 </div>
               ) : (
                 settings.appBlacklist.map((name, i) => (
-                  <div className="row-between" key={`${name}-${i}`}>
+                  <div className="row-between tight" key={`${name}-${i}`}>
                     <div className="row-title">{name}</div>
                     <button
-                      className="btn"
+                      className="btn sm"
                       onClick={() =>
                         patch({
                           appBlacklist: settings.appBlacklist.filter((_, idx) => idx !== i),
@@ -1180,10 +1183,7 @@ export default function App() {
                   </div>
                 ))
               )}
-            </div>
-
-            <div className="card">
-              <div className="row-between">
+              <div className="card-foot">
                 <button
                   className="btn primary"
                   onClick={() => {
