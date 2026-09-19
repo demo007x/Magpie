@@ -8,6 +8,7 @@ mod ocr;
 mod pin;
 mod settings;
 mod toast;
+mod update;
 
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -274,6 +275,8 @@ fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
             settings::init(&handle);
+            // 结果面板「钉住」偏好：沿用用户最后一次点钉的选择（默认钉住）
+            floating::init_result_pin(&handle);
 
             // 按用户配置决定是否在 Dock 显示图标（默认关：纯菜单栏常驻）
             #[cfg(target_os = "macos")]
@@ -350,6 +353,18 @@ fn main() {
                     }
                 })
                 .build(app)?;
+
+            // 启动后台版本检查：错峰 20s 让窗口先建好；同版本只提示一次，
+            // 24h 内不重复请求（GitHub 匿名 API 限 60 次/小时/IP）
+            {
+                let app_handle = handle.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(20));
+                    let info =
+                        tauri::async_runtime::block_on(update::check_update(app_handle.clone(), false));
+                    update::announce(&app_handle, &info);
+                });
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -380,6 +395,7 @@ fn main() {
             capture::request_listen_access,
             capture::request_screen_capture_access,
             floating::set_ocr_pinned,
+            update::check_update,
             floating::ocr_window_mode,
             floating::ocr_window_pos,
             floating::ocr_take_pending,

@@ -54,7 +54,11 @@ html.liquid-glass {
 
 @media (prefers-color-scheme: dark) {
   html.liquid-glass {
-    --surf: rgba(24, 24, 30, 0.62);
+    /* 0.96：HUD 材质采样背后内容（亮页 ~#B8 / 暗内容 ~#1C），透明度不足时
+       表面跟着漂——0.62 合成出 #555–#7A 中间灰（2026-09-19 实测），0.85 在
+       暗页上又沉到 #19191D 融进背景。0.96 把表面钉在 #2A–#30（macOS 深浮层
+       标准区间）恒定可辨；亮色玻璃仍走 0.55 的自适应，浅色材质不存在隐身问题 */
+    --surf: rgba(42, 42, 48, 0.96);
   }
 }
 
@@ -108,7 +112,8 @@ html.theme-light.liquid-glass {
 }
 
 html.theme-dark.liquid-glass {
-  --surf: rgba(24, 24, 30, 0.62);
+  /* 与上方媒体查询变体同值：遮盖力推导见那里 */
+  --surf: rgba(42, 42, 48, 0.96);
 }
 
 * {
@@ -540,17 +545,15 @@ body,
 
 /* 行操作默认隐藏（悬停浮现）：多行列表里常驻按钮成列重复、喧宾夺主。
    按钮悬浮覆盖在行右端（absolute，脱离文档流）——值文本用满整行，
-   不为按钮预留空列；浮现时自带表面色底遮住身下的文字。
-   focus-within 让键盘聚焦时同样可见 */
+   不为按钮预留空列。不做底板：按钮是裸文字（与 .action/.chip 同语言），
+   落在行右端文本通常已结束的位置 */
 .extract-acts {
   position: absolute;
   right: 0;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
-  gap: 6px;
-  padding: 2px 0 2px 14px;
-  background: var(--surf);
+  gap: 10px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;
@@ -560,6 +563,15 @@ body,
 .extract-item:focus-within .extract-acts {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* 裸文字按钮无底板：长值（URL 等）折行会穿过按钮正下方。
+   悬停时用 mask 让文字右端渐隐给按钮让位——左侧正文仍可读，
+   按钮底下无文字残留；不用半透明底板遮盖（用户要求按钮下无背景） */
+.extract-item:hover .extract-text,
+.extract-item:focus-within .extract-text {
+  -webkit-mask-image: linear-gradient(to right, #000 60%, transparent 90%);
+  mask-image: linear-gradient(to right, #000 60%, transparent 90%);
 }
 
 .extract-acts button {
@@ -575,8 +587,10 @@ body,
 }
 
 .extract-acts button:hover {
-  background: var(--text);
-  color: var(--surf);
+  /* 与面板 hover 语言一致（.action/.chip）：只变色不铺黑 */
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent-strong);
 }
 
 /* OCR 文本识别：识别原文区（两种模式随动作状态切换）：

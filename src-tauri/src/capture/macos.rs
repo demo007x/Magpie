@@ -156,6 +156,8 @@ extern "C" {
         user: *mut c_void,
     ) -> CFMachPortRef;
     fn CGEventGetLocation(ev: CGEventRef) -> CGPoint;
+    /// 读取事件字段：kCGKeyboardEventKeycode=9（物理键码）、kCGKeyboardEventAutorepeat=8
+    fn CGEventGetIntegerValueField(ev: CGEventRef, field: u64) -> i64;
     // 键盘事件合成（兼容模式模拟 ⌘C）
     fn CGEventCreateKeyboardEvent(source: *mut c_void, keycode: u16, keydown: u8) -> CGEventRef;
     fn CGEventSetFlags(ev: CGEventRef, flags: u64);
@@ -178,6 +180,10 @@ extern "C" {
 const EV_LEFT_DOWN: u32 = 1;
 const EV_LEFT_UP: u32 = 2;
 const EV_LEFT_DRAGGED: u32 = 6;
+// kCGEventKeyDown=10：只为「浮动条可见时按 Esc 收起」而监听，且回调内即刻过滤
+// （只放行 Esc 的 keycode，其余按键不入队、不落盘、不读取内容）
+const EV_KEY_DOWN: u32 = 10;
+const KEY_ESC: u16 = 53;
 // CGEventTapLocation：kCGHIDEventTap=0, kCGSessionEventTap=1（勿混淆！）
 const K_CG_HID_EVENT_TAP: u32 = 0;
 const K_CG_SESSION_EVENT_TAP: u32 = 1;
@@ -204,6 +210,8 @@ struct MouseEvent {
     kind: u32,
     x: f64,
     y: f64,
+    /// 键盘事件的物理键码（鼠标事件恒为 0）
+    keycode: u16,
     t: Instant,
 }
 
@@ -215,20 +223,40 @@ extern "C" fn tap_callback(
     ev: CGEventRef,
     _user: *mut c_void,
 ) -> CGEventRef {
-    // 截图取词等系统交互期间静音：screencapture 的框选拖选会被误判为划词
-    if capture_muted() {
+    // 回调内只做计数 + 入队（绝不查询 AX）
+    let is_key = kind == EV_KEY_DOWN;
+    // 截图取词等系统交互期间静音：screencapture 的框选拖选会被误判为划词。
+    // 只静音鼠标事件——Esc 收起浮动条不该被截图模态吞掉
+    if !is_key && capture_muted() {
         return ev;
     }
-    // 回调内只做计数 + 入队（绝不查询 AX）
-    EVENT_COUNT.fetch_add(1, Ordering::Relaxed);
-    EVENT_TOTAL.fetch_add(1, Ordering::Relaxed);
-    LAST_EVENT_MS.store(now_ms(), Ordering::Relaxed);
-    if !FIRST_EVENT.swap(true, Ordering::Relaxed) {
-        debug_log("✓ 收到首个鼠标事件，tap 工作正常");
+    // 键盘通道只放行 Esc 按下（且排除长按自动重复）：其余按键即刻丢弃，
+    // 不读内容、不入队、不落盘——监听范围与隐私边界都止于这一个键码
+    let keycode = if is_key {
+        let code = unsafe { CGEventGetIntegerValueField(ev, 9) } as u16;
+        if code != KEY_ESC || unsafe { CGEventGetIntegerValueField(ev, 8) } != 0 {
+            return ev;
+        }
+        code
+    } else {
+        0
+    };
+    if !is_key {
+        EVENT_COUNT.fetch_add(1, Ordering::Relaxed);
+        EVENT_TOTAL.fetch_add(1, Ordering::Relaxed);
+        LAST_EVENT_MS.store(now_ms(), Ordering::Relaxed);
+        if !FIRST_EVENT.swap(true, Ordering::Relaxed) {
+            debug_log("✓ 收到首个鼠标事件，tap 工作正常");
+        }
     }
     if let Some(tx) = EVENT_TX.lock().ok().and_then(|g| g.clone()) {
-        let p = unsafe { CGEventGetLocation(ev) };
-        let _ = tx.send(MouseEvent { kind, x: p.x, y: p.y, t: Instant::now() });
+        let (x, y) = if is_key {
+            (0.0, 0.0)
+        } else {
+            let p = unsafe { CGEventGetLocation(ev) };
+            (p.x, p.y)
+        };
+        let _ = tx.send(MouseEvent { kind, x, y, keycode, t: Instant::now() });
     }
     ev
 }
@@ -424,7 +452,8 @@ unsafe fn create_tap() -> CFMachPortRef {
 
 /// SHICI_ALL_EVENTS=1 时把 MouseMoved 也纳入（诊断用：移动事件量大，心跳立辨死活）
 fn tap_mask() -> u64 {
-    let mut m = (1u64 << EV_LEFT_DOWN) | (1u64 << EV_LEFT_UP) | (1u64 << EV_LEFT_DRAGGED);
+    let mut m =
+        (1u64 << EV_LEFT_DOWN) | (1u64 << EV_LEFT_UP) | (1u64 << EV_LEFT_DRAGGED) | (1u64 << EV_KEY_DOWN);
     if std::env::var("SHICI_ALL_EVENTS").as_deref() == Ok("1") {
         m |= 1u64 << 5; // kCGEventMouseMoved
     }
@@ -439,6 +468,14 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
 
     while let Ok(ev) = rx.recv() {
         match ev.kind {
+            EV_KEY_DOWN => {
+                // 回调已过滤：能到这里必然是 Esc 按下。是否真的收起由 worker 的
+                // 可见性判定 + 前端 dismiss 守卫（钉住/流式中忽略）决定
+                if ev.keycode == KEY_ESC {
+                    debug_log("key-down：Esc");
+                    let _ = tx.send(CaptureEvent::Escape);
+                }
+            }
             EV_LEFT_DOWN => {
                 debug_log(format!("mouse-down ({:.0},{:.0})", ev.x, ev.y));
                 down = Some((ev.x, ev.y));

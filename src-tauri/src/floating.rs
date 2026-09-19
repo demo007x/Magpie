@@ -237,8 +237,16 @@ pub fn is_dragging() -> bool {
 
 // ---- OCR 独立窗口：钉住状态 + 待显示结果（事件可能早于 webview 就绪，先存后取） ----
 
-/// 钉住：OCR 窗口忽略 dismiss / 新选区，就地常驻
-static OCR_PINNED: AtomicBool = AtomicBool::new(false);
+/// 钉住：OCR 窗口忽略 dismiss / 新选区，就地常驻。
+/// 这是「用户最后一次点钉/取消钉」的运行时镜像：启动时从 settings 读出
+/// （默认钉住），点钉按钮写回磁盘；新结果弹出时不再改写它
+static OCR_PINNED: AtomicBool = AtomicBool::new(true);
+
+/// 启动时把磁盘上的「钉住」偏好装进运行时（在 settings::init 之后调用）
+pub fn init_result_pin(app: &AppHandle) {
+    let pinned = crate::settings::current(app).result_window_pinned;
+    OCR_PINNED.store(pinned, Ordering::Relaxed);
+}
 
 /// 结果窗口最近一次的逻辑位置：窗口存活期间原地复用（内容刷新不跳位），
 /// 关闭后记住、下次（含重启后）在同一位置出现——「钉在我喜欢的位置」
@@ -334,8 +342,10 @@ pub fn ocr_pinned() -> bool {
 }
 
 #[tauri::command]
-pub fn set_ocr_pinned(pinned: bool) {
+pub fn set_ocr_pinned(app: AppHandle, pinned: bool) {
     OCR_PINNED.store(pinned, Ordering::Relaxed);
+    // 钉/取消钉是用户对结果面板关闭方式的偏好，落盘跨重启保留
+    crate::settings::patch(&app, |st| st.result_window_pinned = pinned);
 }
 
 /// 当前 webview 是否为 OCR 独立窗口（App 据此决定渲染模式）
@@ -410,20 +420,18 @@ pub fn ocr_take_image() -> Option<std::path::PathBuf> {
 /// run = (动作 id, 服务)：Some 时面板弹出后自动执行该动作（识图翻译/解释/总结）；
 /// None 时只展示识别文本等用户操作。
 /// 截图原图存入独立的 OCR_IMAGE（替换时顺带清理旧文件）。
-/// 默认钉住：识别后的操作是多步的（看原文/钉图/跑动作），
-/// 点空即消失会打断流程——与划词导流的默认钉住保持一致
+/// 钉住状态沿用用户上次的选择（见 OCR_PINNED 说明），结果本身不改它
 pub fn ocr_set_pending(
     text: String,
     image: Option<std::path::PathBuf>,
     run: Option<(String, Option<String>)>,
 ) {
     replace_ocr_image(image);
-    set_ocr_pinned(true);
     let mut pending = OCR_PENDING.lock().unwrap();
     *pending = Some(OcrPending { text, from_ocr: true, run });
 }
 
-/// 存入划词导流结果（面板弹出后自动执行 run；默认钉住防误触）
+/// 存入划词导流结果（面板弹出后自动执行 run）
 pub fn set_selection_pending(text: String, action_id: String, service: Option<String>) {
     // 划词不带图：清掉上一次识别遗留的截图
     replace_ocr_image(None);
@@ -434,7 +442,6 @@ pub fn set_selection_pending(text: String, action_id: String, service: Option<St
         run: Some((action_id, service)),
     });
     drop(pending);
-    set_ocr_pinned(true); // 默认钉住：阅读结果时误点不会消失
     RESULT_BELOW_ANCHOR.store(true, Ordering::Relaxed);
 }
 

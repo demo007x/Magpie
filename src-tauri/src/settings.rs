@@ -160,6 +160,11 @@ pub struct Settings {
     /// Liquid Glass 效果（macOS 26 玻璃材质）：默认启用
     #[serde(default = "default_true")]
     pub liquid_glass: bool,
+    /// 结果窗口「钉住」偏好：用户在面板上最后一次点钉/取消钉的选择，跨重启保留。
+    /// 默认钉住——识图与划词导流的结果是多步操作（看原文/跑动作/复制），
+    /// 点空即消失会打断流程
+    #[serde(default = "default_true")]
+    pub result_window_pinned: bool,
     /// 应用外观："auto"（跟随系统，默认）| "light" | "dark"
     #[serde(default)]
     pub appearance: String,
@@ -217,6 +222,7 @@ impl Default for Settings {
             result_window_pos: None,
             result_window_size: None,
             liquid_glass: true,
+            result_window_pinned: true,
             appearance: default_appearance(),
         }
     }
@@ -307,8 +313,11 @@ pub fn patch<F: FnOnce(&mut Settings)>(app: &AppHandle, f: F) {
 pub fn save_settings(
     app: AppHandle,
     state: tauri::State<'_, Mutex<Settings>>,
-    settings: Settings,
+    mut settings: Settings,
 ) -> Result<(), String> {
+    // 「钉住」偏好只由结果面板的钉按钮写入（见 floating::set_ocr_pinned）：
+    // 设置页持有的快照可能早于用户最后一次点钉，直接落盘会把选择冲掉
+    settings.result_window_pinned = state.lock().unwrap().result_window_pinned;
     let path = app.state::<SettingsPath>().0.clone();
     let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     fs::write(&path, json).map_err(|e| e.to_string())?;

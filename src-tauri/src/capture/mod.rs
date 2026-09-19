@@ -22,6 +22,8 @@ pub enum CaptureEvent {
         y: f64,
     },
     DragEnd,
+    /// 全局按下 Esc（回调侧已过滤为仅 Esc 按下，且浮动条/面板可能并未显示）
+    Escape,
 }
 
 #[cfg(target_os = "macos")]
@@ -206,6 +208,14 @@ pub fn spawn_worker(app: AppHandle, rx: Receiver<CaptureEvent>) {
                 }
                 CaptureEvent::DragMove { x, y } => floating::apply_drag(&app, x, y),
                 CaptureEvent::DragEnd => floating::end_drag(&app),
+                CaptureEvent::Escape => {
+                    // Esc 收起与点击空白走同一个事件：钉住/流式中的「忽略」判定
+                    // 全部留在前端 dismiss 守卫里（单一事实来源），此处只管
+                    // 「有没有东西可收」——两者都不可见时不发无谓的事件
+                    if floating::is_visible(&app) || floating::ocr_visible(&app) {
+                        let _ = app.emit("selection://dismiss", json!({}));
+                    }
+                }
             }
         }
     });

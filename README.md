@@ -4,9 +4,9 @@
 
 # Magpie (拾趣)
 
-**Understand as you read** — an AI reading companion that explains any text selection
+**Understand as you read** — the entry hub for the first text source, triggered by your mouse
 
-Select text in any app and an instant floating bar offers translate / explain / summarize — gradually settling every bit of understanding into your personal knowledge base.
+Every piece of text on your screen is one mouse gesture away: select or capture it, and actions return results in place — processed where you saw it, landed where you want it.
 
 [![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-black)](#)
 [![Rust](https://img.shields.io/badge/Rust-1.80%2B-orange?logo=rust)](#)
@@ -22,7 +22,7 @@ Select text in any app and an instant floating bar offers translate / explain / 
 
 ## Introduction
 
-**Magpie (拾趣)** is an AI reading companion: select text in *any* macOS app and a floating bar instantly offers translate / explain / summarize with streaming output. Unlike pure translation tools, Magpie centers on the selection itself — zero-cost capture via Accessibility APIs (never touches the clipboard) — and will gradually settle every bit of understanding into your personal knowledge base.
+**Magpie (拾趣)** is the entry hub for the first text source, triggered by your mouse. Select text or capture the screen in *any* macOS app and a floating bar instantly offers translate / explain / summarize with streaming output. Unlike pure selection tools, Magpie covers all visible text with a dual pipeline (selection + OCR capture) — zero-cost capture via Accessibility APIs with a compatibility-mode fallback that restores the clipboard. Models are BYOK and never locked in; downstream, it connects to the professional tools you already use — **integrate, don't rebuild**.
 
 ## Screenshots
 
@@ -122,9 +122,10 @@ Data flow: CGEventTap (mouse) → detect thread (debounce / AX query) → filter
 - Global shortcut to summon the floating bar
 - Move API keys to the system keychain
 
-**M3 — knowledge-base flywheel**
+**M3 — unified action model**
 
-- Clip-to-collection: settle every bit of understanding into a personal knowledge base
+- Custom AI actions (your own prompt templates) and multi-step workflows
+- Clip-to-collection into the note apps you already use — Notion / Obsidian / flomo / Apple Notes (integrate, don't rebuild)
 
 **M4 — zero configuration**
 
@@ -136,13 +137,11 @@ Design documents are written in Simplified Chinese:
 
 | Doc                                                              | Content                                              |
 | ---------------------------------------------------------------- | ---------------------------------------------------- |
-| [docs/01-PRD-MVP.md](docs/01-PRD-MVP.md)                         | Product requirements, scope, acceptance criteria     |
+| [docs/01-产品定位与规划.md](docs/01-产品定位与规划.md)           | Positioning, users, principles, roadmap, monetization |
 | [docs/02-架构设计.md](docs/02-架构设计.md)                       | Layered architecture, data flow, protocol, evolution |
-| [docs/03-模块设计-划词捕获.md](docs/03-模块设计-划词捕获.md)     | Highest-risk module: CGEventTap + AX                 |
-| [docs/04-模块设计-窗口与交互.md](docs/04-模块设计-窗口与交互.md) | Floating bar / main window specs                     |
-| [docs/05-模块设计-AI服务层.md](docs/05-模块设计-AI服务层.md)     | Action registry, prompts, streaming protocol         |
-| [docs/06-技术选型.md](docs/06-技术选型.md)                       | ADR decision records                                 |
-| [docs/07-MVP执行计划.md](docs/07-MVP执行计划.md)                 | Task breakdown & acceptance status                   |
+| [docs/03-模块设计.md](docs/03-模块设计.md)                       | Capture / windows & UI / AI service layer            |
+| [docs/04-技术选型.md](docs/04-技术选型.md)                       | ADR decision records                                 |
+| [docs/05-MVP执行计划.md](docs/05-MVP执行计划.md)                 | M1 execution history                                 |
 
 ## License
 

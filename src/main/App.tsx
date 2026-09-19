@@ -193,6 +193,38 @@ const TRANSLATE_SERVICES: Array<[string, string, string]> = [
   ["deepl", "DeepL", "译文自然地道，适合正式文档、精读等在意质量的场景；注册即可获取免费密钥。"],
 ];
 
+/// Rust 侧 update::UpdateInfo 的镜像（status 见 src-tauri/src/update.rs）
+type UpdateInfo = {
+  status: "available" | "upToDate" | "cooldown" | "failed";
+  current: string;
+  latest?: string;
+  url?: string;
+  checkedAt: number;
+};
+
+/// 「检查新版本」行的说明文案：只描述用户能看见的行为，不暴露接口细节
+function updateHint(upd: UpdateInfo | null): string {
+  switch (upd?.status) {
+    case "available":
+      return `发现新版本 v${upd.latest}（当前 v${upd.current}），点「下载」前往发布页获取安装包。`;
+    case "upToDate":
+      return `已是最新版本（v${upd.current}）。拾趣每天自动检查一次，也可随时手动检查。`;
+    case "cooldown": {
+      const t = new Date(upd.checkedAt * 1000).toLocaleString("zh-CN", {
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      return `上次检查（${t}）未发现新版本，24 小时后再自动检查；点「检查更新」可立即重查。`;
+    }
+    case "failed":
+      return "这次没检查成（网络不通或 GitHub 暂时访问不了），下次启动会自动重试。";
+    default:
+      return "启动后自动检查一次，发现新版本时在菜单栏下方轻提示；检查只读取公开版本信息，不发送任何本机数据。";
+  }
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>("model");
   // 应用版本：运行时读取 tauri.conf.json 的权威值（不再手写，避免与配置漂移）
@@ -201,6 +233,21 @@ export default function App() {
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => undefined);
   }, []);
+
+  // 版本更新检测：查 GitHub Releases（无自建服务器）
+  const [upd, setUpd] = useState<UpdateInfo | null>(null);
+  const [checking, setChecking] = useState(false);
+  const runUpdateCheck = (force: boolean) => {
+    setChecking(true);
+    invoke<UpdateInfo>("check_update", { force })
+      .then(setUpd)
+      .catch(() => setUpd(null))
+      .finally(() => setChecking(false));
+  };
+  // 进入关于页即读取最近一次结果（24h 内不重复请求，见 update.rs）
+  useEffect(() => {
+    if (page === "about") runUpdateCheck(false);
+  }, [page]);
 
   // 外观：Liquid Glass 可用性 + 开关
   const [glassAvailable, setGlassAvailable] = useState<boolean | null>(null);
@@ -1299,6 +1346,31 @@ export default function App() {
                   />
                   <span className="knob" />
                 </label>
+              </div>
+              <div className="row-between sep">
+                <div>
+                  <div className="row-title">检查新版本</div>
+                  <div className="row-sub">{updateHint(upd)}</div>
+                </div>
+                <div className="row-ctl">
+                  {upd?.status === "available" && upd.url && (
+                    <button
+                      className="btn sm primary"
+                      onClick={() =>
+                        invoke("open_url", { url: upd.url }).catch(() => undefined)
+                      }
+                    >
+                      下载 v{upd.latest}
+                    </button>
+                  )}
+                  <button
+                    className="btn sm"
+                    disabled={checking}
+                    onClick={() => runUpdateCheck(true)}
+                  >
+                    {checking ? "检查中…" : "检查更新"}
+                  </button>
+                </div>
               </div>
             </div>
           </>

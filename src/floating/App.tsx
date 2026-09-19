@@ -1093,9 +1093,9 @@ export default function App() {
     window.addEventListener("mouseup", onUp);
   };
 
-  // 关闭结果窗口：解除钉住 + 隐藏（划词/识图结果窗口共用）
+  // 关闭结果窗口：隐藏（划词/识图结果窗口共用），保留钉住偏好
   const closeResultWindow = () => {
-    setOcrPinnedState(false);
+    // 收起只关窗：钉住是用户的长期偏好（点钉按钮才改），不因收起被抹掉
     invoke("hide_ocr_window").catch(() => undefined);
     setPhase({ kind: "bar" });
   };
@@ -1715,7 +1715,11 @@ export default function App() {
                       setOcrPinnedState(next);
                       invoke("set_ocr_pinned", { pinned: next }).catch(() => undefined);
                     })}
-                    title={ocrPinned ? "取消钉住面板" : "钉住面板（点空白不关闭）"}
+                    title={
+                      ocrPinned
+                        ? "取消钉住（点空白/Esc 即收起，以后新结果都不钉）"
+                        : "钉住面板（点空白/Esc 不收起，以后新结果都保持钉住）"
+                    }
                   >
                   {ocrPinned ? <PinOff size={13} strokeWidth={1.75} /> : <Pin size={13} strokeWidth={1.75} />}
                 </button>
@@ -1741,13 +1745,7 @@ export default function App() {
               </button>
               <button
                 className="tool"
-                onClick={guarded(() => {
-                  // ✕ = 收起并解除钉住（下次识别不被钉住状态误保留）
-                  setOcrPinnedState(false);
-                  invoke("set_ocr_pinned", { pinned: false }).catch(() => undefined);
-                  invoke("hide_ocr_window").catch(() => undefined);
-                  setPhase({ kind: "bar" });
-                })}
+                onClick={guarded(closeResultWindow)}
                 title="收起"
               >
                 {CloseIcon}
