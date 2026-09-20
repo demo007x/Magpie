@@ -407,6 +407,13 @@ fn roll_out(app: &AppHandle, done: Option<Box<dyn FnOnce() + Send + 'static>>) {
     });
 }
 
+/// 给前端的轻提示命令。WKWebView 里 `window.alert/confirm` 是静默空操作
+/// （wry 未实现 WKUIDelegate 的对话框回调），设置页的校验提醒只能走全局 toast。
+#[tauri::command]
+pub fn notify(app: AppHandle, message: String, kind: Option<String>) {
+    show_toast(&app, &message, &kind.unwrap_or_else(|| "info".into()));
+}
+
 /// 前端内容测量回调：渲染完成后量宽高（卡片尺寸），记入 TOAST_SIZE 后触发滚入。
 /// 窗口不在此缩放——tao 的 set_size 是 GCD 异步派发，会与滚入动画竞态
 /// （约束 4），窗口尺寸由 try_roll_in 滚入前 sync_set_frame 同步落定

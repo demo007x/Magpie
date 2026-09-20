@@ -125,6 +125,35 @@ impl Default for TranslateConfig {
     }
 }
 
+/// 用户自定义 AI 动作。默认提示词文本只活在 TS 层（src/shared/actions.ts），
+/// Rust 侧只搬运用户自己写的那份——所以这里没有"内置默认"的影子，
+/// 新增动作类型无需改 Rust（符合「Rust 管不变的，TS 管多变的」）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CustomAction {
+    /// 前缀 "c:" 与内置动作 id 隔离
+    pub id: String,
+    /// 胶囊显示名（建议 ≤6 字）
+    pub name: String,
+    /// system 提示词；空 = 未配置，前端拒绝执行
+    pub prompt: String,
+    pub enabled: bool,
+    /// 预留：挂到某内置动作的二级展开列表（变体挂载），当前未使用
+    pub under: Option<String>,
+}
+
+impl Default for CustomAction {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            prompt: String::new(),
+            enabled: true,
+            under: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -132,6 +161,9 @@ pub struct Settings {
     pub default_provider_id: String,
     pub actions: Actions,
     pub action_order: Vec<String>,
+    /// 用户自定义 AI 动作（id 混排在 action_order 中）
+    #[serde(default)]
+    pub custom_actions: Vec<CustomAction>,
     /// 浮动胶囊固定显示的动作数（超出部分收进右侧「⌄N」面板）
     pub capsule_show_count: usize,
     pub search_engines: Vec<SearchEngine>,
@@ -209,6 +241,7 @@ impl Default for Settings {
                 "copy".into(),
                 "search".into(),
             ],
+            custom_actions: Vec::new(),
             capsule_show_count: 4,
             search_engines: default_engines(),
             default_search: "百度".into(),

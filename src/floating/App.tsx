@@ -21,14 +21,10 @@ import {
   PinOff,
   ScanSearch,
   Search,
+  Sparkles,
   X,
 } from "lucide-react";
-import {
-  ACTIONS,
-  actionById,
-  effectivePrompt,
-  type AiActionId,
-} from "../shared/actions";
+import { actionPrompt, actionRegistry, isContextAction } from "../shared/actions";
 import { aiChat } from "../shared/ai";
 import {
   extractAll,
@@ -37,7 +33,7 @@ import {
   extractTel,
   extractUrl,
 } from "../shared/textContext";
-import type { SearchEngine, Settings } from "../shared/types";
+import type { CustomAction, SearchEngine, Settings } from "../shared/types";
 
 // 窗口身份（生命周期内不变 → 模块级常量，事件回调不会读到过期值）：
 // floating = 划词浮动条；ocr = 文本识别独立窗口；pin-* = 钉图窗口
@@ -52,9 +48,7 @@ const IS_OCR = WIN_LABEL === "ocr";
 const IS_PIN = WIN_LABEL.startsWith("pin-");
 
 // 上下文智能动作：由「提取信息」统一承载（多值/混合进面板），不再逐个上胶囊条
-const CONTEXT_ACTION_IDS = new Set(["link", "email", "tel", "code"]);
-const isContextAction = (id: string) => CONTEXT_ACTION_IDS.has(id);
-
+// （id 集合见 shared/actions.ts CONTEXT_ACTION_IDS）
 type ExtractGroups = { tel: string[]; email: string[]; link: string[]; code: string[] };
 
 const EXTRACT_GROUPS: Array<{ id: keyof ExtractGroups; label: string }> = [
@@ -122,7 +116,10 @@ const ICONS: Record<string, React.ReactNode> = {
   code: <ClipboardCheck size={14} strokeWidth={1.75} />,
   tel: <Phone size={14} strokeWidth={1.75} />,
   __extract: <ScanSearch size={14} strokeWidth={1.75} />,
+  // 自定义动作共用一枚图标：用户自己起的名字已经是辨识度，不做图标选择器
+  __custom: <Sparkles size={14} strokeWidth={1.75} />,
 };
+const iconOf = (id: string) => ICONS[id] ?? ICONS.__custom;
 const CopyIcon = <Copy size={13} strokeWidth={1.75} />;
 const CheckIcon = <Check size={13} strokeWidth={2} className="ok" />;
 const CloseIcon = <X size={13} strokeWidth={1.75} />;
@@ -434,8 +431,15 @@ export default function App() {
     tel: true,
   });
   const [actionOrder, setActionOrder] = useState<string[]>([]);
-  /** AI 动作提示词覆盖（未覆盖的动作不在此表中，取内置默认） */
-  const [actionPrompts, setActionPrompts] = useState<Record<string, string>>({});
+  /** 用户自定义 AI 动作（注册表 = 内置 + 这份数据，见 registry） */
+  const [customActions, setCustomActions] = useState<CustomAction[]>([]);
+  // runAction 可能由挂载效应里的首帧闭包调用（划词/识图导流的自动执行路径），
+  // 那份闭包读到的 state 永远停在初始值：注册表与提示词覆盖因此经 ref 取。
+  // 新增设置项若被 runAction 用到，一并写进这里，否则表现为"改了没生效"。
+  const liveRef = useRef<{
+    registry: ReturnType<typeof actionRegistry>;
+    prompts: Record<string, string>;
+  }>({ registry: actionRegistry(), prompts: {} });
   const [capsuleMax, setCapsuleMax] = useState(4);
   const [translateEnabled, setTranslateEnabled] = useState<string[]>(["ai"]);
   const [translateDefault, setTranslateDefault] = useState("ai");
@@ -585,7 +589,11 @@ export default function App() {
       .then((s) => {
         setActions({ ...s.actions });
         setActionOrder(s.actionOrder ?? []);
-        setActionPrompts(s.actionPrompts ?? {});
+        setCustomActions(s.customActions ?? []);
+        liveRef.current = {
+          registry: actionRegistry((s.customActions ?? []).filter((c) => c.enabled)),
+          prompts: s.actionPrompts ?? {},
+        };
         setCapsuleMax(Math.max(2, Math.min(8, s.capsuleShowCount ?? 4)));
         setEngines(s.searchEngines ?? []);
         setDefaultSearch(s.defaultSearch ?? "");
@@ -613,6 +621,14 @@ export default function App() {
     return { groups, total };
   }, [text, actions]);
 
+  // 消费端注册表 = 内置动作 + 已启用的自定义动作。
+  // 停用与否在这里一次性筛掉，下游（胶囊条 / 结果窗动作条 / runAction）不再判开关
+  const registry = useMemo(
+    () => actionRegistry(customActions.filter((c) => c.enabled)),
+    [customActions],
+  );
+  const byId = (id: string) => registry.find((a) => a.id === id);
+
   const searchIdx = actionOrder.indexOf("search");
   const orderKey = (id: string) => {
     const i = actionOrder.indexOf(id);
@@ -623,7 +639,7 @@ export default function App() {
 
   const barEntries = (() => {
     const entries: BarEntry[] = [];
-    for (const a of ACTIONS) {
+    for (const a of registry) {
       // 上下文动作不上胶囊条：由提取结果统一决定胶囊条上的上下文按钮
       if (isContextAction(a.id)) continue;
       if (actions[a.id] === false) continue;
@@ -1355,7 +1371,7 @@ export default function App() {
   };
 
   const runAction = (id: string, serviceOverride?: string, sourceOverride?: string) => {
-    const action = actionById(id);
+    const action = liveRef.current.registry.find((a) => a.id === id);
     if (!action) return;
     // 动作文本源：显式指定（划词结果导流时由 pending 带入）> OCR 面板用识别文本 > 普通划词用选中文本
     const source = sourceOverride ?? (phase.kind === "ocr" ? phase.text : text);
@@ -1483,8 +1499,13 @@ export default function App() {
 
     const runId = ++runIdRef.current;
     if (action.kind !== "ai") return;
+    const system = actionPrompt(action, liveRef.current.prompts);
+    // 自定义动作新建后 prompt 还是空的：直接拒，别把空 system 发出去
+    if (!system.trim()) {
+      flash(id, "未填提示词");
+      return;
+    }
     // 生效提示词进缓存 key：改了 prompt 的同一选区不再命中旧结果
-    const system = effectivePrompt(id as AiActionId, actionPrompts);
     const cacheKey = `${id}:${serviceOverride ?? ""}:${system}:${source}`;
     const cached = cacheGet(cacheKey);
     if (cached !== null && (phase.kind === "ocr" || sourceOverride !== undefined)) {
@@ -1657,7 +1678,7 @@ export default function App() {
                 e.onClick();
               })}
             >
-              <span className="ic">{ICONS[e.id]}</span>
+              <span className="ic">{iconOf(e.id)}</span>
               <span>{flashId === e.id ? flashMsg : e.label}</span>
             </button>
             {((e.id === "search" && enabledEngines.length > 1) ||
@@ -1731,7 +1752,7 @@ export default function App() {
                     e.onClick();
                   })}
                 >
-                  <span className="ic">{ICONS[e.id]}</span>
+                  <span className="ic">{iconOf(e.id)}</span>
                   <span>{flashId === e.id ? flashMsg : e.label}</span>
                 </button>
                 {hasMenu && (
@@ -1901,10 +1922,10 @@ export default function App() {
                 {phase.fromOcr ? (
                   <ScanSearch size={14} strokeWidth={1.75} />
                 ) : (
-                  ICONS[phase.actionId ?? ""]
+                  iconOf(phase.actionId ?? "")
                 )}
               </span>
-              {phase.fromOcr ? "识图取字" : (actionById(phase.actionId ?? "")?.label ?? "结果")}
+              {phase.fromOcr ? "识图取字" : (byId(phase.actionId ?? "")?.label ?? "结果")}
               {(phase.streaming || doneFlash) && (
                 <span className={`dot ${doneFlash ? "done" : ""}`} title={phase.streaming ? "生成中" : "已完成"} />
               )}
@@ -2055,10 +2076,10 @@ export default function App() {
               </div>
             )}
             {/* 动作行：常规流内布局排在结果区之后、面板最底部（不随结果滚动）。
-                AI 动作（翻译/解释/总结）结果内嵌滚动区；搜索为本地动作，
+                AI 动作（翻译/解释/总结 + 用户的自定义动作）结果内嵌滚动区；搜索为本地动作，
                 用识别文本直接打开默认引擎——对识别出的书名/术语等尤其实用 */}
             <div className="ocr-actions">
-              {ACTIONS.filter(
+              {registry.filter(
                 (a) => (a.kind === "ai" || a.id === "search") && actions[a.id] !== false,
               ).map((a) => (
                 <span key={a.id} className="action-slot">
@@ -2071,7 +2092,7 @@ export default function App() {
                       runAction(a.id);
                     })}
                   >
-                    <span className="ic">{ICONS[a.id]}</span>
+                    <span className="ic">{iconOf(a.id)}</span>
                     <span>{a.label}</span>
                   </button>
                   {(a.id === "translate" || a.id === "search") &&

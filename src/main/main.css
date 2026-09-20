@@ -213,7 +213,13 @@ body {
   min-width: 0;
   /* 滚动条已隐藏（见顶部规则），auto/scroll 均不占布局 */
   overflow-y: auto;
-  padding: 36px 44px 52px;
+  /* 页底不留白：保存条吸在底部时它的静止位就等于贴底位，
+     滚到最后一页才不会「脱离」上浮；没有保存条的页面自己补这段留白（见下） */
+  padding: 36px 44px 0;
+}
+
+.content > :last-child:not(.save-bar) {
+  margin-bottom: 52px;
 }
 
 .content > h1 {
@@ -505,6 +511,11 @@ input[type="radio"] {
   box-shadow: inset 0 2px 0 var(--accent);
 }
 
+/* 提取信息卡无拖动把手：缩进对齐上方动作卡的把手列（grip 13+6 + gap 7），两卡名称同一条竖线 */
+.context-row .row-title {
+  padding-left: 26px;
+}
+
 /* ---- 搜索引擎列表 ---- */
 .eng-row {
   display: flex;
@@ -545,26 +556,6 @@ input[type="radio"] {
   background: transparent;
   border-color: var(--accent);
   box-shadow: none;
-}
-
-/* 自定义引擎删除按钮：幽灵图标钮，hover 才显红色提示可删 */
-.eng-del {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--sec);
-  cursor: pointer;
-}
-
-.eng-del:hover {
-  background: rgba(217, 47, 47, 0.1);
-  color: var(--danger);
 }
 
 .radio.sm {
@@ -693,6 +684,195 @@ input[type="radio"] {
   word-break: break-word;
 }
 
+/* ---- 自定义 AI 动作（动作管理页就地编辑） ---- */
+/* 虚线添加行：卡片末尾一条，与上方列表以间距区分而非发丝线 */
+.act-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 9px 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--sec);
+  background: transparent;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.act-add:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hov);
+}
+
+.act-add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 自定义动作标记：描边而非实心底——内置动作的 tag 是实色，这里要一眼看出归属 */
+.tag.mine {
+  background: transparent;
+  border: 0.5px dashed var(--line);
+  color: var(--sec);
+}
+
+/* .svc-fields 默认两列，wide 成员跨满（就地编辑的名称之外都是） */
+.svc-fields > .wide {
+  grid-column: 1 / -1;
+}
+
+/* 就地编辑的提示词框比 Prompt 设置页矮一档：同一屏还要放名称与试跑输出 */
+.prompt-input.in-field {
+  min-height: 130px;
+  margin-top: 0;
+}
+
+/* 试跑样例只输一两句，比提示词框再矮一档 */
+.try-sample.prompt-input {
+  min-height: 52px;
+}
+
+/* 试跑输出：只读、限高内滚，错误直接以红字呈现 */
+.act-out {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--sec);
+  background: var(--hov);
+  border-radius: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.act-out.bad {
+  color: var(--danger);
+}
+
+.act-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.act-foot .row-sub {
+  margin-top: 0;
+  margin-right: auto;
+}
+
+/* ---- 模态（src/shared/Modal.tsx，portal 到 body）---- */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 620px;
+  max-height: 100%;
+  background: var(--card);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.24);
+  outline: none;
+}
+
+/* 窄版：一句确认 + 两个按钮，无需表单宽度 */
+.modal.sm {
+  max-width: 380px;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 12px 13px 18px;
+  border-bottom: 0.5px solid var(--line);
+}
+
+.modal-head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 620;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modal-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sec);
+  cursor: pointer;
+}
+
+.modal-x:hover {
+  background: var(--hov);
+  color: var(--text);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+
+.modal-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+/* 只读正文紧跟字段标题，间距由 .field 的 gap 统一给 */
+.field > .prompt-default {
+  margin-top: 0;
+}
+
+/* 输出不再自己滚动：限高滚动条套在滚动的模态正文里是两层滚动，难用 */
+.modal-body .act-out {
+  max-height: none;
+}
+
+.modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 0.5px solid var(--line);
+}
+
+.modal-foot .row-sub {
+  margin-top: 0;
+  margin-right: auto;
+}
+
 .pill {
   font-size: 12px;
   font-weight: 590;
@@ -814,6 +994,11 @@ input[type="radio"] {
   background: var(--card);
   color: var(--text);
   cursor: pointer;
+  /* 按钮默认内联排版会把 svg 压到文字基线上（图标比字偏低），带图标的按钮靠 flex 居中 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
 
 .btn:hover {
@@ -835,16 +1020,6 @@ input[type="radio"] {
   filter: brightness(0.9);
 }
 
-.btn.ghost {
-  background: transparent;
-  border-color: transparent;
-  color: var(--sec);
-}
-
-.btn.ghost:hover {
-  background: var(--hov);
-}
-
 .btn.danger {
   color: var(--danger);
 }
@@ -853,16 +1028,47 @@ input[type="radio"] {
   background: rgba(217, 47, 47, 0.08);
 }
 
+/* 列表项/卡片的删除钮：全应用统一这一种形态——无边框无底色的纯图标钮，
+   平时次要灰，hover 才转红并垫一点红底提示破坏性（macOS 列表的写法）。
+   别再改回描边胶囊或文字链：那是网页按钮的写法，行尾还白占六七个字的宽度，
+   四种删除钮各写一遍更是样式债（引擎行/模型服务/动作折叠/禁用应用曾全不同）。 */
+.row-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sec);
+  cursor: pointer;
+}
+
+.row-del:hover {
+  background: rgba(217, 47, 47, 0.1);
+  color: var(--danger);
+}
+
 /* 键盘可达性：聚焦轮廓克制（细、弱于文字色） */
 button:focus-visible {
   outline: 1.5px solid var(--sec);
   outline-offset: 2px;
 }
 
+/* 保存条吸在滚动区底部：页面再长也够得着，不必滚到末尾。
+   负左右 margin 抵掉 .content 的 44px 内边距，再用自身 padding 换回同样的左右留白，
+   按钮右缘因此与卡片右缘齐平；不带底色与分隔线——就是一个浮在右下角的按钮 */
 .save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   justify-content: flex-end;
-  margin-top: 24px;
+  gap: 10px;
+  margin: 20px -44px 0;
+  padding: 0 44px 20px;
 }
 
 /* ---- 步骤 / 关于 ---- */

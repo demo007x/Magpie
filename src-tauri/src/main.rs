@@ -408,6 +408,7 @@ fn main() {
             floating::move_ocr,
             pin::pin_get_data,
             pin::pin_window_ready,
+            toast::notify,
             toast::resize_toast,
             pin::pin_window_pos,
             pin::resize_pin,

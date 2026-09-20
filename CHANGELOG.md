@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-09-21
+
+### Added
+
+- **Custom actions**: create your own capsule actions (name + prompt, up to 10). They sit alongside the built-ins in the same reorderable list, and each one has a 试跑 panel that sends your sample text through the default model so you can check the prompt before using it.
+- **Prompt 设置 page**: edit the instructions behind 翻译 / 解释 / 总结. What the editor shows is exactly what gets sent; the selected text follows as content. Edited actions are marked, and the default can be restored.
+- **Capsule action count**: choose how many actions the capsule shows at once (2–8, default 4). The rest fold into a ˅ menu instead of squeezing the bar.
+- **Update checks**: a new GitHub release is checked once a day and on demand from 设置 › 关于, with a menu-bar toast when one is found. The app never updates itself — 下载 opens the release page in your browser. Checks only read public release info and send no local data.
+- **Esc closes the capsule** while it is visible.
+- **Delete confirmations** for model services and custom actions, so an API key or a written prompt cannot disappear with one mis-click.
+
+### Changed
+
+- **Settings pages restructured**: 划词 is now three cards — 胶囊 (action count) / 动作 / 提取信息 — because 打开链接 / 写邮件 / 复制号码 / 复制验证码 only appear when the selection contains a URL, e-mail, phone number or code, so their relative order is meaningless. The custom-action try-run moved into a modal, which frees most of the row height.
+- **All settings copy rewritten** to say what the page edits and how, in one product register instead of feature introductions; each page now states honestly whether a change reaches the capsule live or needs 保存更改.
+- **Delete buttons unified** across model services, custom actions, search engines and disabled apps: one borderless icon button that turns red on hover.
+- **保存更改 pinned to the bottom of the window** on every page, so long lists don't end at the bottom edge.
+- **Pinning is now your preference**: a new result no longer re-pins the panel, so Esc and clicking away close it once you un-pin. Pinned or still-generating panels ignore the close.
+- **Capsule and result panel surface**: dropped the frosted-glass material for a solid card with a hairline border and a CSS shadow; result panels can split into separate cards.
+- **试跑 input**: the sample text is now something you paste in, replacing a fixed example sentence that the model sometimes answered as if it were a translation request.
+
+### Fixed
+
+- **Buttons that silently did nothing**: `window.alert` / `confirm` are no-ops in the embedded web view, so validation reminders never appeared and custom actions could not be deleted at all. Reminders now go through the global toast, confirmations through a modal.
+- **Icon and label misaligned** inside buttons such as 删除.
+
 ## [0.1.5] - 2026-09-18
 
 ### Added

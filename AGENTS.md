@@ -49,6 +49,9 @@ Rust 侧 `src-tauri/src/`：
 - **手写 ObjC FFI 需谨慎**：`app_picker.rs` 用 rfd 而非裸 NSOpenPanel（ObjC 异常会穿透 Rust FFI 直接 abort）；新增 AppKit 交互优先考虑成熟 crate。
 - **wry 上游崩溃补丁以 vendor 目录保留**（wry#1752，nil URL 导致进程 abort）：`src-tauri/Cargo.toml` 的 `[patch.crates-io]` 指向 `../vendor/wry`。勿清理 vendor 目录或该 patch 配置。
 - **更新检测只做提示不做自更新**：GitHub 匿名 API 60 次/小时限流，后台检查按 24h 节流且结果落盘（`update.json` 与 settings 同目录）；网络失败一律静默。
+- **UI 不用组件库，浮层原语自建一份**：模态一律用 `src/shared/Modal.tsx`（portal 到 body，自带遮罩/Esc/点遮罩关闭/Tab 焦点循环，样式在 `main.css` 的 `.modal*`；`Confirm` 是它的危险操作用法，`size="sm"` 给一两句确认的窄版）。需要新浮层时扩展它，别在页面里再搓一份遮罩层。
+- **列表项删除钮统一 `.row-del`**（`main.css`）：无边框无底色的 24×24 纯图标钮，hover 才转红。模型服务/自定义动作/搜索引擎/禁用应用的删除都用它，别再各写描边胶囊或文字「删除/移除」。
+- **WKWebView 里没有 JS 对话框**：`window.alert/confirm/prompt` 是静默空操作（`confirm()` 恒返回 `false`，表现为"按钮点了没反应"）。提醒走 `toast()`（`src/shared/toast.ts` → Rust `notify` 命令 → 全局 toast 窗口），确认走 `Modal.tsx` 的 `Confirm`。别"简化"回原生对话框。
 
 ## 约定
 

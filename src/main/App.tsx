@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment } from "react";
+import { Confirm, Modal } from "../shared/Modal";
+import { toast } from "../shared/toast";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
@@ -11,6 +14,7 @@ import {
   Info,
   Keyboard,
   Palette,
+  Plus,
   Languages,
   Search,
   ShieldCheck,
@@ -21,12 +25,15 @@ import {
 import {
   ACTIONS,
   AI_ACTION_IDS,
+  CONTEXT_ACTION_IDS,
+  CUSTOM_ID_PREFIX,
   DEFAULT_PROMPTS,
   effectivePrompt,
   type AiActionId,
 } from "../shared/actions";
+import { aiChat } from "../shared/ai";
 import markIcon from "./assets/mark.svg";
-import type { Provider, SearchEngine, Settings } from "../shared/types";
+import type { CustomAction, Provider, SearchEngine, Settings } from "../shared/types";
 
 type Page =
   | "model"
@@ -183,6 +190,14 @@ const ACTION_DESC: Record<string, string> = {
 
 const isAiAction = (id: string) => ACTIONS.find((a) => a.id === id)?.kind === "ai";
 
+/** 动作行序的唯一真相：已排顺序 + 内置 + 自定义（未排过的追加末尾）。
+    自定义动作 id 带 "c:" 前缀，与内置同池混排，胶囊按这份顺序取前 N 个。
+    末尾过滤：只保留今天仍然存在的动作——手改配置或删动作后残留的 id 会渲染成空白行 */
+const allActionIds = (s: Settings) =>
+  [
+    ...new Set([...s.actionOrder, ...Object.keys(s.actions), ...s.customActions.map((c) => c.id)]),
+  ].filter((id) => id in s.actions || s.customActions.some((c) => c.id === id));
+
 // 系统内置引擎（与 Rust default_engines 同名单）：不可删除，只可停用/排序
 const BUILTIN_ENGINES = new Set(["百度AI", "百度", "GoogleAI", "Google", "必应", "GitHub"]);
 
@@ -197,9 +212,9 @@ const ENGINE_PRESETS: Array<[string, string]> = [
 
 // 翻译服务注册表（id 与浮动条/后端约定）
 const TRANSLATE_SERVICES: Array<[string, string, string]> = [
-  ["ai", "AI 翻译", "大模型翻译，语句自然灵活，适合学习、对照等质量优先的场景。"],
-  ["baidu", "百度翻译", "出结果快，每月有免费额度，适合快速读懂大意、日常查词；注册即可获取免费密钥。"],
-  ["deepl", "DeepL", "译文自然地道，适合正式文档、精读等在意质量的场景；注册即可获取免费密钥。"],
+  ["ai", "AI 翻译", "由大模型翻译，措辞灵活，适合学习与精读等重质量场景。"],
+  ["baidu", "百度翻译", "响应快，有每月免费额度，适合快速理解大意与日常查词；密钥需注册后在百度翻译控制台获取。"],
+  ["deepl", "DeepL", "译文自然，适合正式文档等重质量场景；密钥需注册后在 DeepL 控制台获取。"],
 ];
 
 /// Rust 侧 update::UpdateInfo 的镜像（status 见 src-tauri/src/update.rs）
@@ -211,22 +226,27 @@ type UpdateInfo = {
   checkedAt: number;
 };
 
-/// 「检查新版本」行的说明文案：只描述用户能看见的行为，不暴露接口细节
+/// 检查时刻：09/21 14:32
+function fmtChecked(ts: number): string {
+  return new Date(ts * 1000).toLocaleString("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/// 「检查新版本」行的说明文案：只描述用户能看见的行为，不暴露接口细节。
+/// 「已是最新」必须带检查时刻，否则手动点「检查更新」前后这一行一字不差，
+/// 看起来就像按钮没反应（提示只做文案级，不弹 toast——重）。
 function updateHint(upd: UpdateInfo | null): string {
   switch (upd?.status) {
     case "available":
       return `发现新版本 v${upd.latest}（当前 v${upd.current}），点「下载」前往发布页获取安装包。`;
     case "upToDate":
-      return `已是最新版本（v${upd.current}）。拾趣每天自动检查一次，也可随时手动检查。`;
-    case "cooldown": {
-      const t = new Date(upd.checkedAt * 1000).toLocaleString("zh-CN", {
-        month: "numeric",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      return `上次检查（${t}）未发现新版本，24 小时后再自动检查；点「检查更新」可立即重查。`;
-    }
+      return `已是最新版本（v${upd.current}），检查于 ${fmtChecked(upd.checkedAt)}。拾趣每天自动检查一次，也可随时手动检查。`;
+    case "cooldown":
+      return `上次检查（${fmtChecked(upd.checkedAt)}）未发现新版本，24 小时后再自动检查；点「检查更新」可立即重查。`;
     case "failed":
       return "这次没检查成（网络不通或 GitHub 暂时访问不了），下次启动会自动重试。";
     default:
@@ -377,7 +397,7 @@ export default function App() {
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
       })
-      .catch((e) => alert(`保存失败：${e}`));
+      .catch((e) => toast(`保存失败：${e}`, "err"));
   };
 
   const patchProvider = (id: string, p: Partial<Provider>) => {
@@ -390,7 +410,7 @@ export default function App() {
     if (!settings) return;
     const cur = settings.translate;
     if (!on && cur.enabled.length <= 1) {
-      alert("至少保留一个翻译服务");
+      toast("至少保留一个翻译服务", "err");
       return;
     }
     const enabled = on
@@ -409,9 +429,11 @@ export default function App() {
   };
 
   // 动作顺序：已配置顺序 + 注册表中新增动作（追加末尾）
-  const orderedActionIds = settings
-    ? [...new Set([...settings.actionOrder, ...Object.keys(settings.actions)])]
-    : [];
+  const orderedActionIds = settings ? allActionIds(settings) : [];
+  // 常驻动作（含用户自定义）与上下文动作分两张卡：后者只在选中内容含实体时出现，
+  // 且同时最多上一个胶囊，四者之间排序对浮动条没有意义——混在常驻列表里反而误导"可排"
+  const residentIds = orderedActionIds.filter((id) => !CONTEXT_ACTION_IDS.has(id));
+  const contextIds = orderedActionIds.filter((id) => CONTEXT_ACTION_IDS.has(id));
 
   // 翻译服务展示顺序：已配置顺序 + 注册表新增（追加末尾）
   const translateRows = settings
@@ -452,7 +474,7 @@ export default function App() {
       // 落位：从原位置移除后插入目标位置
       setSettings((s) => {
         if (!s) return s;
-        const order = [...new Set([...s.actionOrder, ...Object.keys(s.actions)])];
+        const order = allActionIds(s);
         const from = order.indexOf(id);
         const to = order.indexOf(target);
         if (from < 0 || to < 0) return s;
@@ -484,7 +506,7 @@ export default function App() {
     if (p.enabled === false) {
       // 至少保留一个启用的引擎，保证「搜索」按钮始终可用
       if (settings.searchEngines.filter((x) => x.enabled).length <= 1) {
-        alert("至少保留一个启用的搜索引擎");
+        toast("至少保留一个启用的搜索引擎", "err");
         return;
       }
       // 停用的是默认引擎：默认顺延到首个启用引擎（默认 ⊆ 启用）
@@ -509,7 +531,7 @@ export default function App() {
     if (BUILTIN_ENGINES.has(eng.name)) return; // 内置引擎不可删（按钮也不渲染，双保险）
     // 至少保留一个启用的引擎，保证「搜索」按钮始终可用（与停用守卫一致）
     if (eng.enabled && settings.searchEngines.filter((x) => x.enabled).length <= 1) {
-      alert("至少保留一个启用的搜索引擎");
+      toast("至少保留一个启用的搜索引擎", "err");
       return;
     }
     const rest = settings.searchEngines.filter((_, i) => i !== idx);
@@ -580,6 +602,114 @@ export default function App() {
     const next = { ...settings.actionPrompts };
     delete next[id];
     patch({ actionPrompts: next });
+  };
+
+  // ---- 自定义 AI 动作 ----
+  // 与内置动作混排在同一张「动作」卡里：胶囊顺序 = 这张卡的行序（actionOrder 是唯一真相），
+  // 分成两张卡会让用户自造的动作永远排在内置之后，前 4 个可见位就轮不到它了
+  const CUSTOM_MAX = 10;
+  const [actionEdit, setActionEdit] = useState<string | null>(null);
+  /** 试跑样例文本：按动作 id 存在组件内，不落盘——它是预览输入，不是配置 */
+  const [trySample, setTrySample] = useState<Record<string, string>>({});
+  /** 打开试跑模态的动作 id。tryRun 结果留在父组件：关掉模态不该打断正在流的输出 */
+  const [tryModal, setTryModal] = useState<string | null>(null);
+  const [tryRun, setTryRun] = useState<{
+    id: string;
+    out: string;
+    running: boolean;
+    error?: string;
+  } | null>(null);
+  const tryRunRef = useRef(0);
+
+  const customActions = settings?.customActions ?? [];
+  const customById = (id: string) => customActions.find((c) => c.id === id);
+
+  const updateCustom = (id: string, p: Partial<CustomAction>) => {
+    if (!settings) return;
+    patch({
+      customActions: settings.customActions.map((c) => (c.id === id ? { ...c, ...p } : c)),
+    });
+  };
+
+  const addCustom = () => {
+    if (!settings || customActions.length >= CUSTOM_MAX) return;
+    const id = `${CUSTOM_ID_PREFIX}${Date.now().toString(36)}`;
+    patch({
+      customActions: [
+        ...settings.customActions,
+        { id, name: "新动作", prompt: "", enabled: true },
+      ],
+      // 行序表补上新 id：追加在末尾，用户拖把手调整（与搜索引擎「添加」一致）
+      actionOrder: [...allActionIds(settings), id],
+    });
+    setActionEdit(id);
+  };
+
+  /** 待删除条目的确认框（模型服务 / 自定义动作各一个）：确认走 Modal
+   *  （confirm() 在 WKWebView 里恒为 false，用它等于删不掉） */
+  const [confirmDelProvider, setConfirmDelProvider] = useState<string | null>(null);
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
+
+  const removeProvider = (id: string) => {
+    if (!settings) return;
+    const rest = settings.providers.filter((x) => x.id !== id);
+    patch({
+      providers: rest,
+      defaultProviderId:
+        settings.defaultProviderId === id ? rest[0].id : settings.defaultProviderId,
+    });
+    setConfirmDelProvider(null);
+  };
+
+  const removeCustom = (id: string) => {
+    if (!settings) return;
+    patch({
+      customActions: settings.customActions.filter((c) => c.id !== id),
+      actionOrder: settings.actionOrder.filter((x) => x !== id),
+    });
+    tryRunRef.current++;
+    setTryRun(null);
+    setActionEdit(null);
+    setTryModal(null);
+    setConfirmDel(null);
+  };
+
+  /** 试跑：走默认模型服务（Rust 读的是已落盘的配置，未保存的改动不生效） */
+  const runTry = (c: CustomAction) => {
+    if (!c.prompt.trim()) {
+      setTryRun({ id: c.id, out: "", running: false, error: "先填提示词" });
+      return;
+    }
+    const sample = (trySample[c.id] ?? "").trim();
+    if (!sample) {
+      setTryRun({ id: c.id, out: "", running: false, error: "先填试跑样例" });
+      return;
+    }
+    const runId = ++tryRunRef.current;
+    let full = "";
+    setTryRun({ id: c.id, out: "", running: true });
+    aiChat(
+      [
+        { role: "system", content: c.prompt },
+        { role: "user", content: sample },
+      ],
+      null,
+      {
+        onDelta: (chunk) => {
+          if (tryRunRef.current !== runId) return;
+          full += chunk;
+          setTryRun((t) => (t && t.id === c.id ? { ...t, out: full } : t));
+        },
+        onDone: () => {
+          if (tryRunRef.current !== runId) return;
+          setTryRun((t) => (t && t.id === c.id ? { ...t, running: false } : t));
+        },
+        onError: (message) => {
+          if (tryRunRef.current !== runId) return;
+          setTryRun({ id: c.id, out: full, running: false, error: message });
+        },
+      },
+    );
   };
 
   const onSvcGripDown = (e: ReactMouseEvent, id: string) => {
@@ -660,8 +790,7 @@ export default function App() {
           <>
             <h1>模型服务</h1>
             <p className="page-hint">
-              翻译、解释、总结都由你选择的大模型驱动：添加任意 OpenAI
-              协议兼容的服务并设为默认，密钥只保存在本机，请求仅发往你填写的地址。修改后点击「保存更改」生效。
+              添加 OpenAI 协议兼容的模型服务，设为默认的一项供全部划词动作调用。密钥仅保存在本机。更改需保存后生效。
             </p>
 
             <h2 className="sec">服务</h2>
@@ -701,21 +830,18 @@ export default function App() {
                     设为默认
                   </label>
                   <button
-                    className="btn ghost danger"
+                    className="row-del"
+                    title="删除该服务"
+                    aria-label="删除该服务"
                     onClick={() => {
                       if (settings.providers.length <= 1) {
-                        alert("至少保留一个模型服务");
+                        toast("至少保留一个模型服务", "err");
                         return;
                       }
-                      const rest = settings.providers.filter((x) => x.id !== p.id);
-                      patch({
-                        providers: rest,
-                        defaultProviderId:
-                          settings.defaultProviderId === p.id ? rest[0].id : settings.defaultProviderId,
-                      });
+                      setConfirmDelProvider(p.id);
                     }}
                   >
-                    删除
+                    <Trash2 size={13} strokeWidth={1.75} />
                   </button>
                 </div>
               </div>
@@ -738,6 +864,20 @@ export default function App() {
                 {saved ? "已保存" : "保存更改"}
               </button>
             </div>
+
+            {confirmDelProvider &&
+              (() => {
+                const p = settings.providers.find((x) => x.id === confirmDelProvider);
+                if (!p) return null;
+                return (
+                  <Confirm
+                    title="删除服务"
+                    text={`删除「${p.name || "未命名服务"}」？模型名、服务地址与 API 密钥会一并移除。`}
+                    onCancel={() => setConfirmDelProvider(null)}
+                    onConfirm={() => removeProvider(confirmDelProvider)}
+                  />
+                );
+              })()}
           </>
         )}
 
@@ -745,7 +885,7 @@ export default function App() {
           <>
             <h1>Prompt 设置</h1>
             <p className="page-hint">
-              翻译 / 解释 / 总结发给模型的指令，选中的文字作为内容发送。点动作名展开，一次只展开一个；编辑框里就是实际发出的内容，改动点「保存更改」后浮动条与识图结果窗口即时生效。
+              编辑各动作发给模型的指令，输入框内即实际发送的内容，所选文字随后附带。更改需保存后生效。
             </p>
             {AI_ACTION_IDS.map((id) => {
               const custom = Boolean(settings.actionPrompts[id]?.trim());
@@ -809,16 +949,16 @@ export default function App() {
           <>
             <h1>划词</h1>
             <p className="page-hint">
-              在任意应用中选中文字，浮动条即刻提供翻译、解释、总结等动作。本页管理浮动条动作的开关与顺序，改动点击「保存更改」后生效。
+              设定浮动条显示哪些动作及其排列顺序：拖动把手调序，开关停用某项。开关与顺序即时反映到浮动条；新增动作及其名称、提示词需保存后生效。
               <br />
-              胶囊固定显示排序前 N 个动作，其余收进右侧「⌄N」面板；把高频动作拖到前面即可。
+              「提取信息」仅在所选文字含网址 / 邮箱 / 电话 / 验证码时出现。
             </p>
 
-            <h2 className="sec">动作</h2>
+            <h2 className="sec">胶囊</h2>
             <div className="card">
-              <div className="row-between sep">
+              <div className="row-between">
                 <div className="row-title">
-                  胶囊显示动作数
+                  显示动作数
                   <span className="action-desc">默认 4（可设 2–8）</span>
                 </div>
                 <div className="row-ctl">
@@ -841,43 +981,168 @@ export default function App() {
                   </button>
                 </div>
               </div>
-              {orderedActionIds.map((k) => (
-                <div
-                  key={k}
-                  ref={(el) => {
-                    if (el) rowEls.current.set(k, el);
-                    else rowEls.current.delete(k);
-                  }}
-                  className={`row-between sep action-row ${dragId === k ? "dragging" : ""} ${
-                    overId === k && dragId && dragId !== k ? "drop-target" : ""
-                  }`}
-                >
+            </div>
+
+            <h2 className="sec">动作</h2>
+            <div className="card">
+              {residentIds.map((k) => {
+                const c = customById(k);
+                const open = actionEdit === k;
+                return (
+                  <Fragment key={k}>
+                    <div
+                      ref={(el) => {
+                        if (el) rowEls.current.set(k, el);
+                        else rowEls.current.delete(k);
+                      }}
+                      className={`row-between sep action-row ${dragId === k ? "dragging" : ""} ${
+                        overId === k && dragId && dragId !== k ? "drop-target" : ""
+                      }`}
+                    >
+                      <div className="row-title">
+                        <span
+                          className="grip"
+                          title="拖动排序"
+                          onMouseDown={(e) => onGripDown(e, k)}
+                        >
+                          <GripVertical size={13} strokeWidth={1.75} />
+                        </span>
+                        {c ? c.name || "未命名" : ACTION_LABELS[k]}
+                        {c ? (
+                          <span className="tag mine">我的</span>
+                        ) : (
+                          isAiAction(k) && <span className="tag ai">AI</span>
+                        )}
+                        <span className="action-desc">
+                          {c ? (c.prompt.trim() ? "" : "未填提示词") : ACTION_DESC[k]}
+                        </span>
+                      </div>
+                      <div className="row-ctl">
+                        {c && (
+                          <button
+                            className={`svc-chev ${open ? "open" : ""}`}
+                            title={open ? "收起编辑" : "编辑名称与提示词"}
+                            onClick={() => {
+                              tryRunRef.current++;
+                              setTryRun(null);
+                              setActionEdit(open ? null : k);
+                            }}
+                          >
+                            <ChevronDown size={13} strokeWidth={2} />
+                          </button>
+                        )}
+                        <label className="switch">
+                          <input
+                            type="checkbox"
+                            checked={
+                              c
+                                ? c.enabled
+                                : (settings.actions[k as keyof typeof settings.actions] ?? false)
+                            }
+                            onChange={(e) => {
+                              if (c) {
+                                updateCustom(c.id, { enabled: e.target.checked });
+                                return;
+                              }
+                              // 至少保留一个开启的动作，避免浮动条变空白
+                              if (
+                                !e.target.checked &&
+                                Object.values(settings.actions).filter(Boolean).length <= 1
+                              ) {
+                                toast("至少保留一个动作", "err");
+                                return;
+                              }
+                              patch({
+                                actions: { ...settings.actions, [k]: e.target.checked },
+                              });
+                            }}
+                          />
+                          <span className="knob" />
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* 自定义动作就地编辑：名称 + 提示词 + 试跑，不跳页 */}
+                    {c && (
+                      <div className={`svc-body ${open ? "open" : ""}`}>
+                        <div>
+                          <div className="svc-fields">
+                            <label className="field">
+                              <span>名称（显示在胶囊按钮上，建议不超过 6 字）</span>
+                              <input
+                                value={c.name}
+                                maxLength={8}
+                                placeholder="如：术语直译"
+                                onChange={(e) => updateCustom(c.id, { name: e.target.value })}
+                              />
+                            </label>
+                            <label className="field wide">
+                              <span>
+                                提示词（发给模型的指令，所选文字随后附带，无需占位符）
+                              </span>
+                              <textarea
+                                className="prompt-input in-field"
+                                spellCheck={false}
+                                placeholder="例：把下面的文本译成中文，保留英文术语并在括号内附原文，只输出译文。"
+                                value={c.prompt}
+                                onChange={(e) => updateCustom(c.id, { prompt: e.target.value })}
+                              />
+                            </label>
+                            <div className="act-foot wide">
+                              <div className="row-ctl">
+                                <button className="btn sm" onClick={() => setTryModal(c.id)}>
+                                  试跑
+                                </button>
+                                <button
+                                  className="row-del"
+                                  title="删除该动作"
+                                  aria-label="删除该动作"
+                                  onClick={() => setConfirmDel(c.id)}
+                                >
+                                  <Trash2 size={13} strokeWidth={1.75} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
+              <button
+                className="act-add"
+                disabled={customActions.length >= CUSTOM_MAX}
+                title={
+                  customActions.length >= CUSTOM_MAX
+                    ? `最多 ${CUSTOM_MAX} 个自定义动作`
+                    : "新建一个自定义 AI 动作"
+                }
+                onClick={addCustom}
+              >
+                <Plus size={13} strokeWidth={2} />
+                新建 AI 动作
+              </button>
+            </div>
+
+            <h2 className="sec">提取信息</h2>
+            <div className="card">
+              {contextIds.map((k) => (
+                <div key={k} className="row-between sep action-row context-row">
                   <div className="row-title">
-                    <span className="grip" title="拖动排序" onMouseDown={(e) => onGripDown(e, k)}>
-                      <GripVertical size={13} strokeWidth={1.75} />
-                    </span>
-                    {ACTION_LABELS[k] ?? k}
-                    {isAiAction(k) && <span className="tag ai">AI</span>}
-                    <span className="action-desc">{ACTION_DESC[k] ?? ""}</span>
+                    {ACTION_LABELS[k]}
+                    <span className="action-desc">{ACTION_DESC[k]}</span>
                   </div>
                   <div className="row-ctl">
                     <label className="switch">
                       <input
                         type="checkbox"
-                        checked={settings.actions[k as keyof typeof settings.actions] ?? false}
-                        onChange={(e) => {
-                          // 至少保留一个开启的动作，避免浮动条变空白
-                          if (
-                            !e.target.checked &&
-                            Object.values(settings.actions).filter(Boolean).length <= 1
-                          ) {
-                            alert("至少保留一个动作");
-                            return;
-                          }
-                          patch({
-                            actions: { ...settings.actions, [k]: e.target.checked },
-                          });
-                        }}
+                        checked={
+                          settings.actions[k as keyof typeof settings.actions] ?? false
+                        }
+                        onChange={(e) =>
+                          patch({ actions: { ...settings.actions, [k]: e.target.checked } })
+                        }
                       />
                       <span className="knob" />
                     </label>
@@ -891,6 +1156,60 @@ export default function App() {
                 {saved ? "已保存" : "保存更改"}
               </button>
             </div>
+
+            {/* 试跑模态：样例、运行、输出都收在这里，动作行的折叠体只留名称与提示词。
+                提示词只读——两处都能改同一份 prompt 会让「保存的是哪一版」说不清 */}
+            {(() => {
+              const c = tryModal ? customById(tryModal) : null;
+              if (!c) return null;              const running = tryRun?.id === c.id && tryRun.running;
+              return (
+                <Modal
+                  title={`试跑「${c.name || "未命名动作"}」`}
+                  onClose={() => setTryModal(null)}
+                  footer={
+                    <>
+                      <span className="row-sub">
+                        {running
+                          ? "生成中…"
+                          : "使用「模型服务」的默认模型；配置取已保存版本，提示词取当前编辑内容"}
+                      </span>
+                      <button className="btn primary sm" disabled={running} onClick={() => runTry(c)}>
+                        运行
+                      </button>
+                    </>
+                  }
+                >
+                  <label className="field">
+                    <span>提示词（在动作行里修改）</span>
+                    <pre className="prompt-default">{c.prompt.trim() || "（还没填提示词）"}</pre>
+                  </label>
+                  <label className="field">
+                    <span>样例（作为所选文字发给模型，不保存）</span>
+                    <textarea
+                      className="prompt-input in-field try-sample"
+                      spellCheck={false}
+                      placeholder="粘贴一段待处理的文字，例如：The committee deferred the decision pending further audit evidence."
+                      value={trySample[c.id] ?? ""}
+                      onChange={(e) => setTrySample((m) => ({ ...m, [c.id]: e.target.value }))}
+                    />
+                  </label>
+                  {tryRun?.id === c.id && (tryRun.out || tryRun.error) && (
+                    <pre className={`act-out ${tryRun.error ? "bad" : ""}`}>
+                      {tryRun.error ?? tryRun.out}
+                    </pre>
+                  )}
+                </Modal>
+              );
+            })()}
+
+            {confirmDel && customById(confirmDel) && (
+              <Confirm
+                title="删除动作"
+                text={`删除「${customById(confirmDel)!.name || "未命名动作"}」？提示词会一并移除。`}
+                onCancel={() => setConfirmDel(null)}
+                onConfirm={() => removeCustom(confirmDel)}
+              />
+            )}
           </>
         )}
 
@@ -898,8 +1217,7 @@ export default function App() {
           <>
             <h1>快捷键</h1>
             <p className="page-hint">
-              在任意应用中按下组合键即可触发对应功能，无需切到拾趣窗口。点击输入框录制新组合键（需含
-              ⌘ / Ctrl / Alt / Shift 修饰键，Esc 取消），点「保存更改」后生效；若组合已被其他应用占用则不会生效，换一个即可。
+              点按输入框后按下新组合键完成设置，需含 ⌘ / Ctrl / Alt / Shift 之一，Esc 取消。组合键已被其他应用占用时不生效。更改需保存后生效。
             </p>
             <div className="card">
               {SHORTCUT_ITEMS.map((item, i) => (
@@ -941,14 +1259,14 @@ export default function App() {
           <>
             <h1>权限</h1>
             <p className="page-hint">
-              划词依赖两项系统权限，未授权时按引导开启，授权后状态自动刷新。
+              划词需「辅助功能」与「输入监控」，识图需「屏幕录制」。按条目提示完成授权，返回后状态自动刷新。
             </p>
             <div className="card">
               <div className="row-between">
                 <div>
                   <div className="row-title">辅助功能</div>
                   <div className="row-sub">
-                    在任何应用中读取你选中的文字——划词翻译、解释、总结都从这里开始。未授权时划词没有反应，点下方「授权划词」开启。
+                    读取所选文字，供翻译、解释、总结使用。未授权时划词无响应，点下方「授权划词」开启。
                   </div>
                 </div>
                 <span className={`pill ${granted ? "ok" : granted === false ? "bad" : ""}`}>
@@ -978,7 +1296,7 @@ export default function App() {
                 <div>
                   <div className="row-title">输入监控</div>
                   <div className="row-sub">
-                    感知你的选择动作，在你选完文字的一瞬弹出拾趣浮动条。未授权时选中文字同样没有反应，点下方「授权输入监控」开启。
+                    监听选择动作，选完文字即弹出浮动条。未授权时不会有响应，点下方「授权输入监控」开启。
                   </div>
                 </div>
                 <span className={`pill ${listenAccess ? "ok" : listenAccess === false ? "bad" : ""}`}>
@@ -999,7 +1317,7 @@ export default function App() {
                 <div>
                   <div className="row-title">屏幕录制</div>
                   <div className="row-sub">
-                    识图取字的前提：看到屏幕才能框选识别，全程离线完成，画面不会离开你的电脑。未授权时点下方「授权屏幕录制」开启。
+                    框选屏幕区域并识别文字的前提，识别全程在本机完成，画面不上传。未授权时点下方「授权屏幕录制」开启。
                   </div>
                 </div>
                 <span className={`pill ${screenAccess ? "ok" : screenAccess === false ? "bad" : ""}`}>
@@ -1022,7 +1340,7 @@ export default function App() {
                 <div>
                   <div className="row-title">取词健康自检</div>
                   <div className="row-sub">
-                    划词失灵时的自我诊断：各项权限都已授权却仍弹不出浮动条，多半是系统权限状态失效——到系统设置「辅助功能」里取消再勾选拾趣，重启应用即可恢复。
+                    划词失灵时的诊断。权限均已授权却无浮动条，通常是系统权限状态失效：到系统设置「辅助功能」取消勾选拾趣后重新勾选，重启应用恢复。
                   </div>
                 </div>
                 <span className={`pill ${axServiceOk ? "ok" : axServiceOk === false ? "bad" : ""}`}>
@@ -1037,7 +1355,7 @@ export default function App() {
           <>
             <h1>翻译</h1>
             <p className="page-hint">
-              一个划词，多个译法随点随换：开关控制服务是否出现在「翻译」展开列表，拖动调整顺序，「默认」单击直达；方向自动识别（中文译英文，其他译中文）。改动即时生效，点「保存更改」持久化。
+              开关决定该服务是否进入「翻译」展开列表，拖动把手调整顺序，「默认」为单击直达项；译文方向自动识别。改动即时反映到浮动条，点「保存更改」持久化。
             </p>
 
             <h2 className="sec">服务</h2>
@@ -1217,7 +1535,7 @@ export default function App() {
           <>
             <h1>搜索引擎</h1>
             <p className="page-hint">
-              选中文字，一键开搜：开关控制引擎是否出现在「搜索」展开列表，拖动调整顺序，「默认」单击直达；也支持添加自定义引擎，链接中的 {'{q}'} 会替换为选中文本。改动即时生效，点「保存更改」持久化。
+              开关决定该引擎是否进入「搜索」展开列表，拖动把手调整顺序，「默认」为单击直达项；链接中的 {'{q}'} 代入选中文字。改动即时反映到浮动条，点「保存更改」持久化。
             </p>
             <div className="card">
               {settings.searchEngines.map((eng, idx) => (
@@ -1272,8 +1590,9 @@ export default function App() {
                   {/* 仅自定义引擎可删除；内置引擎为系统默认，只可停用/排序 */}
                   {!BUILTIN_ENGINES.has(eng.name) && (
                     <button
-                      className="eng-del"
+                      className="row-del"
                       title="删除该引擎"
+                      aria-label="删除该引擎"
                       onClick={() => removeEngine(idx)}
                     >
                       <Trash2 size={13} strokeWidth={1.75} />
@@ -1308,7 +1627,7 @@ export default function App() {
           <>
             <h1>禁用应用</h1>
             <p className="page-hint">
-              在终端、密码管理器这类应用里，你可能不希望划词弹出浮动条——把它们加入禁用列表，拾趣在这些应用中保持安静。点「选择应用…」从应用列表挑选，保存后立即生效。
+              列表内的应用在划词时不显示浮动条。「选择应用…」添加，条目右侧图标移除。更改需保存后生效。
             </p>
 
             <div className="card">
@@ -1318,7 +1637,7 @@ export default function App() {
                     <div className="row-title" style={{ color: "var(--sec)" }}>
                       暂无禁用应用
                     </div>
-                    <div className="row-sub">目前所有应用中划词都会弹出拾趣浮动条。</div>
+                    <div className="row-sub">列表为空，所有应用划词时均显示浮动条。</div>
                   </div>
                 </div>
               ) : (
@@ -1326,14 +1645,16 @@ export default function App() {
                   <div className="row-between tight" key={`${name}-${i}`}>
                     <div className="row-title">{name}</div>
                     <button
-                      className="btn sm"
+                      className="row-del"
+                      title="移出禁用列表"
+                      aria-label="移出禁用列表"
                       onClick={() =>
                         patch({
                           appBlacklist: settings.appBlacklist.filter((_, idx) => idx !== i),
                         })
                       }
                     >
-                      移除
+                      <Trash2 size={13} strokeWidth={1.75} />
                     </button>
                   </div>
                 ))
@@ -1373,7 +1694,7 @@ export default function App() {
                 <div>
                   <div className="row-title">应用外观</div>
                   <div className="row-sub">
-                    选择亮色或暗色，或跟随系统外观自动切换。即时生效，对划词条、识别面板、提示全部生效。
+                    亮色、暗色或跟随系统自动切换。即时生效，覆盖浮动条、识别面板与提示。
                   </div>
                 </div>
                 <div className="seg" role="radiogroup" aria-label="应用外观">
@@ -1399,7 +1720,7 @@ export default function App() {
           <>
             <h1>关于</h1>
             <p className="page-hint">
-              选中的文字仅发送至你配置的服务，拾趣不收集任何数据。
+              查看版本、检查更新、设定程序坞图标显隐。更新检测仅读取 GitHub Releases 的公开版本信息，不发送本机数据。
             </p>
             <div className="card about-card">
               <img className="mark big" src={markIcon} alt="拾趣" />
@@ -1415,7 +1736,7 @@ export default function App() {
                 <div>
                   <div className="row-title">在程序坞中显示图标</div>
                   <div className="row-sub">
-                    拾趣默认以菜单栏形态常驻，划词随时可用；开启后在程序坞同时显示图标。关闭时点主窗口关闭按钮仅隐藏窗口，退出请用菜单栏右键「退出应用」。
+                    默认仅以菜单栏形态常驻。开启后程序坞同时显示图标；关闭时点主窗口关闭按钮仅隐藏窗口，退出请用菜单栏右键「退出应用」。
                   </div>
                 </div>
                 <label className="switch">
@@ -1426,7 +1747,7 @@ export default function App() {
                       const next = { ...settings, showDockIcon: e.target.checked };
                       setSettings(next);
                       invoke("save_settings", { settings: next }).catch(() =>
-                        alert("保存失败，请重试"),
+                        toast("保存失败，请重试", "err"),
                       );
                     }}
                   />

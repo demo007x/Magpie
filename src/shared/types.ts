@@ -44,12 +44,27 @@ export interface TranslateConfig {
   deeplKey: string;
 }
 
+/** 用户自定义 AI 动作：与内置三动作同属注册表，只是 prompt 由用户持有 */
+export interface CustomAction {
+  /** 前缀 "c:" 与内置 id 隔离，actionOrder / actionPrompts 直接引用它 */
+  id: string;
+  /** 胶囊上的显示名，建议 ≤6 字 */
+  name: string;
+  /** system 提示词（user 消息固定为选中文本）；空 = 未配置，动作条上不可执行 */
+  prompt: string;
+  enabled: boolean;
+  /** 预留：挂到某内置动作的二级展开列表（变体挂载），当前未实现 */
+  under?: string;
+}
+
 export interface Settings {
   providers: Provider[];
   defaultProviderId: string;
   actions: ActionFlags;
   /** 动作展示顺序（浮动条按此渲染）；缺省 id 追加在末尾 */
   actionOrder: string[];
+  /** 用户自定义 AI 动作（与 actionOrder 混排，上限 10 个） */
+  customActions: CustomAction[];
   /** 浮动胶囊固定显示的动作数（超出收进「⌄N」面板；默认 4） */
   capsuleShowCount: number;
   /** 搜索引擎列表（浮动条「搜索」使用；defaultSearch 为单击直达的引擎） */

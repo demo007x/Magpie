@@ -1,13 +1,35 @@
-// 动作注册表：新增动作 = 注册一个对象，Rust / 窗口 / 设置零改动（M2 起可扩展自定义动作）
-// kind "ai" = 走模型流式（提示词见 DEFAULT_PROMPTS，可在设置页「Prompt 设置」覆盖）；
-// "local" = 前端本地处理（如复制选中文本）
+// 动作注册表：内置动作写在这里（新增内置 = 注册一个对象，Rust / 窗口 / 设置零改动），
+// 用户自定义动作存 settings.customActions，经 actionRegistry() 合并成消费端视图。
+// kind "ai" = 走模型流式（内置动作提示词见 DEFAULT_PROMPTS，可在设置页「Prompt 设置」覆盖；
+// 自定义动作的 prompt 随对象带过来）；"local" = 前端本地处理（如复制选中文本）
 // 上下文动作（link/email/code/tel）的可见性由浮动条「提取信息」统一决策（见 floating/App.tsx），
 // 不使用 when 谓词；when 机制保留给未来其他上下文动作。
+import type { CustomAction } from "./types";
+
 export interface ActionDef {
   id: string;
   label: string;
   kind?: "ai" | "local";
+  /** 自定义动作的 system 提示词；内置动作不带此字段，走 DEFAULT_PROMPTS + actionPrompts 覆盖 */
+  prompt?: string;
   when?(text: string): boolean;
+}
+
+/** 自定义动作 id 前缀：与内置 id 隔离，actionOrder 里两种 id 混排 */
+export const CUSTOM_ID_PREFIX = "c:";
+
+/** 注册表合并视图：内置在前、自定义在后（各自再按 actionOrder 排）。
+    传入前请自行过滤 enabled——这里只管形状，不管开关语义 */
+export function actionRegistry(custom: CustomAction[] = []): ActionDef[] {
+  return [
+    ...ACTIONS,
+    ...custom.map((c) => ({
+      id: c.id,
+      label: c.name,
+      kind: "ai" as const,
+      prompt: c.prompt,
+    })),
+  ];
 }
 
 export type AiActionId = "translate" | "explain" | "summarize";
@@ -69,6 +91,15 @@ export function effectivePrompt(
   return custom && custom.trim() ? custom : DEFAULT_PROMPTS[id];
 }
 
+/** 动作生效提示词：自定义动作就是它自己那份 prompt，内置动作走覆盖/默认回落。
+    两者都是"最终发出的 system 文本"，设置页因此可以继续宣称所见即所发 */
+export function actionPrompt(
+  action: ActionDef,
+  overrides?: Partial<Record<string, string>>,
+): string {
+  return action.prompt ?? effectivePrompt(action.id as AiActionId, overrides);
+}
+
 export const ACTIONS: ActionDef[] = [
   {
     id: "copy",
@@ -120,3 +151,9 @@ export const ACTIONS: ActionDef[] = [
 export function actionById(id: string): ActionDef | undefined {
   return ACTIONS.find((a) => a.id === id);
 }
+
+/** 上下文动作：选中内容里出现对应实体才上胶囊，因此它们的相互顺序对胶囊无意义
+    （恰好一个 → 该动作单独出现；多个 → 合并成一个「提取信息」按钮）。
+    设置页据此把它们与常驻动作分成两张卡（见 main/App.tsx） */
+export const CONTEXT_ACTION_IDS = new Set(["link", "email", "tel", "code"]);
+export const isContextAction = (id: string) => CONTEXT_ACTION_IDS.has(id);
