@@ -1,0 +1,639 @@
+<!doctype html>
+<!--
+  浮动胶囊「二级展示」探索原型（非生产代码）
+  目的：把两种二级的差别做实——
+    ① 渠道菜单（已有）：点某个动作旁的 ⌄ → 换实现渠道，不是新动作
+    ② 收纳面板（新增）：点胶囊最右的 ⌄N → 露出剩余动作
+  两者出现在胶囊正下方的同一块空位上，一次只会出现一个。
+  打开方式：open design/capsule-preview.html
+-->
+<html lang="zh-CN">
+
+<head>
+    <meta charset="utf-8" />
+    <title>胶囊二级展示 · 原型</title>
+    <style>
+        /* 拾趣「鹊羽」主题色，与 src/floating/floating.css 对齐 */
+        :root {
+            --surf: #ffffff;
+            --text: #1c1c24;
+            --sec: #85858f;
+            --line: rgba(28, 28, 46, 0.08);
+            --hov: rgba(94, 92, 230, 0.07);
+            --accent: #5e5ce6;
+            --accent-soft: rgba(94, 92, 230, 0.1);
+            --on-accent: #fff;
+            --radius: 12px;
+            --shadow: 0 1px 2px rgba(24, 24, 46, .06), 0 4px 12px rgba(24, 24, 46, .08), 0 16px 40px rgba(24, 24, 46, .13);
+            --page: #f6f6f8;
+            --ink: #2a2a33;
+        }
+
+        html.dark {
+            --surf: #282828;
+            --text: #ededf4;
+            --sec: #9a9aa8;
+            --line: rgba(237, 237, 244, .1);
+            --hov: rgba(125, 122, 255, .1);
+            --accent: #8684ff;
+            --accent-soft: rgba(134, 132, 255, .14);
+            --shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 4px 12px rgba(0, 0, 0, .32), 0 16px 40px rgba(0, 0, 0, .45);
+            --page: #1c1c1f;
+            --ink: #d8d8de;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font: 14px/1.7 -apple-system, "PingFang SC", sans-serif;
+            background: #e9e9ee;
+            color: var(--text);
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        html.dark body {
+            background: #111114;
+        }
+
+        /* ── 左侧：模拟一个"正在阅读的正文页"，胶囊叠在它上面，遮挡一目了然 ── */
+        .stage {
+            position: relative;
+            width: 640px;
+            min-width: 640px;
+            height: 660px;
+            background: var(--page);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, .1);
+        }
+
+        .article {
+            padding: 26px 30px;
+            color: var(--ink);
+            font-size: 14.5px;
+            line-height: 24px;
+        }
+
+        html.dark .article {
+            color: #c9c9d2;
+        }
+
+        .article h3 {
+            font-size: 17px;
+            margin: 0 0 10px;
+        }
+
+        .article p {
+            margin: 0 0 14px;
+        }
+
+        mark {
+            background: rgba(94, 92, 230, .22);
+            color: inherit;
+            border-radius: 2px;
+        }
+
+        html.dark mark {
+            background: rgba(134, 132, 255, .3);
+        }
+
+        /* ── 胶囊：窗口边界用红虚线画出来（真实窗口必须贴合表面，否则下角变直角）── */
+        .capsule {
+            position: absolute;
+            left: 30px;
+            top: 158px;
+        }
+
+        .win-outline {
+            position: absolute;
+            inset: -4px;
+            border: 1px dashed rgba(229, 72, 77, .75);
+            border-radius: 14px;
+            pointer-events: none;
+        }
+
+        .win-tag {
+            position: absolute;
+            left: 0;
+            top: -20px;
+            font-size: 11px;
+            color: #e5484d;
+            white-space: nowrap;
+        }
+
+        .bar {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            padding: 2px;
+            background: var(--surf);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            width: max-content;
+            user-select: none;
+        }
+
+        .bar.wrap {
+            flex-wrap: wrap;
+            width: 328px;
+        }
+
+        /* 现状：折行 → 54px 高 */
+        .slot {
+            display: inline-flex;
+            align-items: center;
+            position: relative;
+        }
+
+        .slot+.slot::before {
+            content: "";
+            position: absolute;
+            left: -1.5px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 1px;
+            height: 14px;
+            background: var(--line);
+        }
+
+        .action {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            border: 0;
+            background: transparent;
+            color: var(--text);
+            font: inherit;
+            font-size: 13px;
+            padding: 5px 9px;
+            border-radius: 9px;
+            cursor: default;
+        }
+
+        .action:hover {
+            background: var(--hov);
+        }
+
+        .action .kbd {
+            font-size: 10.5px;
+            color: var(--sec);
+            letter-spacing: .3px;
+        }
+
+        .chev {
+            width: 16px;
+            height: 26px;
+            margin-left: -5px;
+            border: 0;
+            background: transparent;
+            color: var(--sec);
+            border-radius: 6px;
+            cursor: default;
+            font-size: 10px;
+        }
+
+        .chev:hover {
+            background: var(--hov);
+            color: var(--accent);
+        }
+
+        .chev.open {
+            color: var(--accent);
+            background: var(--accent-soft);
+        }
+
+        /* 收纳入口：胶囊最右的独立按钮，带剩余数量 */
+        .more {
+            padding: 5px 8px;
+            font-size: 12px;
+            color: var(--sec);
+        }
+
+        .more b {
+            font-weight: 600;
+        }
+
+        /* ── 两种二级共用的一套样式，但尺寸/对齐/内容都不同 ── */
+        .pop {
+            position: absolute;
+            top: calc(100% + 6px);
+            background: var(--surf);
+            border-radius: 11px;
+            box-shadow: var(--shadow);
+            padding: 4px;
+            z-index: 5;
+        }
+
+        /* 渠道菜单：单列、窄、锚在所属动作下方 */
+        .pop.channel {
+            left: 0;
+            width: 116px;
+        }
+
+        /* 收纳面板：单行平铺、宽度随内容，不折行 */
+        .pop.overflow {
+            left: 0;
+            display: flex;
+        }
+
+        .item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: default;
+            white-space: nowrap;
+            position: relative;
+        }
+
+        .item:hover {
+            background: var(--hov);
+        }
+
+        .item .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            border: 1.5px solid var(--sec);
+            flex: none;
+        }
+
+        .item.on .dot {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .item.on {
+            color: var(--accent);
+        }
+
+        .item .ico {
+            width: 14px;
+            text-align: center;
+            color: var(--sec);
+            font-size: 12px;
+            flex: none;
+        }
+
+        /* 面板项右侧的小展开箭头（与胶囊上的 ⌄ 同语义：换渠道/引擎） */
+        .pchev {
+            width: 16px;
+            height: 20px;
+            margin-left: auto;
+            border: 0;
+            background: transparent;
+            color: var(--sec);
+            border-radius: 5px;
+            cursor: default;
+            font-size: 9px;
+            flex: none;
+        }
+
+        .pchev:hover {
+            background: var(--hov);
+            color: var(--accent);
+        }
+
+        /* ── 右侧控制面板 ── */
+        aside {
+            flex: 1;
+            min-width: 300px;
+            max-width: 420px;
+        }
+
+        h1 {
+            font-size: 15px;
+            margin: 4px 0 12px;
+        }
+
+        .grp {
+            background: var(--surf);
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .08);
+        }
+
+        html.dark .grp {
+            background: #24242a;
+        }
+
+        .grp h2 {
+            font-size: 12.5px;
+            margin: 0 0 8px;
+            color: var(--sec);
+            font-weight: 600;
+            letter-spacing: .3px;
+        }
+
+        .row {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+
+        button.t {
+            font: inherit;
+            font-size: 12.5px;
+            padding: 5px 10px;
+            border-radius: 7px;
+            border: 1px solid var(--line);
+            background: transparent;
+            color: var(--text);
+            cursor: pointer;
+        }
+
+        button.t.on {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        ol {
+            margin: 0;
+            padding-left: 18px;
+            font-size: 12.5px;
+            line-height: 1.85;
+            color: var(--sec);
+        }
+
+        ol b {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        .num {
+            font-variant-numeric: tabular-nums;
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: var(--sec);
+            line-height: 1.7;
+        }
+
+        .hint code {
+            background: rgba(127, 127, 140, .14);
+            padding: 1px 4px;
+            border-radius: 4px;
+            font-size: 11.5px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="stage">
+        <div class="article">
+            <h3>The Architecture of Text Interfaces</h3>
+            <p>
+                When a reader encounters an unfamiliar term, the natural reflex is to
+                <mark id="sel">pause and reach for a dictionary</mark>, breaking the flow of
+                comprehension. The cost of that interruption compounds across a page: each
+                lookup pulls attention away from the argument being built and toward a
+                separate tool with its own interface, its own history, its own gravity.
+            </p>
+            <p>
+                A reading surface that understands text need not demand that the reader
+                leave it. The gesture already exists — selection is how we mark what
+                interests us, and it is performed ten thousand times a day without any
+                expectation of consequence. Treating that gesture as a request for help is
+                a bet worth making, but only if the help arrives without occupying the
+                very space the reader was trying to look at.
+            </p>
+            <p>
+                This is the entire difficulty in one sentence. Any affordance attached to
+                selection is, by construction, an obstruction to reading. The answer is
+                not to guess better which selections deserve an answer; it is to make the
+                thing that appears smaller, quieter, and far easier to get rid of.
+            </p>
+        </div>
+
+        <div class="capsule" id="capsule">
+            <div class="win-outline"><span class="win-tag" id="winTag">窗口边界</span></div>
+            <div class="bar" id="bar"></div>
+        </div>
+    </div>
+
+    <aside>
+        <h1>胶囊二级展示 · 交互原型</h1>
+
+        <div class="grp">
+            <h2>形态</h2>
+            <div class="row">
+                <button class="t" id="mNow">现状（6 个动作 · 折行）</button>
+                <button class="t on" id="mNew">新方案（显示 4 + 收纳 2）</button>
+            </div>
+            <h2>显示数量 N</h2>
+            <div class="row" id="nRow">
+                <button class="t" data-n="2">2</button>
+                <button class="t" data-n="3">3</button>
+                <button class="t on" data-n="4">4</button>
+                <button class="t" data-n="9">全部</button>
+            </div>
+            <h2>主题</h2>
+            <div class="row">
+                <button class="t on" id="tLight">亮</button>
+                <button class="t" id="tDark">暗</button>
+            </div>
+            <h2>场景</h2>
+            <div class="row">
+                <button class="t" id="sEdge">胶囊移到屏幕右缘（看翻转）</button>
+            </div>
+        </div>
+
+        <div class="grp">
+            <h2>现在这个胶囊</h2>
+            <div class="hint">
+                尺寸 <span class="num" id="sz">—</span><br />
+                往下盖住正文约 <span class="num" id="lines">—</span> 行（行高 24px）<br />
+                <span id="state">二级：未展开</span>
+            </div>
+        </div>
+
+        <div class="grp">
+            <h2>看懂这两张图的关键</h2>
+            <ol>
+                <li><b>渠道菜单</b>：箭头长在<b>某个动作身上</b>（如「翻译 ⌄」）。展开是在<b>换这家服务</b>——AI / 百度 /
+                    DeepL，<b>不多任何动作</b>。窄、单列、锚在那个动作下面。</li>
+                <li><b>收纳面板</b>：箭头是<b>整条最右边的独立按钮</b>（<code>⌄ 2</code>）。展开是<b>露出被收起的动作</b>。宽、两列、<b>锚在 ⌄N 左下、向右生长</b>；贴屏幕右缘自动<b>翻转为右对齐、向左生长</b>（点上方「胶囊移到屏幕右缘」看效果）。</li>
+                <li>两者<b>共用</b>胶囊正下方那块空位，<b>一次只会出现一个</b>（同一个状态变量，天然互斥）。</li>
+                <li><b>二级形式全局统一</b>：凡「换渠道/换引擎」都是<b>同一种浮出菜单</b>（窄、单列、锚在动作下方）——胶囊上的翻译和收纳面板里的搜索同款。收纳面板<b>单行平铺、宽度随内容</b>，不折行不换行；点动作主体 = 默认引擎执行，点 <code>⌄</code> 才弹菜单换引擎。</li>
+            </ol>
+        </div>
+    </aside>
+
+    <script>
+        const EN = ["translate", "explain", "summarize", "copy", "search", "link"];
+        const L = { translate: "翻译", explain: "解释", summarize: "总结", copy: "复制", search: "搜索", link: "打开链接" };
+        const CHANNELS = ["AI 翻译", "百度翻译", "DeepL"];
+        // 二级全局统一：胶囊上与收纳面板里，换渠道/引擎都用同一种浮出菜单
+        const ENGINES = { search: ["百度", "Google", "Bing", "搜狗"] };
+        let peng = { search: 0 }; // 收纳面板内各动作当前选中的引擎
+        let mode = "new", N = 4, open = null, ch = 0;
+
+        const bar = document.getElementById("bar");
+        const stage = document.querySelector(".stage");
+        const sel = document.getElementById("sel");
+
+        // 二级面板锚定：面板左缘 = 触发点左缘、向右生长；贴舞台右缘翻转为
+        // 右对齐触发点、向左生长。anchor/panel 同一坐标系（都是父容器内坐标）
+        function anchor(popW, anchorLeftInParent, anchorRightInParent) {
+            const capL = document.getElementById("capsule").offsetLeft;
+            const absL = capL + anchorLeftInParent;
+            return absL + popW > stage.clientWidth - 8
+                ? anchorRightInParent - popW
+                : anchorLeftInParent;
+        }
+
+        function menuPop(list, cur, pick) {
+            const p = document.createElement("div");
+            p.className = "pop channel";
+            list.forEach((c, i) => {
+                const d = document.createElement("div");
+                d.className = "item" + (i === cur ? " on" : "");
+                d.innerHTML = `<span class="dot"></span>${c}`;
+                d.onclick = e => { e.stopPropagation(); pick(i); open = null; draw(); };
+                p.appendChild(d);
+            });
+            return p;
+        }
+        function overflow(items) {
+            const p = document.createElement("div");
+            p.className = "pop overflow";
+            items.forEach(id => {
+                const d = document.createElement("div");
+                d.className = "item";
+                d.innerHTML = `<span class="ico">·</span>${L[id]}`;
+                d.onclick = () => { flash(L[id] + "（默认引擎）"); open = null; draw(); };
+                if (ENGINES[id]) {
+                    const c = document.createElement("button");
+                    c.className = "pchev" + (open === "pchannel:" + id ? " open" : "");
+                    c.textContent = open === "pchannel:" + id ? "▲" : "▼";
+                    c.title = "选择引擎/服务";
+                    c.onclick = e => { e.stopPropagation(); open = open === "pchannel:" + id ? null : "pchannel:" + id; draw(); };
+                    d.appendChild(c);
+                }
+                p.appendChild(d);
+            });
+            return p;
+        }
+        function mk(id, hasChev) {
+            const s = document.createElement("span");
+            s.className = "slot";
+            const b = document.createElement("button");
+            b.className = "action";
+            b.innerHTML = id === "translate" && ch !== 0 ? `${L[id]} <span class="kbd">${CHANNELS[ch]}</span>` : L[id];
+            b.onclick = () => { flash(L[id]); open = null; draw(); };
+            s.appendChild(b);
+            if (hasChev) {
+                const c = document.createElement("button");
+                c.className = "chev" + (open === "channel:" + id ? " open" : "");
+                c.textContent = open === "channel:" + id ? "▲" : "▼";
+                c.title = "选择翻译/搜索引擎";
+                c.onclick = e => { e.stopPropagation(); open = open === "channel:" + id ? null : "channel:" + id; draw(); };
+                s.appendChild(c);
+            }
+            return s;
+        }
+        function draw() {
+            bar.innerHTML = "";
+            bar.className = "bar" + (mode === "now" ? " wrap" : "");
+            const shown = mode === "now" ? EN : EN.slice(0, Math.min(N, EN.length));
+            const rest = mode === "now" ? [] : EN.slice(Math.min(N, EN.length));
+            shown.forEach(id => bar.appendChild(mk(id, id === "translate" || id === "search")));
+            if (rest.length) {
+                const s = document.createElement("span");
+                s.className = "slot";
+                const pOn = open === "overflow" || (!!open && open.startsWith("pchannel:"));
+                const m = document.createElement("button");
+                m.className = "action more" + (pOn ? " open" : "");
+                m.innerHTML = (pOn ? "▲ " : "▼ ") + `<b>${rest.length}</b>`;
+                m.title = `还有 ${rest.length} 个动作`;
+                m.onclick = e => { e.stopPropagation(); open = pOn ? null : "overflow"; draw(); };
+                s.appendChild(m);
+                bar.appendChild(s);
+            }
+            if (open === "overflow" || (!!open && open.startsWith("pchannel:"))) {
+                bar.appendChild(overflow(rest));
+                // 锚到 ⌄N：面板左缘 = 触发点左缘（bar 内坐标）；贴右缘翻转
+                const slots = [...bar.querySelectorAll(".slot")];
+                const trig = slots[slots.length - 1];
+                const pop = bar.querySelector(".pop.overflow");
+                pop.style.left = anchor(pop.offsetWidth, trig.offsetLeft, trig.offsetLeft + trig.offsetWidth) + "px";
+                if (open.startsWith("pchannel:")) {
+                    // 面板内动作的二级：与胶囊上的渠道菜单同款浮出菜单
+                    const id = open.split(":")[1];
+                    const host = [...pop.querySelectorAll(".item")].find(x => x.textContent.includes(L[id]));
+                    if (host) {
+                        const menu = menuPop(
+                            id === "translate" ? CHANNELS : ENGINES[id],
+                            id === "translate" ? ch : peng[id],
+                            i => { if (id === "translate") ch = i; else peng[id] = i; },
+                        );
+                        host.appendChild(menu);
+                        const absL = pop.offsetLeft + host.offsetLeft;
+                        menu.style.left = anchor(116, absL, absL + host.offsetWidth) - absL + "px";
+                    }
+                }
+            }
+            else if (open && open.startsWith("channel:")) {
+                const host = [...bar.querySelectorAll(".slot")].find(x => x.textContent.includes(L[open.split(":")[1]]));
+                if (host) {
+                    host.style.position = "relative";
+                    const cp = menuPop(CHANNELS, ch, i => ch = i);
+                    cp.style.left = anchor(116, host.offsetLeft, host.offsetLeft + host.offsetWidth) - host.offsetLeft + "px";
+                    host.appendChild(cp);
+                }
+            }
+            // 量一次真实尺寸 + 遮挡行数
+            requestAnimationFrame(() => {
+                const cap = document.getElementById("capsule");
+                const pop = bar.querySelector(".pop");
+                const h = (pop ? Math.max(pop.getBoundingClientRect().bottom, 0) : 0);
+                const box = cap.getBoundingClientRect(), art = document.querySelector(".article").getBoundingClientRect();
+                const covered = pop ? (pop.getBoundingClientRect().bottom - art.top) / 24 : (box.bottom - sel.getBoundingClientRect().bottom) / 24;
+                document.getElementById("sz").textContent = Math.round(box.width) + "×" + Math.round(bar.getBoundingClientRect().height) + " px" + (pop ? "（+" + Math.round(h - box.height) + " 面板）" : "");
+                document.getElementById("lines").textContent = (covered).toFixed(1);
+                document.getElementById("state").textContent = "二级：" + (open === "overflow" ? "收纳面板（换动作）" : open && open.startsWith("pchannel:") ? "面板内渠道菜单（换服务）" : open ? "渠道菜单（换服务）" : "未展开");
+            });
+        }
+        function flash(t) { const s = document.querySelector(".win-tag"); s.textContent = t + " ✓"; setTimeout(() => s.textContent = "窗口边界", 900); }
+
+        document.getElementById("mNow").onclick = e => { mode = "now"; open = null; e.target.classList.add("on"); document.getElementById("mNew").classList.remove("on"); draw(); };
+        document.getElementById("mNew").onclick = e => { mode = "new"; open = null; e.target.classList.add("on"); document.getElementById("mNow").classList.remove("on"); draw(); };
+        document.querySelectorAll("#nRow .t").forEach(b => b.onclick = () => {
+            mode = "new"; N = +b.dataset.n; open = null;
+            document.querySelectorAll("#nRow .t").forEach(x => x.classList.remove("on")); b.classList.add("on");
+            document.getElementById("mNow").classList.remove("on"); document.getElementById("mNew").classList.add("on");
+            draw();
+        });
+        document.getElementById("tLight").onclick = () => { document.documentElement.classList.remove("dark"); document.getElementById("tLight").classList.add("on"); document.getElementById("tDark").classList.remove("on"); };
+        document.getElementById("tDark").onclick = () => { document.documentElement.classList.add("dark"); document.getElementById("tDark").classList.add("on"); document.getElementById("tLight").classList.remove("on"); };
+        // 贴右缘场景：把胶囊挪到舞台右缘，验证面板翻转为向左生长
+        document.getElementById("sEdge").onclick = e => {
+            e.stopPropagation();
+            const cap = document.getElementById("capsule");
+            const atEdge = cap.style.left !== "" && cap.style.left !== "30px";
+            cap.style.left = atEdge ? "30px" : (stage.clientWidth - cap.offsetWidth - 12) + "px";
+            e.target.classList.toggle("on", !atEdge);
+            e.target.textContent = atEdge ? "胶囊移到屏幕右缘（看翻转）" : "胶囊移回左侧";
+            draw();
+        };
+        document.addEventListener("click", () => { if (open) { open = null; draw(); } });
+        draw();
+    </script>
+</body>
+
+</html>
