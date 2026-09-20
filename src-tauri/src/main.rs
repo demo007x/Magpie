@@ -300,9 +300,6 @@ fn main() {
                     floating::apply_native_corner_radius(&w, 12.0);
                 }
             }
-            // macOS 26 Liquid Glass：挂载成功则前端切换半透明表面
-            let liquid_on = floating::enable_liquid_glass(&app.handle());
-            let _ = app.emit("theme://liquid-glass", liquid_on);
 
             // 用户强制外观（亮/暗）：原生窗口主题 + 前端 CSS 变量双轨同步。
             // 广播此刻未必有人听（webview 可能未挂载），各前端启动时也会主动读一次
@@ -406,9 +403,8 @@ fn main() {
             floating::focus_ocr_window,
             floating::set_result_window_size,
             floating::persist_result_window_state,
-            floating::liquid_glass_enabled,
-            floating::set_liquid_glass,
-            floating::liquid_glass_available,
+            floating::screen_rect_at,
+            floating::floating_window_pos,
             floating::move_ocr,
             pin::pin_get_data,
             pin::pin_window_ready,

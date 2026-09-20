@@ -3,6 +3,10 @@
    表面冷净，强调色饱满，选中/进行中用渐变点亮。原生窗口阴影 + 自主配色。 */
 :root {
   --surf: #ffffff;
+  /* 边缘定义：原生阴影已关（黑边晕），实色卡靠这圈内描边在同类色背景上立起轮廓。
+     必须用 inset box-shadow 而非 border——border 会挤占内容盒，破坏
+     「测量内容尺寸 → 窗口尺寸」的恒等关系（bar 折行、高度跳变） */
+  --edge: rgba(0, 0, 0, 0.12);
   --text: #1c1c24;
   --sec: #85858f;
   --line: rgba(28, 28, 46, 0.08);
@@ -17,22 +21,14 @@
   --err: #e5484d;
   --pulse: #ee8c2a; /* 呼吸/进行中指示：暖橙（区别品牌靛紫与错误红） */
   --source: #4a63b0; /* 原文/选中文本：引用蓝，与结果正文区分 */
-  --ok: #2fa14c; /* 完成指示：生成结束瞬间的绿点 */
+  --ok: #2fa14c;
   --radius: 12px;
-  --shadow: 0 1px 2px rgba(24, 24, 46, 0.06), 0 4px 12px rgba(24, 24, 46, 0.08),
-    0 16px 40px rgba(24, 24, 46, 0.13);
-}
-
-/* Liquid Glass（macOS 26 NSGlassEffectView）生效时的半透明表面：
-   玻璃材质会采样背后内容亮度——表面必须自带足够遮盖力，
-   否则深色 UI 叠在亮色网页上会灰糊、文字不可读 */
-html.liquid-glass {
-  --surf: rgba(255, 255, 255, 0.55);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --surf: #282828; /* macOS 深色浮层标准灰阶 */
+    --edge: rgba(255, 255, 255, 0.12);
     --text: #ededf4;
     --sec: #9a9aa8;
     --line: rgba(237, 237, 244, 0.1);
@@ -47,28 +43,16 @@ html.liquid-glass {
     --pulse: #ff9f0a;
     --source: #93a7e8;
     --ok: #32d158;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.32),
-      0 16px 40px rgba(0, 0, 0, 0.45);
     }
-}
-
-@media (prefers-color-scheme: dark) {
-  html.liquid-glass {
-    /* 0.96：HUD 材质采样背后内容（亮页 ~#B8 / 暗内容 ~#1C），透明度不足时
-       表面跟着漂——0.62 合成出 #555–#7A 中间灰（2026-09-19 实测），0.85 在
-       暗页上又沉到 #19191D 融进背景。0.96 把表面钉在 #2A–#30（macOS 深浮层
-       标准区间）恒定可辨；亮色玻璃仍走 0.55 的自适应，浅色材质不存在隐身问题 */
-    --surf: rgba(42, 42, 48, 0.96);
-  }
 }
 
 /* ---- 用户强制外观（设置页：亮色/暗色/跟随系统）----
    「跟随系统」不挂 class，纯走上面的媒体查询；「亮色/暗色」由前端在 html
    挂 theme-light/theme-dark。类选择器特异性（0,2,0）高于媒体查询里的 :root
-   （0,1,0），可覆盖系统偏好；liquid-glass 表面必须与 theme 类显式组合——
-   否则 html.liquid-glass（0,1,1）会被 :root.theme-*（0,2,0）反超，玻璃失效 */
+   （0,1,0），可覆盖系统偏好 */
 :root.theme-light {
   --surf: #ffffff;
+  --edge: rgba(0, 0, 0, 0.12);
   --text: #1c1c24;
   --sec: #85858f;
   --line: rgba(28, 28, 46, 0.08);
@@ -83,12 +67,11 @@ html.liquid-glass {
   --pulse: #ee8c2a;
   --source: #4a63b0;
   --ok: #2fa14c;
-  --shadow: 0 1px 2px rgba(24, 24, 46, 0.06), 0 4px 12px rgba(24, 24, 46, 0.08),
-    0 16px 40px rgba(24, 24, 46, 0.13);
 }
 
 :root.theme-dark {
   --surf: #282828;
+  --edge: rgba(255, 255, 255, 0.12);
   --text: #ededf4;
   --sec: #9a9aa8;
   --line: rgba(237, 237, 244, 0.1);
@@ -103,17 +86,6 @@ html.liquid-glass {
   --pulse: #ff9f0a;
   --source: #93a7e8;
   --ok: #32d158;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.32),
-    0 16px 40px rgba(0, 0, 0, 0.45);
-}
-
-html.theme-light.liquid-glass {
-  --surf: rgba(255, 255, 255, 0.55);
-}
-
-html.theme-dark.liquid-glass {
-  /* 与上方媒体查询变体同值：遮盖力推导见那里 */
-  --surf: rgba(42, 42, 48, 0.96);
 }
 
 * {
@@ -141,28 +113,31 @@ body,
   height: 100vh;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  /* 整个窗口是一块连续表面：胶囊/子菜单/结果面板都是它的区域，永不割裂。
-     圆角由原生图层裁切（Rust 侧 apply_native_corner_radius），表面必须
-     铺满窗口且 CSS 不画圆角——CSS 圆角压在透明窗口边缘必然出毛刺 */
-  background: var(--surf);
-  box-shadow: var(--shadow);
+  /* 分离卡构造：stage 自身透明，不画表面——胶囊与二级浮层各自成卡
+     （圆角 + inset 描边画在卡上），卡片间缝隙与四周 PAD 留白透出桌面。
+     卡片边缘必须落在窗口内部（四周留白），CSS 圆角压窗口边界会出毛刺 */
   user-select: none;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
   font-size: 13px;
   /* 不要在此层加 transform/opacity 动画——WebKit 透明窗口下会合成出黑色浮层。
-     也不要加 padding：原生材质层填满窗口，内容四周留缝会露出材质底色，
-     形成「底层灰、上层白」的两层感。窗口尺寸 = 内容尺寸（测量后传给 Rust）。 */
+     窗口尺寸 = 内容卡片并集 + 四周留白（测量后传给 Rust，见 App.tsx 的 FLOAT_PAD） */
 }
 
-/* ---- 动作条 ---- */
+/* ---- 动作条（胶囊卡片）----
+   margin = FLOAT_PAD（与 App.tsx 常量一致）：卡片四周的透明留白，
+   卡片圆角/描边全部收在窗口内部，避开 CSS 圆角压窗口边界的毛刺。
+   margin-left 由布局 effect 动态改写（二级贴右缘翻转时胶囊右移保持像素不动） */
 .bar {
-  align-self: flex-start; /* 贴自身内容：永远不被二级菜单/结果面板拉伸（一级二级各有各的长度） */
+  align-self: flex-start;
+  margin: 8px;
   display: flex;
   align-items: center;
-  flex-wrap: wrap; /* 动作多时折行，窗口尺寸随测量自适应 */
   gap: 2px;
   padding: 2px;
+  background: var(--surf);
+  border-radius: 12px;
+  /* 外投影制造悬浮感：offset+blur ≤ 8px，超出会被 FLOAT_PAD 窗口出血裁掉 */
+  box-shadow: inset 0 0 0 1px var(--edge), 0 2px 6px rgba(0, 0, 0, 0.2);
   user-select: none; /* 胶囊条是纯操作面：禁止选中文本（防点击/拖拽时出现选中高亮） */
   -webkit-user-select: none;
   cursor: default;
@@ -214,6 +189,153 @@ body,
 
 .chev-svg.open {
   transform: rotate(180deg);
+}
+
+/* ---- 二级浮层（分离卡）----
+   收纳面板（.pop.overflow，单行平铺不限宽）与窄单列浮出菜单（.pop.menu）
+   共用同一卡片语言：绝对定位盖在正文上，胶囊纹丝不动；
+   位置与窗口并集由布局 effect 计算（锚触发点左下、贴右缘翻转） */
+.pop {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  background: var(--surf);
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--edge), 0 2px 6px rgba(0, 0, 0, 0.2);
+  padding: 2px;
+  white-space: nowrap;
+  /* 只做淡入不做位移：入场动画期间的 transform 会污染
+     getBoundingClientRect 测量（布局 effect 依赖它算锚点） */
+  animation: pop-in 140ms ease;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pop {
+    animation: none;
+  }
+}
+
+.pop.overflow {
+  flex-direction: row;
+  gap: 2px;
+  width: max-content;
+}
+
+/* 收纳面板项：主体点击 = 默认服务执行，⌄ 才弹换渠道/引擎菜单 */
+.pitem {
+  display: inline-flex;
+  align-items: center;
+  position: relative; /* 项内二级菜单的定位基准 */
+}
+
+/* 相邻项之间的竖向分割线：与胶囊动作分隔线同语言（1px 短线画在 gap 里） */
+.pitem + .pitem::before {
+  content: "";
+  position: absolute;
+  left: -1.5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 14px;
+  background: var(--line);
+}
+
+.pchev {
+  width: 16px;
+  height: 26px;
+  margin-left: -5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sec);
+  cursor: pointer;
+}
+
+.pchev:hover {
+  background: var(--hov);
+  color: var(--text);
+}
+
+/* ⌄N 收纳徽标 */
+.action.more b {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sec);
+  margin-left: 1px;
+}
+
+.action.more:hover b {
+  color: var(--text);
+}
+
+/* 窄单列浮出菜单：胶囊动作 ⌄ 与面板项 ⌄ 共用（二级形式全局统一）。
+   宽度 = 最长项自然宽度（max-content），不设 min-width——短项菜单不该被撑宽 */
+.pop.menu {
+  flex-direction: column;
+  gap: 1px;
+  width: max-content;
+  padding: 4px;
+}
+
+.mitem {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px 5px 5px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.mitem:hover {
+  background: var(--hov);
+}
+
+/* 相邻菜单项之间的分割线：横向短发丝线画在 1px gap 里，左右内缩不顶到卡边 */
+.mitem + .mitem {
+  position: relative;
+}
+
+.mitem + .mitem::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: -1px;
+  height: 1px; /* 1px 而非 0.5px：半像素线在分数坐标下会被抗锯齿稀释到不可见 */
+  background: var(--line);
+}
+
+.mitem .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: transparent;
+  flex: 0 0 auto;
+}
+
+.mitem.on {
+  color: var(--accent-strong);
+  font-weight: 590;
+}
+
+.mitem.on .dot {
+  background: var(--accent);
 }
 
 .action {
@@ -368,10 +490,15 @@ body,
   position: relative; /* 跟随指示（回到底部按钮）的定位基准 */
   flex: 1;
   min-height: 0;
-  width: 100%;
   display: flex;
   flex-direction: column;
   color: var(--text);
+  /* 结果窗口单卡：四周 8px 透明出血给外投影留渲染空间（窗口不再被卡片铺满），
+     卡片与胶囊同语言：--surf 表面 + inset 描边 + 柔和外投影 */
+  margin: 8px;
+  background: var(--surf);
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--edge), 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
 .panel-head {

@@ -45,157 +45,6 @@ pub(crate) fn show_without_activation(win: &WebviewWindow) -> Result<(), String>
     Ok(())
 }
 
-/// 弹出层毛玻璃材质：NSVisualEffectView（behind-window 模糊 + 强制 active 态）。
-/// 不用 macOS 26 的 NSGlassEffectView：它在非 key 窗口上会以 inactive 态渲染
-/// （更实更灰、不可控），且悬停会触发交互式外观变化——对「故意不抢焦点」的
-/// HUD 类面板是已知死穴。NSVisualEffectView 有 state 属性可强制激活外观，
-/// 材质跟随系统明暗自适应，外观稳定不受焦点与悬停影响
-#[cfg(target_os = "macos")]
-pub fn apply_liquid_glass(win: &WebviewWindow, radius: f64, inset: f64) -> bool {
-    use objc2::msg_send;
-    use objc2::runtime::{AnyClass, AnyObject};
-    use std::ffi::CString;
-
-    let Ok(cls_name) = CString::new("NSVisualEffectView") else {
-        return false;
-    };
-    let Some(cls) = AnyClass::get(&cls_name) else {
-        return false;
-    };
-    let Ok(ns_window) = win.ns_window() else {
-        return false;
-    };
-    let ns_window = ns_window as *mut AnyObject;
-
-    unsafe {
-        let content: *mut AnyObject = msg_send![ns_window, contentView];
-        if content.is_null() {
-            return false;
-        }
-        let bounds: objc2_foundation::NSRect = msg_send![content, bounds];
-        objc2::rc::autoreleasepool(|_| {
-            let view: *mut AnyObject = msg_send![cls, alloc];
-            // inset > 0：材质内缩（toast 窗口带 CSS 阴影出血边，材质须与
-            // 卡片对齐，否则磨砂层会从卡片四周露出一圈）
-            let frame = objc2_foundation::NSRect::new(
-                objc2_foundation::NSPoint::new(inset, inset),
-                objc2_foundation::NSSize::new(
-                    (bounds.size.width - 2.0 * inset).max(0.0),
-                    (bounds.size.height - 2.0 * inset).max(0.0),
-                ),
-            );
-            let view: *mut AnyObject = msg_send![view, initWithFrame: frame];
-            if view.is_null() {
-                return false;
-            }
-            // 材质 13 = hudWindow（HUD 风格，跟随系统明暗自适应）；
-            // 混合模式 0 = behindWindow（模糊窗口背后的内容）；
-            // 状态 1 = active：非 key 窗口也强制激活外观（稳定性的关键）
-            let _: () = msg_send![view, setMaterial: 13_isize];
-            let _: () = msg_send![view, setBlendingMode: 0_isize];
-            let _: () = msg_send![view, setState: 1_isize];
-            // 随窗口缩放（width|height sizable = 2|16）+ 原生圆角
-            let _: () = msg_send![view, setAutoresizingMask: 18usize];
-            let _: () = msg_send![view, setWantsLayer: true];
-            let layer: *mut AnyObject = msg_send![view, layer];
-            if !layer.is_null() {
-                let _: () = msg_send![layer, setCornerRadius: radius];
-            }
-            // 插到最底层（webview 之下）
-            let _: () = msg_send![content,
-                addSubview: view, positioned: -1_isize, relativeTo: std::ptr::null_mut::<AnyObject>()];
-            if let Ok(mut v) = GLASS_VIEWS.lock() {
-                v.push(GlassViewPtr(view));
-            }
-            true
-        })
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn apply_liquid_glass(_win: &WebviewWindow, _radius: f64, _inset: f64) -> bool {
-    false
-}
-
-static LIQUID_GLASS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// 已挂载的 NSGlassEffectView 指针（三个弹出层窗口与进程同生命周期）
-struct GlassViewPtr(*mut objc2::runtime::AnyObject);
-unsafe impl Send for GlassViewPtr {}
-static GLASS_VIEWS: Mutex<Vec<GlassViewPtr>> = Mutex::new(Vec::new());
-
-/// 卸载全部玻璃视图（关闭 Liquid Glass 时调用）
-#[cfg(target_os = "macos")]
-fn disable_liquid_glass_views() {
-    use objc2::msg_send;
-    let views = GLASS_VIEWS.lock().unwrap();
-    unsafe {
-        for g in views.iter() {
-            let _: () = msg_send![g.0, removeFromSuperview];
-        }
-    }
-}
-
-/// 前端初始化时查询 Liquid Glass 是否生效
-#[tauri::command]
-pub fn liquid_glass_enabled() -> bool {
-    LIQUID_GLASS.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// 当前系统是否支持玻璃效果（NSVisualEffectView 全平台 macOS 可用）
-#[tauri::command]
-pub fn liquid_glass_available() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        true
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        false
-    }
-}
-
-/// 开关 Liquid Glass：持久化 → 挂载/卸载玻璃视图 → 广播状态给所有前端
-#[tauri::command]
-pub fn set_liquid_glass(app: AppHandle, enabled: bool) {
-    crate::settings::patch(&app, |st| st.liquid_glass = enabled);
-    let on = if enabled {
-        enable_liquid_glass(&app)
-    } else {
-        #[cfg(target_os = "macos")]
-        disable_liquid_glass_views();
-        GLASS_VIEWS.lock().unwrap().clear();
-        LIQUID_GLASS.store(false, std::sync::atomic::Ordering::Relaxed);
-        false
-    };
-    let _ = app.emit("theme://liquid-glass", on);
-}
-
-/// 给所有弹出层窗口挂 Liquid Glass；任一成功即返回 true。
-/// 受设置 liquid_glass 控制（默认启用）；已挂载时直接返回，避免重复叠层
-pub fn enable_liquid_glass(app: &AppHandle) -> bool {
-    if LIQUID_GLASS.load(std::sync::atomic::Ordering::Relaxed) {
-        return true;
-    }
-    if !crate::settings::current(app).liquid_glass {
-        return false;
-    }
-    let mut on = false;
-    for label in ["floating", "ocr", "toast"] {
-        if let Some(w) = app.get_webview_window(label) {
-            // toast 窗口带 12px CSS 阴影出血边，材质须内缩与卡片对齐
-            let inset = if label == "toast" {
-                crate::toast::TOAST_PAD
-            } else {
-                0.0
-            };
-            on |= apply_liquid_glass(&w, 12.0, inset);
-        }
-    }
-    LIQUID_GLASS.store(on, std::sync::atomic::Ordering::Relaxed);
-    on
-}
-
 /// 原生圆角裁切：给 NSWindow contentView 的图层设 cornerRadius + masksToBounds。
 /// 透明窗口上 CSS 圆角压在窗口边界，WebKit 透明合成层不做边缘抗锯齿，必然出毛刺；
 /// 原生图层裁切由系统合成器完成，圆弧与原生 App 同级平滑。（社区共识方案）
@@ -226,6 +75,11 @@ pub fn apply_native_corner_radius(win: &WebviewWindow, radius: f64) {
 /// TS 未传尺寸时的兜底
 pub const DEFAULT_W: f64 = 328.0;
 pub const DEFAULT_H: f64 = 54.0;
+
+/// 分离卡四周透明留白（窗口边缘到卡片边缘）。卡片圆角/描边必须落在窗口
+/// 内部（CSS 圆角压窗口边界会出毛刺），留白同时为将来 CSS 阴影预留空间。
+/// 与 src/floating/App.tsx 的 FLOAT_PAD 保持一致
+pub const FLOAT_PAD: f64 = 8.0;
 
 // ---- 拖拽状态（detect 线程经事件转发驱动，见 capture/macos.rs） ----
 static DRAG_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -769,16 +623,44 @@ pub(crate) fn monitor_rect(win: &WebviewWindow, x: f64, y: f64) -> (f64, f64, f6
     (0.0, 0.0, 1920.0, 1080.0)
 }
 
-/// 锚点 → 窗口位置：优先光标右下，底部放不下翻转到上方，钳制在显示器内
-fn place(win: &WebviewWindow, ax: f64, ay: f64, w: f64, h: f64) -> (f64, f64) {
+/// 锚点 → 窗口位置：优先光标右下，底部放不下翻转到上方，钳制在显示器内。
+/// dx/dy = 相对「锚点+(6,14)」标准位的窗口偏移：胶囊卡片位于窗口内
+/// (FLOAT_PAD, FLOAT_PAD) 处（四周透明留白），show 路径传 (-FLOAT_PAD,-FLOAT_PAD)
+/// 抵消留白，保持卡片与选区锚点的视觉间距不变
+fn place(win: &WebviewWindow, ax: f64, ay: f64, w: f64, h: f64, dx: f64, dy: f64) -> (f64, f64) {
     let (m_l, m_t, m_r, m_b) = monitor_rect(win, ax, ay);
-    let nx = (ax + 6.0).clamp(m_l, (m_r - w).max(m_l));
-    let ny = if ay + 14.0 + h > m_b {
-        (ay - h - 12.0).max(m_t)
+    let nx = (ax + 6.0 + dx).clamp(m_l, (m_r - w).max(m_l));
+    let ny = if ay + 14.0 + dy + h > m_b {
+        (ay + dy - h - 12.0).max(m_t)
     } else {
-        ay + 14.0
+        ay + 14.0 + dy
     };
     (nx, ny)
+}
+
+/// 指定点所在显示器的逻辑矩形（前端做浮层翻转判定用）
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ScreenRect {
+    pub left: f64,
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+}
+
+#[tauri::command]
+pub fn screen_rect_at(app: AppHandle, x: f64, y: f64) -> Result<ScreenRect, String> {
+    let win = window(&app)?;
+    let (l, t, r, b) = monitor_rect(&win, x, y);
+    Ok(ScreenRect { left: l, top: t, right: r, bottom: b })
+}
+
+/// 浮动条窗口当前落位（逻辑坐标）：拖拽会绕过前端改窗口位置，
+/// 拖拽结束后前端回读，恢复「窗口位置 + 内部偏移 = 卡片屏幕坐标」基准
+#[tauri::command]
+pub fn floating_window_pos(app: AppHandle) -> Result<WindowPos, String> {
+    let state = app.state::<FloatingState>();
+    let r = state.lock().unwrap();
+    Ok(WindowPos { x: r.x, y: r.y })
 }
 
 #[tauri::command]
@@ -788,13 +670,13 @@ pub fn show_floating_bar(
     y: f64,
     width: Option<f64>,
     height: Option<f64>,
-) -> Result<(), String> {
+) -> Result<WindowPos, String> {
     let win = window(&app)?;
     let w = width.unwrap_or(DEFAULT_W).max(120.0);
     // 下限只需兜底极小值：窗口高度必须贴合表面，否则表面下缘落在窗口
     // 内部、原生圆角裁不到，胶囊下角会变直角
     let h = height.unwrap_or(DEFAULT_H).max(24.0);
-    let (nx, ny) = place(&win, x, y, w, h);
+    let (nx, ny) = place(&win, x, y, w, h, -FLOAT_PAD, -FLOAT_PAD);
     win.set_size(LogicalSize::new(w, h))
         .map_err(|e| e.to_string())?;
     win.set_position(LogicalPosition::new(nx, ny))
@@ -813,18 +695,37 @@ pub fn show_floating_bar(
         h,
         visible: true,
     };
-    Ok(())
+    Ok(WindowPos { x: nx, y: ny })
 }
 
+/// 调整浮动条窗口尺寸。x/y = 目标窗口左/上缘（逻辑坐标）：分离卡二级展开时
+/// 前端按「锚定/翻转」算好整窗矩形传入（含四周留白），钳制在显示器内后返回
+/// 实际落位，前端以此为基准同步内部偏移；None = 按锚点常规定位。
+/// 垂直翻转（面板贴屏底放不下）由前端算好 y 下发，Rust 只做钳制。
 #[tauri::command]
-pub fn resize_floating(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+pub fn resize_floating(
+    app: AppHandle,
+    width: f64,
+    height: f64,
+    x: Option<f64>,
+    y: Option<f64>,
+) -> Result<WindowPos, String> {
     let win = window(&app)?;
     let state = app.state::<FloatingState>();
     let mut r = state.lock().unwrap();
     let (ax, ay) = (r.anchor_x, r.anchor_y);
     let w = width.max(120.0);
     let h = height.max(24.0);
-    let (nx, ny) = place(&win, ax, ay, w, h);
+    let (nx, ny) = match (x, y) {
+        (Some(wx), Some(wy)) => {
+            let (m_l, m_t, m_r, m_b) = monitor_rect(&win, wx, wy);
+            (
+                wx.clamp(m_l, (m_r - w).max(m_l)),
+                wy.clamp(m_t, (m_b - h).max(m_t)),
+            )
+        }
+        _ => place(&win, ax, ay, w, h, -FLOAT_PAD, -FLOAT_PAD),
+    };
     win.set_size(LogicalSize::new(w, h))
         .map_err(|e| e.to_string())?;
     if r.visible {
@@ -835,7 +736,7 @@ pub fn resize_floating(app: AppHandle, width: f64, height: f64) -> Result<(), St
     r.y = ny;
     r.w = w;
     r.h = h;
-    Ok(())
+    Ok(WindowPos { x: nx, y: ny })
 }
 
 /// 开始拖动：记录光标抓取偏移，激活拖拽态（此后 tap 的 DragMove 事件驱动窗口移动）

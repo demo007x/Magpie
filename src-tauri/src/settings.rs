@@ -131,6 +131,8 @@ pub struct Settings {
     pub default_provider_id: String,
     pub actions: Actions,
     pub action_order: Vec<String>,
+    /// 浮动胶囊固定显示的动作数（超出部分收进右侧「⌄N」面板）
+    pub capsule_show_count: usize,
     pub search_engines: Vec<SearchEngine>,
     /// 默认引擎（浮动条「搜索」单击直达），值为 SearchEngine.name
     pub default_search: String,
@@ -157,9 +159,6 @@ pub struct Settings {
     /// 结果窗口用户自定义尺寸：宽度即内容宽度，高度为内容自适应上限
     #[serde(default)]
     pub result_window_size: Option<[f64; 2]>,
-    /// Liquid Glass 效果（macOS 26 玻璃材质）：默认启用
-    #[serde(default = "default_true")]
-    pub liquid_glass: bool,
     /// 结果窗口「钉住」偏好：用户在面板上最后一次点钉/取消钉的选择，跨重启保留。
     /// 默认钉住——识图与划词导流的结果是多步操作（看原文/跑动作/复制），
     /// 点空即消失会打断流程
@@ -204,6 +203,7 @@ impl Default for Settings {
                 "copy".into(),
                 "search".into(),
             ],
+            capsule_show_count: 4,
             search_engines: default_engines(),
             default_search: "百度".into(),
             translate: TranslateConfig::default(),
@@ -221,7 +221,6 @@ impl Default for Settings {
             debounce_ms: 200,
             result_window_pos: None,
             result_window_size: None,
-            liquid_glass: true,
             result_window_pinned: true,
             appearance: default_appearance(),
         }

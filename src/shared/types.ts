@@ -50,6 +50,8 @@ export interface Settings {
   actions: ActionFlags;
   /** 动作展示顺序（浮动条按此渲染）；缺省 id 追加在末尾 */
   actionOrder: string[];
+  /** 浮动胶囊固定显示的动作数（超出收进「⌄N」面板；默认 4） */
+  capsuleShowCount: number;
   /** 搜索引擎列表（浮动条「搜索」使用；defaultSearch 为单击直达的引擎） */
   searchEngines: SearchEngine[];
   defaultSearch: string;
@@ -71,8 +73,6 @@ export interface Settings {
   resultWindowPos?: [number, number] | null;
   /** 结果窗口尺寸记忆 */
   resultWindowSize?: [number, number] | null;
-  /** Liquid Glass 效果（macOS 26 玻璃材质）：默认启用 */
-  liquidGlass?: boolean;
 }
 
 export interface ChatMessage {

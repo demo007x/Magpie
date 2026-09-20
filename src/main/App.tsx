@@ -249,9 +249,6 @@ export default function App() {
     if (page === "about") runUpdateCheck(false);
   }, [page]);
 
-  // 外观：Liquid Glass 可用性 + 开关
-  const [glassAvailable, setGlassAvailable] = useState<boolean | null>(null);
-  const [liquidGlass, setLiquidGlass] = useState<boolean>(true);
   // 应用外观（auto=跟随系统 | light | dark）：主窗口自身也要应用
   const [appearance, setAppearance] = useState<string>("auto");
 
@@ -262,32 +259,20 @@ export default function App() {
   };
 
   useEffect(() => {
-    invoke<boolean>("liquid_glass_available")
-      .then(setGlassAvailable)
-      .catch(() => setGlassAvailable(false));
-    invoke<{ liquidGlass?: boolean; appearance?: string }>("get_settings")
+    invoke<{ appearance?: string }>("get_settings")
       .then((s) => {
-        setLiquidGlass(s.liquidGlass ?? true);
         setAppearance(s.appearance ?? "auto");
         applyAppearance(s.appearance ?? "auto");
       })
       .catch(() => undefined);
-    // Rust 侧开关后广播最新状态，保持设置页与实际生效状态一致
-    const unGlass = listen<boolean>("theme://liquid-glass", (e) => setLiquidGlass(e.payload));
     const unTheme = listen<string>("theme://appearance", (e) => {
       setAppearance(e.payload);
       applyAppearance(e.payload);
     });
     return () => {
-      unGlass.then((f) => f()).catch(() => undefined);
       unTheme.then((f) => f()).catch(() => undefined);
     };
   }, []);
-
-  const toggleLiquidGlass = (enabled: boolean) => {
-    setLiquidGlass(enabled);
-    invoke("set_liquid_glass", { enabled }).catch(() => undefined);
-  };
 
   const setAppearanceMode = (mode: string) => {
     setAppearance(mode); // 主窗口即时反馈（Rust 广播回来值相同，幂等）
@@ -360,6 +345,7 @@ export default function App() {
     emit("settings://live", {
       actions: settings.actions,
       actionOrder: settings.actionOrder,
+      capsuleShowCount: settings.capsuleShowCount,
       searchEngines: settings.searchEngines,
       defaultSearch: settings.defaultSearch,
       translateEnabled: settings.translate.enabled,
@@ -369,6 +355,7 @@ export default function App() {
   }, [
     settings?.actions,
     settings?.actionOrder,
+    settings?.capsuleShowCount,
     settings?.searchEngines,
     settings?.defaultSearch,
     settings?.translate,
@@ -729,10 +716,37 @@ export default function App() {
             <h1>划词</h1>
             <p className="page-hint">
               在任意应用中选中文字，浮动条即刻提供翻译、解释、总结等动作。本页管理浮动条动作的开关与顺序，改动点击「保存更改」后生效。
+              <br />
+              胶囊固定显示排序前 N 个动作，其余收进右侧「⌄N」面板；把高频动作拖到前面即可。
             </p>
 
             <h2 className="sec">动作</h2>
             <div className="card">
+              <div className="row-between sep">
+                <div className="row-title">
+                  胶囊显示动作数
+                  <span className="action-desc">默认 4（可设 2–8）</span>
+                </div>
+                <div className="row-ctl">
+                  <button
+                    className="btn sm"
+                    disabled={settings.capsuleShowCount <= 2}
+                    onClick={() => patch({ capsuleShowCount: settings.capsuleShowCount - 1 })}
+                  >
+                    −
+                  </button>
+                  <span style={{ minWidth: 16, textAlign: "center" }}>
+                    {settings.capsuleShowCount}
+                  </span>
+                  <button
+                    className="btn sm"
+                    disabled={settings.capsuleShowCount >= 8}
+                    onClick={() => patch({ capsuleShowCount: settings.capsuleShowCount + 1 })}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
               {orderedActionIds.map((k) => (
                 <div
                   key={k}
@@ -1283,28 +1297,6 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-              </div>
-            </div>
-            <h2 className="sec">Liquid Glass</h2>
-            <div className="card">
-              <div className="row-between">
-                <div>
-                  <div className="row-title">启用 Liquid Glass 效果</div>
-                  <div className="row-sub">
-                    {glassAvailable === false
-                      ? "当前系统不支持 Liquid Glass（需 macOS 26），窗口保持实心样式。"
-                      : "在 macOS 26 的玻璃材质上渲染半透明浮动窗口（划词条、结果面板、提示），即时生效并持久保存。"}
-                  </div>
-                </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={liquidGlass}
-                    disabled={glassAvailable === false}
-                    onChange={(e) => toggleLiquidGlass(e.target.checked)}
-                  />
-                  <span className="knob" />
-                </label>
               </div>
             </div>
           </>

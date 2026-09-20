@@ -33,7 +33,7 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false,
-        "shadow": true,
+        "shadow": false,
         "focus": false,
         "acceptFirstMouse": true
       },
@@ -48,7 +48,7 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false,
-        "shadow": true,
+        "shadow": false,
         "focus": false,
         "acceptFirstMouse": true
       },

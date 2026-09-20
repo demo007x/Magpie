@@ -158,6 +158,23 @@ const resultCache = new Map<string, { output: string; at: number }>();
 const CACHE_TTL = 5 * 60_000;
 const CACHE_CAP = 50;
 
+// 分离卡几何常量（与 floating.rs 的 FLOAT_PAD / floating.css 的 .bar margin 一致）：
+// FLOAT_PAD = 卡片四周透明留白（卡片边缘不得压窗口边界）；CARD_GAP = 胶囊与二级卡片的缝
+const FLOAT_PAD = 8;
+const CARD_GAP = 3;
+
+// Rust 返回的窗口落位 / 显示器逻辑矩形（逻辑坐标）
+interface WindowPos {
+  x: number;
+  y: number;
+}
+interface ScreenRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 function cacheGet(key: string): string | null {
   const hit = resultCache.get(key);
   if (!hit) return null;
@@ -412,6 +429,7 @@ export default function App() {
     tel: true,
   });
   const [actionOrder, setActionOrder] = useState<string[]>([]);
+  const [capsuleMax, setCapsuleMax] = useState(4);
   const [translateEnabled, setTranslateEnabled] = useState<string[]>(["ai"]);
   const [translateDefault, setTranslateDefault] = useState("ai");
   const [translateOrder, setTranslateOrder] = useState<string[]>([]);
@@ -419,8 +437,19 @@ export default function App() {
   const [flashMsg, setFlashMsg] = useState("");
   const [engines, setEngines] = useState<SearchEngine[]>([]);
   const [defaultSearch, setDefaultSearch] = useState("");
-  // 展开的 chips 菜单（搜索引擎 / 翻译服务，同屏只开一个）
-  const [menu, setMenu] = useState<"search" | "translate" | null>(null);
+  // 展开的二级浮层（同屏只开一个入口）："search"/"translate" 仅供 OCR 结果窗口
+  // 的 chips 沿用；浮动条用 overflow（收纳面板）/ chev:*（胶囊动作换渠道）/
+  // pmenu:*（收纳面板项换渠道），二级一律窄单列浮出菜单（形式全局统一）
+  const [menu, setMenu] = useState<
+    | null
+    | "search"
+    | "translate"
+    | "overflow"
+    | "chev:translate"
+    | "chev:search"
+    | "pmenu:translate"
+    | "pmenu:search"
+  >(null);
   // 二级菜单当前选中的服务：初始跟随默认服务，点谁谁选中；
   // 点主菜单按钮（走默认服务）时置 null 回落到默认高亮
   const [usedTranslate, setUsedTranslate] = useState<string | null>(null);
@@ -439,6 +468,14 @@ export default function App() {
   // 首次 mousemove 即恢复
   const [hoverSuppress, setHoverSuppress] = useState(false);
   const barRef = useRef<HTMLDivElement | null>(null);
+  // 分离卡几何基准：屏幕矩形（贴边翻转判定）、窗口上次落位、bar 在窗口内偏移。
+  // 卡片屏幕坐标 = 窗口位置 + 窗口内偏移；winPos 由 show/resize 返回值与
+  // 拖拽结束回读（floating_window_pos）维持，见布局 effect 与 onStageMouseUp
+  const screenRef = useRef<ScreenRect | null>(null);
+  const winPosRef = useRef<WindowPos | null>(null);
+  const barInWinRef = useRef({ x: FLOAT_PAD, y: FLOAT_PAD });
+  const overflowRef = useRef<HTMLDivElement | null>(null);
+  const menuPopRef = useRef<HTMLDivElement | null>(null);
   // 钉图失败的反馈（图标变红 + title 显示具体原因，直到下次重试）
   const [pinErr, setPinErr] = useState<string | null>(null);
   const copiedAllTimerRef = useRef<number | undefined>(undefined);
@@ -533,12 +570,15 @@ export default function App() {
   // 识别原文是否超长（超 3 行折叠高度）——决定展开/收起按钮是否显示
   const sourceRef = useRef<HTMLDivElement | null>(null);
   const [sourceOverflow, setSourceOverflow] = useState(false);
+  // 上次下发的窗口位置目标（去重：尺寸与位置都没变就不重复调 resize）
+  const lastPosKeyRef = useRef("");
 
   const loadSettings = () => {
     invoke<Settings>("get_settings")
       .then((s) => {
         setActions({ ...s.actions });
         setActionOrder(s.actionOrder ?? []);
+        setCapsuleMax(Math.max(2, Math.min(8, s.capsuleShowCount ?? 4)));
         setEngines(s.searchEngines ?? []);
         setDefaultSearch(s.defaultSearch ?? "");
         setTranslateEnabled(s.translate?.enabled ?? ["ai"]);
@@ -628,17 +668,15 @@ export default function App() {
     return entries;
   })();
 
+  // 胶囊固定显示前 4 个动作（顺序 = 设置页 actionOrder），其余收进最右 ⌄N；
+  // 不足 5 个时无收纳入口，胶囊自然收窄
+  const CAPSULE_MAX = Math.max(2, Math.min(8, capsuleMax));
+  const topEntries = barEntries.slice(0, CAPSULE_MAX);
+  const restEntries = barEntries.slice(CAPSULE_MAX);
+
   useEffect(() => {
     loadSettings();
     invoke("ui_debug_log", { msg: "floating webview 就绪" }).catch(() => undefined);
-    // Liquid Glass（macOS 26）：生效则表面切半透明让玻璃透出；
-    // 监听设置页开关的广播，运行时切换即时生效
-    const applyGlass = (on: boolean) =>
-      document.documentElement.classList.toggle("liquid-glass", on);
-    invoke<boolean>("liquid_glass_enabled")
-      .then(applyGlass)
-      .catch(() => undefined);
-    listen<boolean>("theme://liquid-glass", (e) => applyGlass(e.payload)).catch(() => undefined);
     // 用户强制外观（亮/暗）：html 挂 theme class 切 CSS 变量；
     // 广播早于挂载会漏听，启动时主动读一次设置
     const applyTheme = (t: string) => {
@@ -793,6 +831,10 @@ export default function App() {
       if (IS_OCR) return;
       // 普通划词：浮动条在鼠标位置弹出（x/y 来自选区）
       setPending({ x: e.payload.x, y: e.payload.y });
+      // 屏幕矩形：二级浮层贴边翻转的判定基准（跨屏拖动后由拖拽结束回读刷新）
+      invoke<ScreenRect>("screen_rect_at", { x: e.payload.x, y: e.payload.y })
+        .then((r) => (screenRef.current = r))
+        .catch(() => undefined);
       setText(e.payload.text);
       setPhase({ kind: "bar" });
     }).then((un) => unlisteners.push(un));
@@ -820,6 +862,7 @@ export default function App() {
     listen<{
       actions: Record<string, boolean>;
       actionOrder: string[];
+      capsuleShowCount?: number;
       searchEngines?: SearchEngine[];
       defaultSearch?: string;
       translateEnabled?: string[];
@@ -828,6 +871,8 @@ export default function App() {
     }>("settings://live", (e) => {
       setActions({ ...e.payload.actions });
       setActionOrder(e.payload.actionOrder ?? []);
+      if (e.payload.capsuleShowCount)
+        setCapsuleMax(Math.max(2, Math.min(8, e.payload.capsuleShowCount)));
       if (e.payload.searchEngines) setEngines(e.payload.searchEngines);
       if (e.payload.defaultSearch) setDefaultSearch(e.payload.defaultSearch);
       if (e.payload.translateEnabled) setTranslateEnabled(e.payload.translateEnabled);
@@ -995,54 +1040,131 @@ export default function App() {
       });
   }, [menu, phase]);
 
-  // 胶囊条：渲染后测量内容尺寸 → 通知窗口调整（自适应）；尺寸不变时不重复调
+  // 分离卡布局：窗口 = 胶囊与已展开二级卡片的并集 + 四周 FLOAT_PAD 透明留白。
+  // 二级卡片锚在触发点左缘/左下向右生长，贴屏幕右缘翻转为右对齐触发点；
+  // 翻转时窗口向左扩展，bar 的 margin-left 随之补偿——胶囊像素不动。
+  // 落位以 show/resize 返回的实际窗口位置为准（Rust 钳制可能改写目标值）
   useLayoutEffect(() => {
     const bar = barRef.current;
     if (!bar) return;
 
-    const clampNum = (v: number, lo: number, hi: number) =>
-      Math.max(lo, Math.min(hi, v));
+    // 先重置为「胶囊单独在窗口 (FLOAT_PAD,FLOAT_PAD)」量自然尺寸
+    bar.style.marginLeft = `${FLOAT_PAD}px`;
+    bar.style.width = "max-content";
+    bar.style.flex = "0 0 auto";
+    bar.style.height = "auto";
+    const barRect = bar.getBoundingClientRect();
+    const barW = Math.ceil(barRect.width);
+    const barH = Math.ceil(barRect.height);
 
-    // 胶囊：bar + 展开的二级菜单（chips）都要量进去，否则菜单会被窗口裁掉
-    {
-      const chips = document.querySelector<HTMLElement>(".chips");
+    type Card = { el: HTMLElement; x: number; y: number; w: number; h: number };
+    const cards: Card[] = [];
+    const measure = (el: HTMLElement) => {
+      el.style.width = "max-content";
+      const r = el.getBoundingClientRect();
+      return { w: Math.ceil(r.width), h: Math.ceil(r.height) };
+    };
 
-      // 自然宽：bar 与 chips 均不折行
-      bar.style.width = "max-content";
-      bar.style.flex = "0 0 auto";
-      bar.style.height = "auto";
-      let chipsW = 0;
-      if (chips) {
-        chips.style.width = "max-content";
-        chips.style.height = "auto";
-        chipsW = Math.ceil(chips.getBoundingClientRect().width);
+    // bar 当前屏幕坐标 = 上次窗口落位 + 上次 bar 窗口内偏移；
+    // 屏幕矩形缺失（尚未回读/拖拽跨屏未刷新）时不翻转，退化向右/向下生长
+    const barScreen = winPosRef.current
+      ? {
+          x: winPosRef.current.x + barInWinRef.current.x,
+          y: winPosRef.current.y + barInWinRef.current.y,
+        }
+      : null;
+    const scr = screenRef.current;
+    const anchored = (trigL: number, trigR: number, w: number) => {
+      let x = trigL;
+      if (barScreen && scr && barScreen.x + x + w > scr.right - 8) {
+        x = trigR - w; // 贴右缘：翻转为右对齐触发点，向左生长
       }
-      const natW = Math.max(
-        Math.ceil(bar.getBoundingClientRect().width),
-        chipsW,
-      );
-      const tw = clampNum(natW, 280, 640);
+      return x;
+    };
 
-      // 定宽后量高（chips 超宽时折行）
-      bar.style.width = `${tw}px`;
-      if (chips) chips.style.width = `${tw}px`;
-      const barH = Math.ceil(bar.getBoundingClientRect().height);
-      const chipsH = chips ? Math.ceil(chips.getBoundingClientRect().height) : 0;
-      const th = barH + (chips ? 6 + chipsH : 0); // 6 = stage gap
+    const panelOpen = menu === "overflow" || !!menu?.startsWith("pmenu:");
+    const panel = panelOpen ? overflowRef.current : null;
+    const drop = menu && menu !== "overflow" ? menuPopRef.current : null;
 
-      bar.style.cssText = "";
-      if (chips) chips.style.cssText = "";
-
-      const sizeKey = `${tw}x${th}`;
-      if (pending) {
-        lastSizeRef.current = sizeKey;
-        invoke("show_floating_bar", { x: pending.x, y: pending.y, width: tw, height: th })
-          .catch(() => undefined)
-          .finally(() => setPending(null));
-      } else if (sizeKey !== lastSizeRef.current) {
-        lastSizeRef.current = sizeKey;
-        invoke("resize_floating", { width: tw, height: th }).catch(() => undefined);
+    if (panel) {
+      const { w, h } = measure(panel);
+      const trig = document.querySelector<HTMLElement>('[data-trig="overflow"]');
+      const tl = trig ? trig.getBoundingClientRect().left - barRect.left : 0;
+      const trR = trig ? trig.getBoundingClientRect().right - barRect.left : barW;
+      cards.push({ el: panel, x: anchored(tl, trR, w), y: barH + CARD_GAP, w, h });
+    }
+    if (drop && menu) {
+      const { w, h } = measure(drop);
+      const trig = document.querySelector<HTMLElement>(`[data-trig="${menu}"]`);
+      if (trig) {
+        // 锚「整个动作项」而非 16px 的 ⌄ 按钮——否则菜单会偏右，不是「一级菜单正下方」
+        const item =
+          trig.closest<HTMLElement>(".action-slot") ?? trig.closest<HTMLElement>(".pitem") ?? trig;
+        const tr = item.getBoundingClientRect();
+        if (menu.startsWith("pmenu:") && panel) {
+          // 横向 = 触发项左缘正下方（贴右缘翻转为右缘对齐）；纵向 = 所属卡片底边 + CARD_GAP
+          const pr = panel.getBoundingClientRect();
+          const base = cards[0];
+          cards.push({
+            el: drop,
+            x: anchored(base.x + (tr.left - pr.left), base.x + (tr.right - pr.left), w),
+            y: base.y + base.h + CARD_GAP,
+            w,
+            h,
+          });
+        } else {
+          cards.push({
+            el: drop,
+            x: anchored(tr.left - barRect.left, tr.right - barRect.left, w),
+            y: barH + CARD_GAP,
+            w,
+            h,
+          });
+        }
       }
+    }
+
+    const minX = Math.min(0, ...cards.map((c) => c.x));
+    const maxR = Math.max(barW, ...cards.map((c) => c.x + c.w));
+    const maxB = Math.max(barH, ...cards.map((c) => c.y + c.h));
+    const tw = Math.ceil(maxR - minX) + 2 * FLOAT_PAD;
+    const th = Math.ceil(maxB) + 2 * FLOAT_PAD; // 卡片恒在胶囊下方（minY = 0）
+
+    // 窗口内偏移：翻转（minX < 0）时胶囊右移补偿，屏幕坐标不变
+    bar.style.marginLeft = `${FLOAT_PAD - minX}px`;
+    for (const c of cards) {
+      c.el.style.left = `${c.x - minX + FLOAT_PAD}px`;
+      c.el.style.top = `${c.y + FLOAT_PAD}px`;
+    }
+
+    // 窗口目标位置：保持胶囊屏幕坐标不变；面板贴屏底放不下时整窗上移
+    let wx: number | null = null;
+    let wy: number | null = null;
+    if (barScreen && scr) {
+      wx = barScreen.x - (FLOAT_PAD - minX);
+      wy = barScreen.y - FLOAT_PAD;
+      if (wy + th > scr.bottom - 8) wy = scr.bottom - 8 - th;
+      if (wy < scr.top + 8) wy = scr.top + 8;
+    }
+
+    const settle = (pos: WindowPos) => {
+      winPosRef.current = pos;
+      barInWinRef.current = { x: FLOAT_PAD - minX, y: FLOAT_PAD };
+    };
+    const sizeKey = `${tw}x${th}`;
+    const posKey = wx == null || wy == null ? "anchor" : `${Math.round(wx)}:${Math.round(wy)}`;
+    if (pending) {
+      lastSizeRef.current = sizeKey;
+      invoke<WindowPos>("show_floating_bar", { x: pending.x, y: pending.y, width: tw, height: th })
+        .then(settle)
+        .catch(() => undefined)
+        .finally(() => setPending(null));
+    } else if (sizeKey !== lastSizeRef.current || posKey !== lastPosKeyRef.current) {
+      lastSizeRef.current = sizeKey;
+      lastPosKeyRef.current = posKey;
+      invoke<WindowPos>("resize_floating", { width: tw, height: th, x: wx, y: wy })
+        .then(settle)
+        .catch(() => undefined);
     }
   }, [phase, pending, menu, flashId]);
 
@@ -1444,8 +1566,14 @@ export default function App() {
   const onStageMouseDown = (e: ReactMouseEvent) => {
     // OCR 独立窗口不参与浮动条拖拽
     if (IS_OCR) return;
+    const t = e.target as HTMLElement;
+    // 点空白（胶囊与浮层之外的留白/缝隙）收起二级浮层；点窗口外才整条消失
+    // （窗口矩形含留白，Rust 侧 rect_contains 会抑制这区域的 dismiss）
+    if (menu !== null && !t.closest(".bar") && !t.closest(".pop")) {
+      setMenu(null);
+    }
     // 结果文本区保留文字选择/复制，不作为拖拽起点
-    if ((e.target as HTMLElement).closest(".panel-body")) return;
+    if (t.closest(".panel-body")) return;
     dragStartRef.current = { sx: e.screenX, sy: e.screenY };
   };
 
@@ -1464,6 +1592,17 @@ export default function App() {
   const onStageMouseUp = () => {
     dragStartRef.current = null;
     if (dragActiveRef.current) {
+      // 拖拽改变窗口位置（Rust 侧直接落位，前端不感知）：回读落位与新所在
+      // 屏幕矩形，恢复布局 effect 的坐标基准（锚定/翻转判定依赖两者）
+      invoke<WindowPos>("floating_window_pos")
+        .then((p) => {
+          winPosRef.current = p;
+          return invoke<ScreenRect>("screen_rect_at", { x: p.x, y: p.y });
+        })
+        .then((r) => {
+          screenRef.current = r;
+        })
+        .catch(() => undefined);
       // DragEnd 由系统事件 tap 的 mouse-up 转发；稍后恢复点击
       window.setTimeout(() => {
         dragActiveRef.current = false;
@@ -1492,7 +1631,7 @@ export default function App() {
       {/* 划词胶囊条：仅主浮动窗口渲染（OCR 独立窗口只显示识别面板） */}
       {!IS_OCR && (
       <div className="bar" role="toolbar" ref={barRef}>
-        {barEntries.map((e) => (
+        {topEntries.map((e) => (
           <span key={e.id} className="action-slot">
             <button
               className="action"
@@ -1504,7 +1643,7 @@ export default function App() {
                     : undefined
               }
               onClick={guarded(() => {
-                setMenu(null); // 执行动作即收起展开中的菜单（chips 不滞留在主条与结果面板之间）
+                setMenu(null); // 执行动作即收起展开中的浮层
                 e.onClick();
               })}
             >
@@ -1515,55 +1654,134 @@ export default function App() {
               (e.id === "translate" && enabledTranslates.length > 1)) && (
                 <button
                   className="chev"
+                  data-trig={`chev:${e.id}`}
                   title={e.id === "search" ? "更多搜索引擎" : "更多翻译服务"}
                   onClick={guarded(() =>
-                    setMenu((m) => (m === e.id ? null : (e.id as "search" | "translate"))),
+                    setMenu((m) =>
+                      m === `chev:${e.id}`
+                        ? null
+                        : (`chev:${e.id}` as "chev:translate" | "chev:search"),
+                    ),
                   )}
                 >
                   <ChevronDown
                     size={13}
                     strokeWidth={2}
-                    className={`chev-svg ${menu === e.id ? "open" : ""}`}
+                    className={`chev-svg ${menu === `chev:${e.id}` ? "open" : ""}`}
                   />
                 </button>
               )}
           </span>
         ))}
+        {restEntries.length > 0 && (
+          <span className="action-slot">
+            <button
+              className="action more"
+              data-trig="overflow"
+              title={`还有 ${restEntries.length} 个动作`}
+              onClick={guarded(() =>
+                setMenu((m) => (m === "overflow" || m?.startsWith("pmenu:") ? null : "overflow")),
+              )}
+            >
+              <ChevronDown
+                size={13}
+                strokeWidth={2}
+                className={`chev-svg ${
+                  menu === "overflow" || menu?.startsWith("pmenu:") ? "open" : ""
+                }`}
+              />
+              <b>{restEntries.length}</b>
+            </button>
+          </span>
+        )}
       </div>
       )}
 
-      {menu === "search" && !IS_OCR && enabledEngines.length > 1 && (
-        <div className="chips">
-          {enabledEngines.map((e) => (
-            <button
-              key={e.name}
-              className={`chip ${defaultEngine?.name === e.name ? "primary" : ""}`}
-              onClick={guarded(() => {
-                setMenu(null);
-                openEngine(e);
-              })}
-            >
-              {e.name}
-            </button>
-          ))}
+      {/* 收纳面板：单行平铺、宽度随内容（分离卡，覆盖在正文上，胶囊不动）。
+          项主体点击 = 默认服务执行；⌄ 才弹换渠道/引擎的浮出菜单 */}
+      {!IS_OCR && (menu === "overflow" || menu?.startsWith("pmenu:")) && (
+        <div className="pop overflow" ref={overflowRef}>
+          {restEntries.map((e) => {
+            const hasMenu =
+              (e.id === "translate" && enabledTranslates.length > 1) ||
+              (e.id === "search" && enabledEngines.length > 1);
+            return (
+              <span key={e.id} className="pitem">
+                <button
+                  className="action"
+                  title={
+                    e.id === "search" && defaultEngine
+                      ? `用${defaultEngine.name}搜索`
+                      : e.id === "translate" && defaultTranslate
+                        ? `当前默认：${defaultTranslate.label}`
+                        : undefined
+                  }
+                  onClick={guarded(() => {
+                    setMenu(null);
+                    e.onClick();
+                  })}
+                >
+                  <span className="ic">{ICONS[e.id]}</span>
+                  <span>{flashId === e.id ? flashMsg : e.label}</span>
+                </button>
+                {hasMenu && (
+                  <button
+                    className="pchev"
+                    data-trig={`pmenu:${e.id}`}
+                    title={e.id === "translate" ? "更多翻译服务" : "更多搜索引擎"}
+                    onClick={guarded(() =>
+                      setMenu((m) =>
+                        m === `pmenu:${e.id}`
+                          ? null
+                          : (`pmenu:${e.id}` as "pmenu:translate" | "pmenu:search"),
+                      ),
+                    )}
+                  >
+                    <ChevronDown
+                      size={12}
+                      strokeWidth={2}
+                      className={`chev-svg ${menu === `pmenu:${e.id}` ? "open" : ""}`}
+                    />
+                  </button>
+                )}
+              </span>
+            );
+          })}
         </div>
       )}
 
-      {menu === "translate" && !IS_OCR && enabledTranslates.length > 1 && (
-        <div className="chips">
-          {enabledTranslates.map((s) => (
-            <button
-              key={s.id}
-              className={`chip ${defaultTranslate?.id === s.id ? "primary" : ""}`}
-              onClick={guarded(() => {
-                setMenu(null);
-                runAction("translate", s.id);
-              })}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+      {/* 窄单列浮出菜单：胶囊动作 ⌄ 与收纳面板项 ⌄ 共用同一形式（全局统一） */}
+      {!IS_OCR && !!menu && menu !== "overflow" && menu !== "search" && menu !== "translate" && (
+        (() => {
+          const kind = menu.split(":")[1] as "translate" | "search";
+          const items =
+            kind === "translate"
+              ? enabledTranslates.map((s) => ({ key: s.id, label: s.label }))
+              : enabledEngines.map((en) => ({ key: en.name, label: en.name }));
+          const cur = kind === "translate" ? defaultTranslate?.id : defaultEngine?.name;
+          return (
+            <div className="pop menu" ref={menuPopRef}>
+              {items.map((it) => (
+                <button
+                  key={it.key}
+                  className={`mitem ${cur === it.key ? "on" : ""}`}
+                  onClick={guarded(() => {
+                    setMenu(null);
+                    if (kind === "translate") {
+                      runAction("translate", it.key);
+                    } else {
+                      const en = enabledEngines.find((x) => x.name === it.key);
+                      if (en) openEngine(en);
+                    }
+                  })}
+                >
+                  <span className="dot" />
+                  <span>{it.label}</span>
+                </button>
+              ))}
+            </div>
+          );
+        })()
       )}
 
       {phase.kind === "extract" && (

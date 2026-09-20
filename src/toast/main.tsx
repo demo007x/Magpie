@@ -26,14 +26,6 @@ function ToastApp() {
     // 前端收到调用时窗口处于隐藏间隙，直接渲染新内容即可
     window.__toastShow = (message: string, kind: Kind = "info") =>
       setToast({ message, kind });
-    // Liquid Glass（macOS 26）：生效则表面切半透明让玻璃透出；
-    // 监听设置页开关的广播，运行时切换即时生效
-    const applyGlass = (on: boolean) =>
-      document.documentElement.classList.toggle("liquid-glass", on);
-    invoke<boolean>("liquid_glass_enabled")
-      .then(applyGlass)
-      .catch(() => undefined);
-    listen<boolean>("theme://liquid-glass", (e) => applyGlass(e.payload)).catch(() => undefined);
     // 用户强制外观（亮/暗）：html 挂 theme class；广播早于挂载会漏听，主动读一次
     const applyTheme = (t: string) => {
       document.documentElement.classList.toggle("theme-light", t === "light");
