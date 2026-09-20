@@ -57,6 +57,8 @@ export interface Settings {
   defaultSearch: string;
   /** 翻译动作的服务配置 */
   translate: TranslateConfig;
+  /** AI 动作提示词覆盖（key = 动作 id；缺省或空 = 跟随内置默认，见 shared/actions.ts DEFAULT_PROMPTS） */
+  actionPrompts: Record<string, string>;
   /** 是否在 macOS Dock 显示图标（关 = 纯菜单栏常驻模式） */
   showDockIcon: boolean;
   /** 识图取字全局快捷键（如 "Alt+O"、"CmdOrCtrl+Shift+O"；空串 = 禁用） */

@@ -608,6 +608,91 @@ input[type="radio"] {
   font-weight: 400;
 }
 
+/* ---- Prompt 设置页（手风琴卡，复用翻译服务的 .svc-body / .svc-chev） ---- */
+/* 卡片头整行可点：折叠态一行高度，三个动作全展开时页面要滚三屏 */
+.prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 编辑区 = 当前生效内容（未自定义时即默认文本），所以高度给足、允许纵向拉伸 */
+.prompt-input {
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--text);
+  background: transparent;
+  border: 0.5px solid var(--line);
+  border-radius: 6px;
+  outline: none;
+  width: 100%;
+  min-height: 190px;
+  margin-top: 12px;
+  padding: 9px 10px;
+  resize: vertical;
+}
+
+/* 折叠体内 overflow:hidden，外发光环会被裁掉，故用内描边表达聚焦 */
+.prompt-input:focus {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--accent-soft);
+}
+
+/* 编辑区下方操作行：「查看系统默认」在左、「恢复默认」浮到行右端。
+   按钮用绝对定位而非 flex 同行——flex 同行时只读正文只能占「行宽 - 按钮宽」，
+   整段文字会比编辑框窄一截；26px 行高与 .btn.sm 等高，两者仍齐平 */
+.prompt-foot {
+  position: relative;
+  margin-top: 10px;
+}
+
+.prompt-src summary {
+  font-size: 12px;
+  line-height: 26px;
+  color: var(--sec);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+/* 只读正文整宽展示 */
+.prompt-src {
+  display: block;
+}
+
+.prompt-foot .btn {
+  position: absolute;
+  right: 0;
+  top: 0;
+  white-space: nowrap;
+}
+
+.prompt-src summary::-webkit-details-marker {
+  display: none;
+}
+
+.prompt-src summary:hover {
+  color: var(--text);
+}
+
+/* 系统默认：只读参考区（可选中复制，但无输入控件） */
+.prompt-default {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--sec);
+  background: var(--hov);
+  border-radius: 6px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .pill {
   font-size: 12px;
   font-weight: 590;

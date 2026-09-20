@@ -23,7 +23,12 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { ACTIONS, actionById } from "../shared/actions";
+import {
+  ACTIONS,
+  actionById,
+  effectivePrompt,
+  type AiActionId,
+} from "../shared/actions";
 import { aiChat } from "../shared/ai";
 import {
   extractAll,
@@ -429,6 +434,8 @@ export default function App() {
     tel: true,
   });
   const [actionOrder, setActionOrder] = useState<string[]>([]);
+  /** AI 动作提示词覆盖（未覆盖的动作不在此表中，取内置默认） */
+  const [actionPrompts, setActionPrompts] = useState<Record<string, string>>({});
   const [capsuleMax, setCapsuleMax] = useState(4);
   const [translateEnabled, setTranslateEnabled] = useState<string[]>(["ai"]);
   const [translateDefault, setTranslateDefault] = useState("ai");
@@ -578,6 +585,7 @@ export default function App() {
       .then((s) => {
         setActions({ ...s.actions });
         setActionOrder(s.actionOrder ?? []);
+        setActionPrompts(s.actionPrompts ?? {});
         setCapsuleMax(Math.max(2, Math.min(8, s.capsuleShowCount ?? 4)));
         setEngines(s.searchEngines ?? []);
         setDefaultSearch(s.defaultSearch ?? "");
@@ -1474,8 +1482,10 @@ export default function App() {
     }
 
     const runId = ++runIdRef.current;
-    if (!action.buildMessages) return;
-    const cacheKey = `${id}:${serviceOverride ?? ""}:${source}`;
+    if (action.kind !== "ai") return;
+    // 生效提示词进缓存 key：改了 prompt 的同一选区不再命中旧结果
+    const system = effectivePrompt(id as AiActionId, actionPrompts);
+    const cacheKey = `${id}:${serviceOverride ?? ""}:${system}:${source}`;
     const cached = cacheGet(cacheKey);
     if (cached !== null && (phase.kind === "ocr" || sourceOverride !== undefined)) {
       // 缓存命中：跳过请求直接展示
@@ -1520,7 +1530,7 @@ export default function App() {
       setPhase((p) => (p.kind === "ocr" ? { ...p, output: full } : p));
     };
 
-    aiChat(action.buildMessages(source), null, {
+    aiChat([{ role: "system", content: system }, { role: "user", content: source }], null, {
       onDelta: (chunk) => {
         if (runIdRef.current !== runId) return;
         full += chunk;
@@ -2049,7 +2059,7 @@ export default function App() {
                 用识别文本直接打开默认引擎——对识别出的书名/术语等尤其实用 */}
             <div className="ocr-actions">
               {ACTIONS.filter(
-                (a) => (a.buildMessages || a.id === "search") && actions[a.id] !== false,
+                (a) => (a.kind === "ai" || a.id === "search") && actions[a.id] !== false,
               ).map((a) => (
                 <span key={a.id} className="action-slot">
                   <button

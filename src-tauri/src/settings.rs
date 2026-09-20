@@ -2,6 +2,7 @@
 //! 安全注记：API Key 明文本机存储（ADR-07），M2 迁移系统钥匙串。
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -138,6 +139,11 @@ pub struct Settings {
     pub default_search: String,
     /// 翻译动作的服务配置
     pub translate: TranslateConfig,
+    /// AI 动作提示词覆盖表（key = 动作 id）。只存用户自定义值：缺省即跟随内置默认，
+    /// 「恢复默认」= 删除该 key，而不是把当时的默认文本写回去（内置默认升级后仍能取到新版）。
+    /// 默认文本本身只在 TS 层维护（src/shared/actions.ts DEFAULT_PROMPTS）。
+    #[serde(default)]
+    pub action_prompts: HashMap<String, String>,
     /// 是否在 macOS Dock 显示图标（关 = 纯菜单栏常驻模式）
     pub show_dock_icon: bool,
     /// 识图取字全局快捷键（如 "Alt+O"、"CmdOrCtrl+Shift+O"）；空串 = 禁用
@@ -207,6 +213,7 @@ impl Default for Settings {
             search_engines: default_engines(),
             default_search: "百度".into(),
             translate: TranslateConfig::default(),
+            action_prompts: HashMap::new(),
             show_dock_icon: false,
             ocr_shortcut: "Alt+S".into(),
             ocr_translate_shortcut: default_ocr_translate_shortcut(),

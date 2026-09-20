@@ -14,15 +14,23 @@ import {
   Languages,
   Search,
   ShieldCheck,
+  Sparkles,
   TextCursorInput,
   Trash2,
 } from "lucide-react";
-import { ACTIONS } from "../shared/actions";
+import {
+  ACTIONS,
+  AI_ACTION_IDS,
+  DEFAULT_PROMPTS,
+  effectivePrompt,
+  type AiActionId,
+} from "../shared/actions";
 import markIcon from "./assets/mark.svg";
 import type { Provider, SearchEngine, Settings } from "../shared/types";
 
 type Page =
   | "model"
+  | "prompts"
   | "capture"
   | "shortcuts"
   | "perms"
@@ -34,6 +42,7 @@ type Page =
 
 const NAV_ICONS: Record<Page, React.ReactNode> = {
   model: <Cpu size={15} strokeWidth={1.75} />,
+  prompts: <Sparkles size={15} strokeWidth={1.75} />,
   capture: <TextCursorInput size={15} strokeWidth={1.75} />,
   shortcuts: <Keyboard size={15} strokeWidth={1.75} />,
   perms: <ShieldCheck size={15} strokeWidth={1.75} />,
@@ -163,7 +172,7 @@ const ACTION_LABELS: Record<string, string> = {
 const ACTION_DESC: Record<string, string> = {
   translate: "中文译英文，其他译中文，附学习要点",
   explain: "解释选中内容是什么、为什么重要",
-  summarize: "提炼要点，最多 5 条",
+  summarize: "按内容体量提炼要点，长短自适应",
   copy: "复制选中的原文",
   search: "用默认搜索引擎搜索选中内容",
   link: "选中的是网址时，一键打开网页",
@@ -172,7 +181,7 @@ const ACTION_DESC: Record<string, string> = {
   tel: "选中含电话号码时，一键复制号码",
 };
 
-const isAiAction = (id: string) => ACTIONS.find((a) => a.id === id)?.kind !== "local";
+const isAiAction = (id: string) => ACTIONS.find((a) => a.id === id)?.kind === "ai";
 
 // 系统内置引擎（与 Rust default_engines 同名单）：不可删除，只可停用/排序
 const BUILTIN_ENGINES = new Set(["百度AI", "百度", "GoogleAI", "Google", "必应", "GitHub"]);
@@ -553,6 +562,26 @@ export default function App() {
   // 翻译服务凭据折叠态；启用服务时自动展开一次（见 toggleTranslate）
   const [svcOpen, setSvcOpen] = useState<Record<string, boolean>>({});
 
+  // 提示词卡手风琴：同时只展开一个（三张卡全展开要滚三屏，而这页的用法就是一次调一个动作）。
+  // 编辑框始终是「当前生效内容」，内容与默认一致时不落覆盖项——恢复默认因此是删 key，
+  // 而不是回写一份当时的默认文本
+  const [promptOpen, setPromptOpen] = useState<AiActionId | null>(null);
+
+  const setPrompt = (id: AiActionId, value: string) => {
+    if (!settings) return;
+    const next = { ...settings.actionPrompts };
+    if (value.trim() === DEFAULT_PROMPTS[id].trim()) delete next[id];
+    else next[id] = value;
+    patch({ actionPrompts: next });
+  };
+
+  const resetPrompt = (id: AiActionId) => {
+    if (!settings) return;
+    const next = { ...settings.actionPrompts };
+    delete next[id];
+    patch({ actionPrompts: next });
+  };
+
   const onSvcGripDown = (e: ReactMouseEvent, id: string) => {
     e.preventDefault();
     setSvcDragId(id);
@@ -605,6 +634,7 @@ export default function App() {
               ["capture", "划词"],
               ["shortcuts", "快捷键"],
               ["model", "模型服务"],
+              ["prompts", "Prompt 设置"],
               ["translate", "翻译"],
               ["search", "搜索引擎"],
               ["blocklist", "禁用应用"],
@@ -703,6 +733,70 @@ export default function App() {
               ＋ 添加服务
             </button>
 
+            <div className="save-bar">
+              <button className="btn primary" onClick={save}>
+                {saved ? "已保存" : "保存更改"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {page === "prompts" && (
+          <>
+            <h1>Prompt 设置</h1>
+            <p className="page-hint">
+              翻译 / 解释 / 总结发给模型的指令，选中的文字作为内容发送。点动作名展开，一次只展开一个；编辑框里就是实际发出的内容，改动点「保存更改」后浮动条与识图结果窗口即时生效。
+            </p>
+            {AI_ACTION_IDS.map((id) => {
+              const custom = Boolean(settings.actionPrompts[id]?.trim());
+              const open = promptOpen === id;
+              return (
+                <div className="card" key={id}>
+                  <div
+                    className="prompt-head"
+                    onClick={() => setPromptOpen(open ? null : id)}
+                  >
+                    <div className="row-title">
+                      {ACTION_LABELS[id]}
+                      <span className="tag ai">AI</span>
+                      <span className="action-desc">
+                        {custom ? "已自定义" : "使用系统默认"}
+                      </span>
+                    </div>
+                    {/* 不持 onClick：点把手冒泡到卡片头统一切换，避免双重 toggle */}
+                    <button className={`svc-chev ${open ? "open" : ""}`} title={open ? "收起" : "展开编辑"}>
+                      <ChevronDown size={13} strokeWidth={2} />
+                    </button>
+                  </div>
+                  <div className={`svc-body ${open ? "open" : ""}`}>
+                    <div>
+                      <textarea
+                        className="prompt-input"
+                        spellCheck={false}
+                        value={effectivePrompt(id, settings.actionPrompts)}
+                        onChange={(e) => setPrompt(id, e.target.value)}
+                      />
+                      <div className="prompt-foot">
+                        {/* 内置默认不常驻展示，但必须按需可查：翻译的【译文】/【要点】
+                            是结果窗解析依据，看不到原版用户改坏格式还查不出原因 */}
+                        <details className="prompt-src">
+                          <summary>查看系统默认</summary>
+                          <pre className="prompt-default">{DEFAULT_PROMPTS[id]}</pre>
+                        </details>
+                        <button
+                          className="btn sm"
+                          disabled={!custom}
+                          title="清除自定义，恢复系统默认提示词"
+                          onClick={() => resetPrompt(id)}
+                        >
+                          恢复默认
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
             <div className="save-bar">
               <button className="btn primary" onClick={save}>
                 {saved ? "已保存" : "保存更改"}
