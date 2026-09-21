@@ -1,5 +1,6 @@
 node_modules/
 dist/
+web/
 src-tauri/target/
 src-tauri/gen/
 *.log

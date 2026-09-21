@@ -23,6 +23,8 @@ pnpm build:mac          # universal-apple-darwin 通用包
 
 无测试框架（MVP）；验证方式 = `pnpm check` + `cargo check` + `cargo build`，交互验证走 `pnpm tauri dev` 真机划词。
 
+**`web/` 是独立工程（官网）**：有自己的 `package.json` / lockfile / `pnpm-workspace.yaml`，与主应用零共享，单独部署为静态站点。改官网先读 `web/README.md`；在本目录跑 `pnpm` 命令前确认工作目录，否则 pnpm 会跨工作区装依赖、改写主项目的 `pnpm-lock.yaml`。
+
 **坑**：`tauri::generate_context!` 在编译期读取 `../dist` 与 `icons/`。若 cargo 报 icon/dist 缺失，先跑 `pnpm build`（dist）或 `pnpm tauri icon`（图标）再重试。
 
 ## 架构：Rust 管不变的，TS 管多变的
