@@ -8,3 +8,5 @@ src-tauri/gen/
 .zcode/*
 todo.md
 macos-selection-tools-research.html
+.zcode/
+note/

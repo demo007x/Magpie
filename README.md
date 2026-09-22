@@ -109,27 +109,11 @@ Data flow: CGEventTap (mouse) → detect thread (debounce / AX query) → filter
 - API keys are stored in plaintext in local `settings.json` (moving to the system keychain in M2) and are sent only to the LLM / translation endpoints you configure
 - No telemetry, no accounts
 
-## Future Plans
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the full, self-contained roadmap. Top priorities (M2): **clip-to-collection** into Notion / Obsidian / flomo / Apple Notes (context-rich structured delivery — custom AI actions shipped in v0.1.6), follow-up Q&A in the result window, Windows capture (UIA backend), AI search & Q&A, context-aware selection, and moving API keys to the system keychain. Mid-term (M3) converges built-ins, custom actions, integrations, and workflows into one unified action model; long-term (M4) adds hosted models for zero configuration.
 
 > The architecture already reserves hooks for these capabilities (platform capture backends, the action registry); they will land milestone by milestone.
-
-**M2 — multi-platform & smarter selection**
-
-- Windows capture (UIA backend; platform dispatch already reserved)
-- AI search & follow-up Q&A (multi-turn with a tool loop)
-- Context-aware selection (deep understanding using surrounding text)
-- Custom actions (extend the action registry with your own)
-- Global shortcut to summon the floating bar
-- Move API keys to the system keychain
-
-**M3 — unified action model**
-
-- Custom AI actions (your own prompt templates) and multi-step workflows
-- Clip-to-collection into the note apps you already use — Notion / Obsidian / flomo / Apple Notes (integrate, don't rebuild)
-
-**M4 — zero configuration**
-
-- Hosted models (no BYOK required) and accounts
 
 ## Docs
 
@@ -142,6 +126,10 @@ Design documents are written in Simplified Chinese:
 | [docs/03-模块设计.md](docs/03-模块设计.md)                       | Capture / windows & UI / AI service layer            |
 | [docs/04-技术选型.md](docs/04-技术选型.md)                       | ADR decision records                                 |
 | [docs/05-MVP执行计划.md](docs/05-MVP执行计划.md)                 | M1 execution history                                 |
+
+## Contributing
+
+Issues and PRs are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) (written in Simplified Chinese) for the contribution process, local verification standards, and engineering conventions.
 
 ## License
 
