@@ -35,7 +35,7 @@ Every piece of text on your screen is one mouse gesture away: select or capture 
   <img src="docs/images/settings_search.png" width="49%" alt="Main window · search settings" />
 </p>
 
-## Implemented Features (v0.1.7)
+## Features
 
 - **Global selection capture** — select text in any app to summon the bar; drag-select or double-click both work, and the same selection never pops twice
 - **Floating bar** — pops centered above the mouse cursor, auto edge-clamping, never steals focus, light/dark theme aware; roughly 80ms from mouse-up to capsule
