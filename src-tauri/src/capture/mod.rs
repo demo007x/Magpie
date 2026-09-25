@@ -183,10 +183,8 @@ pub fn spawn_worker(app: AppHandle, rx: Receiver<CaptureEvent>) {
                         ));
                         continue;
                     }
-                    debug_log(format!(
-                        "selection 通过 → 发事件：pid={pid} app={app_path} bid={bid} len={} ({x:.0},{y:.0})",
-                        text.len()
-                    ));
+                    // 正常通过不发日志：取词侧（forward_selection）已打完整信息，
+                    // 这里再打一遍即每次划词双份刷屏
                     let _ = app.emit(
                         "selection://captured",
                         json!({ "text": text, "x": x, "y": y, "app": app_path }),

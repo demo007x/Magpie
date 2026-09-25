@@ -20,7 +20,8 @@
   --on-accent: #ffffff;
   --err: #e5484d;
   --pulse: #ee8c2a; /* 呼吸/进行中指示：暖橙（区别品牌靛紫与错误红） */
-  --source: #4a63b0; /* 原文/选中文本：引用蓝，与结果正文区分 */
+  --source: #4d5a75; /* 原文引用文字：中性灰蓝（大面积长文阅读舒适度优先） */
+  --source-line: rgba(74, 99, 176, 0.32); /* 原文区左侧引用竖线 */
   --ok: #2fa14c;
   --radius: 12px;
 }
@@ -41,7 +42,8 @@
     --on-accent: #ffffff;
     --err: #ff6b61;
     --pulse: #ff9f0a;
-    --source: #93a7e8;
+    --source: #94a0bd;
+    --source-line: rgba(147, 167, 232, 0.3);
     --ok: #32d158;
     }
 }
@@ -65,7 +67,8 @@
   --on-accent: #ffffff;
   --err: #e5484d;
   --pulse: #ee8c2a;
-  --source: #4a63b0;
+  --source: #4d5a75;
+  --source-line: rgba(74, 99, 176, 0.32);
   --ok: #2fa14c;
 }
 
@@ -84,7 +87,8 @@
   --on-accent: #ffffff;
   --err: #ff6b61;
   --pulse: #ff9f0a;
-  --source: #93a7e8;
+  --source: #94a0bd;
+  --source-line: rgba(147, 167, 232, 0.3);
   --ok: #32d158;
 }
 
@@ -743,13 +747,13 @@ body,
   max-height: 100%;
 }
 
-/* 结果模式折叠：3 行（63px 内容 + 7px 下缝 + 0.5px 边线）。
+/* 结果模式折叠：3 行（75px 内容 + 7px 下缝 + 0.5px 边线）。
    basis 用 auto——高度完全由 max-height 钳制，内容不足时区域随之收窄 */
 .ocr-source-wrap.has-result {
   border-bottom: 0.5px solid var(--line);
   padding-bottom: 7px;
   flex: 0 1 auto;
-  max-height: calc(63px + 7px + 0.5px);
+  max-height: calc(75px + 7px + 0.5px);
 }
 
 /* 结果模式展开：上限抬到 220px（+7px 下缝 + 0.5px 边线），
@@ -765,13 +769,17 @@ body,
   }
 }
 
-/* 识别原文：无背景色块，与面板无缝一致。
+/* 识别原文：排版与结果区同规格（13px/1.8/0.02em），颜色降为中性灰蓝——
+   大面积原文的阅读舒适度优先；「引用来源」语义改由左侧半透明竖线表达。
    高度完全由 wrap 的 flex 基数钳制，内部只负责溢出滚动 */
 .ocr-source {
-  padding: 2px 8px 2px 2px;
-  font-size: 12px;
-  line-height: 1.65;
-  color: var(--source); /* 原文用引用蓝：与下方结果正文明确区分 */
+  padding: 2px 12px 2px 10px;
+  border-left: 2px solid var(--source-line);
+  font-size: 13px;
+  line-height: 1.8;
+  letter-spacing: 0.02em;
+  color: var(--source);
+  border-radius: 0 4px 4px 0;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -779,6 +787,12 @@ body,
   cursor: text;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* 可编辑暗示：hover 时极淡的品牌底色（原文是 contentEditable，
+   可就地改字后再执行动作——此前没有任何视觉暗示） */
+.ocr-source:hover {
+  background: var(--hov);
 }
 
 /* 可编辑原文（contentEditable）：去掉默认聚焦描边，保持与面板无缝 */

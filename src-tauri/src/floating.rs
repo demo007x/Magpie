@@ -627,13 +627,22 @@ pub(crate) fn monitor_rect(win: &WebviewWindow, x: f64, y: f64) -> (f64, f64, f6
 /// dx/dy = 相对「锚点+(6,14)」标准位的窗口偏移：胶囊卡片位于窗口内
 /// (FLOAT_PAD, FLOAT_PAD) 处（四周透明留白），show 路径传 (-FLOAT_PAD,-FLOAT_PAD)
 /// 抵消留白，保持卡片与选区锚点的视觉间距不变
-fn place(win: &WebviewWindow, ax: f64, ay: f64, w: f64, h: f64, dx: f64, dy: f64) -> (f64, f64) {
+/// 光标锚点 → 窗口位置：胶囊水平中心对光标、卡片底边距光标上方 16px——
+/// 「跟随鼠标上方」（豆包同款；12px 会贴到光标，16px 避免误触且不失紧凑，
+/// 在业界弹出层间距惯例 12–16px 内，见 ADR-06）。
+/// 单行/短选区时光标即在选区行内，视觉上等效「选区上方」。
+/// 屏顶放不下翻到光标下方；均含防出屏钳制。窗口含 FLOAT_PAD 四周透明
+/// 留白，卡片才是视觉边界，偏移按卡片边缘折算
+fn place(win: &WebviewWindow, ax: f64, ay: f64, w: f64, h: f64) -> (f64, f64) {
     let (m_l, m_t, m_r, m_b) = monitor_rect(win, ax, ay);
-    let nx = (ax + 6.0 + dx).clamp(m_l, (m_r - w).max(m_l));
-    let ny = if ay + 14.0 + dy + h > m_b {
-        (ay + dy - h - 12.0).max(m_t)
+    let nx = (ax - w / 2.0).clamp(m_l, (m_r - w).max(m_l));
+    // 卡片底 = ay - 16：ny = ay - 16 - (h - FLOAT_PAD)
+    let ny_above = ay + FLOAT_PAD - 16.0 - h;
+    let ny = if ny_above >= m_t {
+        ny_above
     } else {
-        ay + 14.0 + dy
+        // 下方：卡片顶 = ay + 14；下方也放不下钳回屏内
+        (ay + 14.0 - FLOAT_PAD).min((m_b - h).max(m_t))
     };
     (nx, ny)
 }
@@ -676,7 +685,7 @@ pub fn show_floating_bar(
     // 下限只需兜底极小值：窗口高度必须贴合表面，否则表面下缘落在窗口
     // 内部、原生圆角裁不到，胶囊下角会变直角
     let h = height.unwrap_or(DEFAULT_H).max(24.0);
-    let (nx, ny) = place(&win, x, y, w, h, -FLOAT_PAD, -FLOAT_PAD);
+    let (nx, ny) = place(&win, x, y, w, h);
     win.set_size(LogicalSize::new(w, h))
         .map_err(|e| e.to_string())?;
     win.set_position(LogicalPosition::new(nx, ny))
@@ -724,7 +733,7 @@ pub fn resize_floating(
                 wy.clamp(m_t, (m_b - h).max(m_t)),
             )
         }
-        _ => place(&win, ax, ay, w, h, -FLOAT_PAD, -FLOAT_PAD),
+        _ => place(&win, ax, ay, w, h),
     };
     win.set_size(LogicalSize::new(w, h))
         .map_err(|e| e.to_string())?;
@@ -797,7 +806,6 @@ pub fn end_drag(app: &AppHandle) {
 
 #[tauri::command]
 pub fn hide_floating_bar(app: AppHandle) -> Result<(), String> {
-    debug_log("hide_floating_bar 调用");
     let win = window(&app)?;
     win.hide().map_err(|e| e.to_string())?;
     app.state::<FloatingState>().lock().unwrap().visible = false;

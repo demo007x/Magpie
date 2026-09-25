@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Custom action icons**: pick a lucide icon (36 presets in 5 groups) when creating or editing a custom action, so your own actions no longer all share the sparkle. The choice shows on the capsule, the overflow panel, and the OCR result window; unset falls back to the default. Stored as the icon name in settings — older configs without the field keep working.
+
+### Changed
+
+- **Custom action editing moves into a dialog**: the settings list row no longer expands inline — a pencil button opens a dialog containing the name, prompt, icon picker (grouped), the try-run panel, and delete with an inline confirm step. Writing a prompt, testing it, and tweaking it now happens in one place instead of jumping between the row and a separate dialog.
+- **Adaptive selection debounce**: drag-selection now waits only 30ms before the accessibility query (the selection is already final on mouse-up), while double/triple-click keeps the configurable 200ms wait (the app computes the selection after mouse-up). Perceived capsule latency drops from ~250ms to ~80ms on drag.
+- **Capsule placement**: the floating bar now always appears centered above the mouse cursor (16px card gap, flipping below near the screen top), replacing both the old bottom-right anchoring and an experimental selection-anchored variant — Chromium/Electron apps don't expose selection geometry, so one consistent anchor won out (ADR-06).
+
+### Fixed
+
+- **Range-fallback text capture never worked**: the AXValue type constant for `CFRange` was wrong (3 = CGRect instead of 4), so the "AXSelectedTextRange + AXStringForRange" fallback (needed by WeChat and other Qt-drawn text views) silently failed on every attempt and slid into clipboard compatibility mode. Now functional.
+- **Dev-only double event handling**: event listeners registered in the React effect could leak across StrictMode remounts (cleanup ran before `listen()` resolved), making every selection event be handled twice in dev builds.
+
 ## [0.1.6] - 2026-09-21
 
 ### Added

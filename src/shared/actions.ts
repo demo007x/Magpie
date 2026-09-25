@@ -12,6 +12,8 @@ export interface ActionDef {
   kind?: "ai" | "local";
   /** 自定义动作的 system 提示词；内置动作不带此字段，走 DEFAULT_PROMPTS + actionPrompts 覆盖 */
   prompt?: string;
+  /** 自定义动作的 lucide 图标名（shared/icons.tsx）；内置动作不带此字段 */
+  icon?: string;
   when?(text: string): boolean;
 }
 
@@ -28,6 +30,7 @@ export function actionRegistry(custom: CustomAction[] = []): ActionDef[] {
       label: c.name,
       kind: "ai" as const,
       prompt: c.prompt,
+      icon: c.icon,
     })),
   ];
 }

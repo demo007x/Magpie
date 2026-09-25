@@ -191,8 +191,6 @@ const K_CG_HEAD_INSERT_EVENT_TAP: u32 = 0;
 const K_CG_EVENT_TAP_OPTION_LISTEN_ONLY: u32 = 1;
 
 // 诊断计数器
-static EVENT_COUNT: AtomicU64 = AtomicU64::new(0);
-static EVENT_TOTAL: AtomicU64 = AtomicU64::new(0);
 static FIRST_EVENT: AtomicBool = AtomicBool::new(false);
 static LAST_EVENT_MS: AtomicU64 = AtomicU64::new(0); // UNIX 毫秒
 
@@ -242,8 +240,6 @@ extern "C" fn tap_callback(
         0
     };
     if !is_key {
-        EVENT_COUNT.fetch_add(1, Ordering::Relaxed);
-        EVENT_TOTAL.fetch_add(1, Ordering::Relaxed);
         LAST_EVENT_MS.store(now_ms(), Ordering::Relaxed);
         if !FIRST_EVENT.swap(true, Ordering::Relaxed) {
             debug_log("✓ 收到首个鼠标事件，tap 工作正常");
@@ -277,10 +273,6 @@ pub fn start(app: &AppHandle, tx: Sender<CaptureEvent>, debounce_ms: u64) {
         .name("capture-detect".into())
         .spawn(move || detect_loop(&detect_app, raw_rx, tx, debounce_ms))
         .expect("spawn capture-detect thread");
-    std::thread::Builder::new()
-        .name("capture-heartbeat".into())
-        .spawn(tap_heartbeat)
-        .expect("spawn capture-heartbeat thread");
     std::thread::Builder::new()
         .name("capture-axtest".into())
         .spawn(ax_self_test)
@@ -409,15 +401,8 @@ fn tap_thread() {
     }
 }
 
-/// 心跳：无条件报告事件数（调试期静默 = 异常信号）
-fn tap_heartbeat() {
-    loop {
-        std::thread::sleep(Duration::from_secs(15));
-        let n = EVENT_COUNT.swap(0, Ordering::Relaxed);
-        let total = EVENT_TOTAL.load(Ordering::Relaxed);
-        debug_log(format!("心跳：近 15s 事件 {n} / 累计 {total}"));
-    }
-}
+/// tap 死活观测：靠 tap_thread 内的「3 分钟无事件预防性重建」兜底，
+/// 早期的心跳打印线程（每 15s 一条）已移除——诊断价值低且刷屏
 
 /// 启动 AX 自检：立即实测 AX 服务与输入监控是否放行（结果同时供自检页展示）
 fn ax_self_test() {
@@ -477,7 +462,6 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
                 }
             }
             EV_LEFT_DOWN => {
-                debug_log(format!("mouse-down ({:.0},{:.0})", ev.x, ev.y));
                 down = Some((ev.x, ev.y));
             }
             EV_LEFT_DRAGGED => {
@@ -504,7 +488,7 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
                 });
 
                 if drag_dist <= 6.0 && !is_double {
-                    debug_log(format!("mouse-up：普通点击 ({:.0},{:.0})", ev.x, ev.y));
+                    // 普通单击：走 dismiss 判定（无日志——高频操作，打印即刷屏）。
                     // 注意：不带 pid——worker 只用浮动条矩形判定，若填自身 pid 会被过滤导致 dismiss 永不触发
                     let _ = tx.send(CaptureEvent::PlainClick { x: ev.x, y: ev.y });
                 } else if capture_muted() {
@@ -512,11 +496,17 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
                     // 截图模态会话里触发 AX 异常导致进程 abort）
                     debug_log("mouse-up：静音期间忽略拖选");
                 } else {
+                    // 自适应防抖：拖选的选区随拖动实时更新，松手即最终态，短等即可；
+                    // 双击/三击的选区是松手后应用计算的，需给足处理时间（沿用 debounce_ms 档，
+                    // 用户可配）。拖选档 30ms 只吸收事件分发抖动，不覆盖应用的慢响应
+                    let wait_ms = if is_double { debounce_ms } else { 30 };
                     debug_log(format!(
-                        "mouse-up：判定为选词（drag={drag_dist:.1}px double={is_double}），防抖 {debounce_ms}ms 后查询 AX"
+                        "mouse-up：判定为选词（drag={drag_dist:.1}px double={is_double}），防抖 {wait_ms}ms 后查询 AX"
                     ));
+                    // ⏱ 计时基线：松手判定完成，后续各段耗时都相对此刻
+                    let t_up = Instant::now();
                     // 防抖：等应用完成选区更新
-                    std::thread::sleep(Duration::from_millis(debounce_ms));
+                    std::thread::sleep(Duration::from_millis(wait_ms));
                     if let Some((text, pid)) = unsafe { ax_selected_text(app, ev.x, ev.y) } {
                         forward_selection(
                             &tx,
@@ -566,6 +556,10 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
                     } else {
                         debug_log("AX + 兼容模式均未取到选中文本（静默失败，无事件）");
                     }
+                    debug_log(format!(
+                        "⏱ 划词链路（松手→发事件）：{}ms（其中防抖 {wait_ms}ms；AX 内部分段见上方日志）",
+                        t_up.elapsed().as_millis()
+                    ));
                 }
                 last_up = Some((ev.t, ev.x, ev.y));
                 down = None;
@@ -577,7 +571,7 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
 
 // ---------- AX 查询（docs/03 §3.3，默认不碰剪贴板） ----------
 
-/// 重复抑制 + 转发（AX / 兼容模式共用）
+/// 重复抑制 + 转发（AX / 兼容模式 / Safari AppleScript 共用）
 fn forward_selection(
     tx: &Sender<CaptureEvent>,
     last_emitted: &mut Option<(String, f64, f64)>,
@@ -587,7 +581,6 @@ fn forward_selection(
     y: f64,
     source: &str,
 ) {
-    debug_log(format!("{source}：pid={pid} len={}", text.len()));
     // 重复抑制：同文本 + 坐标相近（< 4px）
     let dup = last_emitted.as_ref().map_or(false, |(lt, lx, ly)| {
         *lt == text && ((lx - x).powi(2) + (ly - y).powi(2)).sqrt() < 4.0
@@ -601,7 +594,10 @@ fn forward_selection(
     let pid = if pid > 0 { pid } else { frontmost_pid().unwrap_or(0) };
     let app = proc_path(pid).unwrap_or_default();
     let bid = running_bundle_id(pid).unwrap_or_default();
-    debug_log(format!("判定通过 → 交 worker：app={app} bid={bid}"));
+    debug_log(format!(
+        "{source}：pid={pid} len={} app={app} bid={bid}",
+        text.len()
+    ));
     let _ = tx.send(CaptureEvent::Selection {
         text: text.clone(),
         x,
@@ -668,6 +664,7 @@ unsafe fn ax_selected_text(app_handle: &AppHandle, x: f64, y: f64) -> Option<(St
         // 置 AXEnhancedUserInterface / AXManualAccessibility 后才暴露接口。轻推 + 重试一次。
         if text.is_none() {
             debug_log("AX: 常规路径无文本，尝试轻推 Chromium/Electron 辅助支持");
+            let t_push = Instant::now();
             set_bool_attr(app_el, consts.enhanced_ui);
             set_bool_attr(app_el, consts.manual_accessibility);
             std::thread::sleep(Duration::from_millis(150));
@@ -677,6 +674,10 @@ unsafe fn ax_selected_text(app_handle: &AppHandle, x: f64, y: f64) -> Option<(St
                 debug_log(format!("AX: 轻推后应用级 rc={rc} → {}", t.is_some()));
                 text = t;
             }
+            debug_log(format!(
+                "⏱ Chromium 轻推段（含 150ms 固定等待）：{}ms",
+                t_push.elapsed().as_millis()
+            ));
         }
 
         if let Some(t) = text {
@@ -948,6 +949,7 @@ pub fn force_fetch_via_copy(app: &AppHandle) -> Option<(String, i32)> {
     const POLL_TIMES: usize = 60; // 60 × 10ms = 600ms 上限；应用响应后首个周期即命中
     const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
+    let t_copy = Instant::now();
     let snapshot = main_read_text(app);
 
     unsafe { post_cmd_c() };
@@ -970,9 +972,19 @@ pub fn force_fetch_via_copy(app: &AppHandle) -> Option<(String, i32)> {
         None => main_clear_text(app),
     };
 
+    if fetched.is_none() {
+        debug_log(format!(
+            "⏱ 兼容模式 ⌘C：未取到（轮询耗尽 {}ms）",
+            t_copy.elapsed().as_millis()
+        ));
+    }
     let text = fetched?;
     let pid = focused_pid().unwrap_or(0);
-    debug_log(format!("兼容模式：⌘C 取到文本 len={}", text.len()));
+    debug_log(format!(
+        "⏱ 兼容模式 ⌘C：取到文本 len={}，耗时 {}ms",
+        text.len(),
+        t_copy.elapsed().as_millis()
+    ));
     Some((text, pid))
 }
 
@@ -1070,6 +1082,11 @@ struct CfRange {
     length: isize,
 }
 
+/// AXValue 包装类型常量（AXValue.h：CGPoint=1 CGSize=2 CGRect=3 CFRange=4）。
+/// 类型错一个位，AXValueGetValue 就因类型不匹配静默失败——曾把 CFRange 写成 3
+/// 导致「范围回退」路径从未生效，此处值必须与 SDK 头文件一致
+const K_AX_VALUE_CF_RANGE: usize = 4;
+
 /// 范围回退：AXSelectedTextRange → AXStringForRange（参数化查询）。
 /// 部分自绘文本视图（如微信 4.x 的 Qt 控件）不暴露 SelectedText 但支持范围取值。
 unsafe fn query_text_via_range(
@@ -1077,9 +1094,6 @@ unsafe fn query_text_via_range(
     consts: &AxConsts,
     quiet: bool,
 ) -> Option<String> {
-    // kAXValueCFRangeType = 3
-    const K_AX_VALUE_CF_RANGE: usize = 3;
-
     let mut range_val: CFTypeRefC = std::ptr::null();
     let rc_range = AXUIElementCopyAttributeValue(el, consts.selected_text_range, &mut range_val);
     if rc_range != 0 || range_val.is_null() {

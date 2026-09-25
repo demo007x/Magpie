@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Fragment } from "react";
 import { Confirm, Modal } from "../shared/Modal";
 import { toast } from "../shared/toast";
+import { CUSTOM_ICON_CHOICES, customIconNode } from "../shared/icons";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
@@ -19,6 +20,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  SquarePen,
   TextCursorInput,
   Trash2,
 } from "lucide-react";
@@ -608,11 +610,12 @@ export default function App() {
   // 与内置动作混排在同一张「动作」卡里：胶囊顺序 = 这张卡的行序（actionOrder 是唯一真相），
   // 分成两张卡会让用户自造的动作永远排在内置之后，前 4 个可见位就轮不到它了
   const CUSTOM_MAX = 10;
-  const [actionEdit, setActionEdit] = useState<string | null>(null);
+  /** 打开编辑模态的自定义动作 id（名称/图标/提示词/试跑/删除都在模态里完成，
+      列表行只留展示与开关——就地展开塞整个表单太拥挤） */
+  const [actionModal, setActionModal] = useState<string | null>(null);
   /** 试跑样例文本：按动作 id 存在组件内，不落盘——它是预览输入，不是配置 */
   const [trySample, setTrySample] = useState<Record<string, string>>({});
-  /** 打开试跑模态的动作 id。tryRun 结果留在父组件：关掉模态不该打断正在流的输出 */
-  const [tryModal, setTryModal] = useState<string | null>(null);
+  /** 试跑结果留在父组件：关掉模态不该打断正在流的输出 */
   const [tryRun, setTryRun] = useState<{
     id: string;
     out: string;
@@ -620,9 +623,29 @@ export default function App() {
     error?: string;
   } | null>(null);
   const tryRunRef = useRef(0);
+  /** 编辑模态里删除按钮的二次确认态（模态上不再叠 Confirm，避免两层 Esc） */
+  const [delArm, setDelArm] = useState(false);
+  /** 图标选择的当前 tab（组名）：打开模态时定位到动作图标所在组 */
+  const [iconTab, setIconTab] = useState<string>(CUSTOM_ICON_CHOICES[0].group);
 
   const customActions = settings?.customActions ?? [];
   const customById = (id: string) => customActions.find((c) => c.id === id);
+
+  /** 打开编辑模态：清掉上一次的试跑流与删除确认态，图标 tab 定位到动作图标所在组
+   *  （没设图标则停在「默认」组），用户打开即见当前选中态 */
+  const openActionModal = (id: string) => {
+    const c = customById(id);
+    setIconTab(
+      c?.icon
+        ? (CUSTOM_ICON_CHOICES.find((g) => g.names.includes(c.icon!))?.group ??
+            CUSTOM_ICON_CHOICES[0].group)
+        : CUSTOM_ICON_CHOICES[0].group,
+    );
+    tryRunRef.current++;
+    setTryRun(null);
+    setDelArm(false);
+    setActionModal(id);
+  };
 
   const updateCustom = (id: string, p: Partial<CustomAction>) => {
     if (!settings) return;
@@ -642,13 +665,12 @@ export default function App() {
       // 行序表补上新 id：追加在末尾，用户拖把手调整（与搜索引擎「添加」一致）
       actionOrder: [...allActionIds(settings), id],
     });
-    setActionEdit(id);
+    openActionModal(id);
   };
 
-  /** 待删除条目的确认框（模型服务 / 自定义动作各一个）：确认走 Modal
+  /** 待删除条目的确认框（模型服务）：确认走 Modal
    *  （confirm() 在 WKWebView 里恒为 false，用它等于删不掉） */
   const [confirmDelProvider, setConfirmDelProvider] = useState<string | null>(null);
-  const [confirmDel, setConfirmDel] = useState<string | null>(null);
 
   const removeProvider = (id: string) => {
     if (!settings) return;
@@ -669,9 +691,8 @@ export default function App() {
     });
     tryRunRef.current++;
     setTryRun(null);
-    setActionEdit(null);
-    setTryModal(null);
-    setConfirmDel(null);
+    setDelArm(false);
+    setActionModal(null);
   };
 
   /** 试跑：走默认模型服务（Rust 读的是已落盘的配置，未保存的改动不生效） */
@@ -987,7 +1008,6 @@ export default function App() {
             <div className="card">
               {residentIds.map((k) => {
                 const c = customById(k);
-                const open = actionEdit === k;
                 return (
                   <Fragment key={k}>
                     <div
@@ -1007,6 +1027,11 @@ export default function App() {
                         >
                           <GripVertical size={13} strokeWidth={1.75} />
                         </span>
+                        {c && (
+                          <span className="row-ic" title="动作图标">
+                            {customIconNode(c.icon, 14) ?? <Sparkles size={14} strokeWidth={1.75} />}
+                          </span>
+                        )}
                         {c ? c.name || "未命名" : ACTION_LABELS[k]}
                         {c ? (
                           <span className="tag mine">我的</span>
@@ -1020,15 +1045,11 @@ export default function App() {
                       <div className="row-ctl">
                         {c && (
                           <button
-                            className={`svc-chev ${open ? "open" : ""}`}
-                            title={open ? "收起编辑" : "编辑名称与提示词"}
-                            onClick={() => {
-                              tryRunRef.current++;
-                              setTryRun(null);
-                              setActionEdit(open ? null : k);
-                            }}
+                            className="svc-chev"
+                            title="编辑动作（名称、图标、提示词、试跑）"
+                            onClick={() => openActionModal(k)}
                           >
-                            <ChevronDown size={13} strokeWidth={2} />
+                            <SquarePen size={13} strokeWidth={2} />
                           </button>
                         )}
                         <label className="switch">
@@ -1062,51 +1083,8 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* 自定义动作就地编辑：名称 + 提示词 + 试跑，不跳页 */}
-                    {c && (
-                      <div className={`svc-body ${open ? "open" : ""}`}>
-                        <div>
-                          <div className="svc-fields">
-                            <label className="field">
-                              <span>名称（显示在胶囊按钮上，建议不超过 6 字）</span>
-                              <input
-                                value={c.name}
-                                maxLength={8}
-                                placeholder="如：术语直译"
-                                onChange={(e) => updateCustom(c.id, { name: e.target.value })}
-                              />
-                            </label>
-                            <label className="field wide">
-                              <span>
-                                提示词（发给模型的指令，所选文字随后附带，无需占位符）
-                              </span>
-                              <textarea
-                                className="prompt-input in-field"
-                                spellCheck={false}
-                                placeholder="例：把下面的文本译成中文，保留英文术语并在括号内附原文，只输出译文。"
-                                value={c.prompt}
-                                onChange={(e) => updateCustom(c.id, { prompt: e.target.value })}
-                              />
-                            </label>
-                            <div className="act-foot wide">
-                              <div className="row-ctl">
-                                <button className="btn sm" onClick={() => setTryModal(c.id)}>
-                                  试跑
-                                </button>
-                                <button
-                                  className="row-del"
-                                  title="删除该动作"
-                                  aria-label="删除该动作"
-                                  onClick={() => setConfirmDel(c.id)}
-                                >
-                                  <Trash2 size={13} strokeWidth={1.75} />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                    {/* 编辑/试跑/删除已整体移入编辑模态（见 actionModal）——
+                        就地展开塞下名称+图标网格+提示词+试跑太拥挤 */}
                   </Fragment>
                 );
               })}
@@ -1157,59 +1135,130 @@ export default function App() {
               </button>
             </div>
 
-            {/* 试跑模态：样例、运行、输出都收在这里，动作行的折叠体只留名称与提示词。
-                提示词只读——两处都能改同一份 prompt 会让「保存的是哪一版」说不清 */}
+            {/* 编辑模态：名称/提示词/图标 + 试跑 + 删除在一个面板里完成——
+                写提示词 → 就地试跑 → 改，闭环不再跨两个 UI 层。
+                提示词取当前编辑内容；模型服务读已落盘配置（试跑前先保存） */}
             {(() => {
-              const c = tryModal ? customById(tryModal) : null;
-              if (!c) return null;              const running = tryRun?.id === c.id && tryRun.running;
+              const c = actionModal ? customById(actionModal) : null;
+              if (!c) return null;
+              const running = tryRun?.id === c.id && tryRun.running;
               return (
                 <Modal
-                  title={`试跑「${c.name || "未命名动作"}」`}
-                  onClose={() => setTryModal(null)}
+                  title={`自定义动作「${c.name || "未命名"}」`}
+                  onClose={() => {
+                    setActionModal(null);
+                    setDelArm(false);
+                  }}
                   footer={
                     <>
-                      <span className="row-sub">
-                        {running
-                          ? "生成中…"
-                          : "使用「模型服务」的默认模型；配置取已保存版本，提示词取当前编辑内容"}
-                      </span>
-                      <button className="btn primary sm" disabled={running} onClick={() => runTry(c)}>
-                        运行
+                      <button
+                        className={`btn sm ${delArm ? "danger" : ""}`}
+                        onClick={() => {
+                          if (!delArm) {
+                            setDelArm(true);
+                            return;
+                          }
+                          removeCustom(c.id);
+                        }}
+                      >
+                        {delArm ? "确认删除？" : "删除"}
+                      </button>
+                      <button className="btn primary sm" onClick={() => setActionModal(null)}>
+                        完成
                       </button>
                     </>
                   }
                 >
                   <label className="field">
-                    <span>提示词（在动作行里修改）</span>
-                    <pre className="prompt-default">{c.prompt.trim() || "（还没填提示词）"}</pre>
-                  </label>
-                  <label className="field">
-                    <span>样例（作为所选文字发给模型，不保存）</span>
-                    <textarea
-                      className="prompt-input in-field try-sample"
-                      spellCheck={false}
-                      placeholder="粘贴一段待处理的文字，例如：The committee deferred the decision pending further audit evidence."
-                      value={trySample[c.id] ?? ""}
-                      onChange={(e) => setTrySample((m) => ({ ...m, [c.id]: e.target.value }))}
+                    <span>名称（显示在胶囊按钮上，建议不超过 6 字）</span>
+                    <input
+                      value={c.name}
+                      maxLength={8}
+                      placeholder="如：术语直译"
+                      onChange={(e) => updateCustom(c.id, { name: e.target.value })}
                     />
                   </label>
-                  {tryRun?.id === c.id && (tryRun.out || tryRun.error) && (
-                    <pre className={`act-out ${tryRun.error ? "bad" : ""}`}>
-                      {tryRun.error ?? tryRun.out}
-                    </pre>
-                  )}
+                  <label className="field">
+                    <span>提示词（发给模型的指令，所选文字随后附带，无需占位符）</span>
+                    <textarea
+                      className="prompt-input in-field"
+                      spellCheck={false}
+                      rows={5}
+                      placeholder="例：把下面的文本译成中文，保留英文术语并在括号内附原文，只输出译文。"
+                      value={c.prompt}
+                      onChange={(e) => updateCustom(c.id, { prompt: e.target.value })}
+                    />
+                  </label>
+                  <div className="field">
+                    <span>图标（显示在胶囊按钮左侧）</span>
+                    <div className="icon-tabs" role="tablist" aria-label="图标分组">
+                      {CUSTOM_ICON_CHOICES.map((g) => (
+                        <button
+                          key={g.group}
+                          role="tab"
+                          aria-selected={iconTab === g.group}
+                          className={`icon-tab ${iconTab === g.group ? "on" : ""}`}
+                          onClick={() => setIconTab(g.group)}
+                        >
+                          {g.group}
+                        </button>
+                      ))}
+                    </div>
+                    {(() => {
+                      const group = CUSTOM_ICON_CHOICES.find((g) => g.group === iconTab);
+                      if (!group) return null;
+                      return (
+                        <div className="icon-grid" role="radiogroup" aria-label={`图标 · ${group.group}`}>
+                          {group.group === CUSTOM_ICON_CHOICES[0].group && (
+                            <button
+                              type="button"
+                              className={`icon-cell ${!c.icon ? "on" : ""}`}
+                              title="默认"
+                              aria-label="默认图标"
+                              onClick={() => updateCustom(c.id, { icon: undefined })}
+                            >
+                              <Sparkles size={16} strokeWidth={1.75} />
+                            </button>
+                          )}
+                          {group.names.map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              className={`icon-cell ${c.icon === n ? "on" : ""}`}
+                              title={n}
+                              aria-label={`${group.group} ${n}`}
+                              onClick={() => updateCustom(c.id, { icon: n })}
+                            >
+                              {customIconNode(n, 16)}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <div className="try-block">
+                    <label className="field">
+                      <span>试跑：样例（作为所选文字发给模型，不保存）</span>
+                      <textarea
+                        className="prompt-input in-field try-sample"
+                        spellCheck={false}
+                        placeholder="粘贴一段待处理的文字，例如：The committee deferred the decision pending further audit evidence."
+                        value={trySample[c.id] ?? ""}
+                        onChange={(e) => setTrySample((m) => ({ ...m, [c.id]: e.target.value }))}
+                      />
+                    </label>
+                    {tryRun?.id === c.id && (tryRun.out || tryRun.error) && (
+                      <pre className={`act-out ${tryRun.error ? "bad" : ""}`}>
+                        {tryRun.error ?? tryRun.out}
+                      </pre>
+                    )}
+                    <button className="btn sm" disabled={running} onClick={() => runTry(c)}>
+                      {running ? "生成中…" : "试跑"}
+                    </button>
+                  </div>
                 </Modal>
               );
             })()}
-
-            {confirmDel && customById(confirmDel) && (
-              <Confirm
-                title="删除动作"
-                text={`删除「${customById(confirmDel)!.name || "未命名动作"}」？提示词会一并移除。`}
-                onCancel={() => setConfirmDel(null)}
-                onConfirm={() => removeCustom(confirmDel)}
-              />
-            )}
           </>
         )}
 

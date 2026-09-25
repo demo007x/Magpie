@@ -138,6 +138,8 @@ pub struct CustomAction {
     /// system 提示词；空 = 未配置，前端拒绝执行
     pub prompt: String,
     pub enabled: bool,
+    /// 自定义图标：lucide 组件名（TS shared/icons.tsx 名单）；None = 前端默认 Sparkles
+    pub icon: Option<String>,
     /// 预留：挂到某内置动作的二级展开列表（变体挂载），当前未使用
     pub under: Option<String>,
 }
@@ -149,6 +151,7 @@ impl Default for CustomAction {
             name: String::new(),
             prompt: String::new(),
             enabled: true,
+            icon: None,
             under: None,
         }
     }

@@ -53,6 +53,8 @@ export interface CustomAction {
   /** system 提示词（user 消息固定为选中文本）；空 = 未配置，动作条上不可执行 */
   prompt: string;
   enabled: boolean;
+  /** 自定义图标：lucide 组件名（见 shared/icons.tsx 名单）；未设置 = 默认 Sparkles */
+  icon?: string;
   /** 预留：挂到某内置动作的二级展开列表（变体挂载），当前未实现 */
   under?: string;
 }

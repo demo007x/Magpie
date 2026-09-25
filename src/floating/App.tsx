@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { actionPrompt, actionRegistry, isContextAction } from "../shared/actions";
+import { customIconNode } from "../shared/icons";
 import { aiChat } from "../shared/ai";
 import {
   extractAll,
@@ -119,7 +120,10 @@ const ICONS: Record<string, React.ReactNode> = {
   // 自定义动作共用一枚图标：用户自己起的名字已经是辨识度，不做图标选择器
   __custom: <Sparkles size={14} strokeWidth={1.75} />,
 };
-const iconOf = (id: string) => ICONS[id] ?? ICONS.__custom;
+// 自定义动作带 icon（lucide 名，shared/icons.tsx）时优先用之；未设置/查不到
+// 回落内置表，再回落默认 Sparkles
+const iconOf = (id: string, icon?: string) =>
+  customIconNode(icon, 14) ?? ICONS[id] ?? ICONS.__custom;
 const CopyIcon = <Copy size={13} strokeWidth={1.75} />;
 const CheckIcon = <Check size={13} strokeWidth={2} className="ok" />;
 const CloseIcon = <X size={13} strokeWidth={1.75} />;
@@ -416,6 +420,8 @@ export default function App() {
   // OCR 面板钉住：钉住后忽略 dismiss（ref 供事件闭包读最新值）
   const [ocrPinned, setOcrPinned] = useState(false);
   const ocrPinnedRef = useRef(false);
+  // ⏱ 划词弹出耗时测量：captured 事件到达时刻，show_floating_bar 返回时结算
+  const capturedAtRef = useRef(0);
   const setOcrPinnedState = (v: boolean) => {
     ocrPinnedRef.current = v;
     setOcrPinned(v);
@@ -635,7 +641,7 @@ export default function App() {
     return i >= 0 ? i : id === "__ctx" ? searchIdx : 999;
   };
 
-  type BarEntry = { id: string; label: string; onClick: () => void };
+  type BarEntry = { id: string; label: string; icon?: string; onClick: () => void };
 
   const barEntries = (() => {
     const entries: BarEntry[] = [];
@@ -647,6 +653,7 @@ export default function App() {
       entries.push({
         id: a.id,
         label: a.label,
+        icon: a.icon,
         onClick: () => {
           setMenu(null);
           runAction(a.id);
@@ -782,13 +789,22 @@ export default function App() {
     };
 
     const unlisteners: Array<() => void> = [];
+    // StrictMode（dev 双挂载）/ 快速重挂防护：cleanup 先于 listen().then 执行时，
+    // 旧监听的 unlisten 永远进不了 unlisteners → 泄漏，事件回调从此跑两遍
+    // （症状：captured 日志双份、show_floating_bar 双 invoke）。下方各 listen 的
+    // then 里检查 cancelled：已清理则立即自行解绑。
+    let listenCancelled = false;
 
     listen<{ text: string; x: number; y: number; app?: string }>("selection://captured", (e) => {
       // 钉图窗口与划词流无关：忽略广播（防止误触发浮动条弹出/窗口移动）
       if (IS_PIN) return;
-      invoke("ui_debug_log", {
-        msg: `收到 captured 事件：len=${e.payload.text.length} (${e.payload.x.toFixed(0)},${e.payload.y.toFixed(0)}) app=${e.payload.app ?? "-"}`,
-      }).catch(() => undefined);
+      // 同一事件广播到所有窗口，OCR 窗口不重复打印（floating 主窗口一条即可）
+      if (!IS_OCR) {
+        invoke("ui_debug_log", {
+          msg: `收到 captured 事件：len=${e.payload.text.length} (${e.payload.x.toFixed(0)},${e.payload.y.toFixed(0)}) app=${e.payload.app ?? "-"}`,
+        }).catch(() => undefined);
+      }
+      capturedAtRef.current = performance.now();
       resetGhostStates();
       // 清除上一个操作可能残留的焦点态（避免新胶囊里按钮呈现选中样式）
       (document.activeElement as HTMLElement | null)?.blur?.();
@@ -861,7 +877,10 @@ export default function App() {
         .catch(() => undefined);
       setText(e.payload.text);
       setPhase({ kind: "bar" });
-    }).then((un) => unlisteners.push(un));
+    }).then((un) => {
+      if (listenCancelled) un();
+      else unlisteners.push(un);
+    });
 
     listen("selection://dismiss", () => {
       // 钉图窗口不受划词 dismiss 影响
@@ -880,7 +899,10 @@ export default function App() {
       if (IS_OCR) invoke("hide_ocr_window").catch(() => undefined);
     }).then((un) => unlisteners.push(un));
 
-    listen("settings://changed", () => loadSettings()).then((un) => unlisteners.push(un));
+    listen("settings://changed", () => loadSettings()).then((un) => {
+      if (listenCancelled) un();
+      else unlisteners.push(un);
+    });
 
     // 主窗口的动作开关/顺序/搜索引擎实时推送（无需保存即时生效）
     listen<{
@@ -902,12 +924,16 @@ export default function App() {
       if (e.payload.translateEnabled) setTranslateEnabled(e.payload.translateEnabled);
       if (e.payload.translateDefault) setTranslateDefault(e.payload.translateDefault);
       if (e.payload.translateOrder) setTranslateOrder(e.payload.translateOrder);
-    }).then((un) => unlisteners.push(un));
+    }).then((un) => {
+      if (listenCancelled) un();
+      else unlisteners.push(un);
+    });
 
     document.addEventListener("mouseleave", suspendPointer);
     document.addEventListener("mouseenter", restorePointer);
 
     return () => {
+      listenCancelled = true;
       unlisteners.forEach((u) => u());
       document.removeEventListener("mouseleave", suspendPointer);
       document.removeEventListener("mouseenter", restorePointer);
@@ -917,14 +943,14 @@ export default function App() {
   // （OCR 窗口的定位+显示已改由尺寸测量 effect 在 resize 完成后链式触发，见下）
 
   // 识别原文是否超过折叠高度：决定展开/收起按钮显示与否。
-  // 基准是折叠高度常量（63px，与 CSS 的 flex-basis 折叠基数一致）而非 clientHeight——
+  // 基准是折叠高度常量（75px，3 行 13px×1.8 + 上下 padding，与 CSS 的折叠基数一致）而非 clientHeight——
   // flex-basis 有 240ms 过渡，展开→收起瞬间测 clientHeight 仍是动画中间值，
   // 会把「有溢出」误判成「无溢出」导致切换按钮消失
   useLayoutEffect(() => {
     if (phase.kind !== "ocr") return;
     const el = sourceRef.current;
     if (!el) return;
-    setSourceOverflow(el.scrollHeight > 63 + 1);
+    setSourceOverflow(el.scrollHeight > 75 + 1);
   }, [phase]);
 
   // 结果窗口尺寸模型：宽高只由用户拖动决定（内容永不改变窗口尺寸），
@@ -1180,7 +1206,15 @@ export default function App() {
     if (pending) {
       lastSizeRef.current = sizeKey;
       invoke<WindowPos>("show_floating_bar", { x: pending.x, y: pending.y, width: tw, height: th })
-        .then(settle)
+        .then((pos) => {
+          if (capturedAtRef.current > 0) {
+            invoke("ui_debug_log", {
+              msg: `⏱ 前端段（事件→窗口已显示）：${(performance.now() - capturedAtRef.current).toFixed(0)}ms`,
+            }).catch(() => undefined);
+            capturedAtRef.current = 0;
+          }
+          settle(pos);
+        })
         .catch(() => undefined)
         .finally(() => setPending(null));
     } else if (sizeKey !== lastSizeRef.current || posKey !== lastPosKeyRef.current) {
@@ -1678,7 +1712,7 @@ export default function App() {
                 e.onClick();
               })}
             >
-              <span className="ic">{iconOf(e.id)}</span>
+              <span className="ic">{iconOf(e.id, e.icon)}</span>
               <span>{flashId === e.id ? flashMsg : e.label}</span>
             </button>
             {((e.id === "search" && enabledEngines.length > 1) ||
@@ -1752,7 +1786,7 @@ export default function App() {
                     e.onClick();
                   })}
                 >
-                  <span className="ic">{iconOf(e.id)}</span>
+                  <span className="ic">{iconOf(e.id, e.icon)}</span>
                   <span>{flashId === e.id ? flashMsg : e.label}</span>
                 </button>
                 {hasMenu && (
@@ -1919,13 +1953,20 @@ export default function App() {
           <header className={`panel-head ${IS_OCR ? "grab" : ""}`}>
             <span className="panel-title">
               <span className="ic">
-                {phase.fromOcr ? (
+                {phase.fromOcr && !phase.actionId ? (
                   <ScanSearch size={14} strokeWidth={1.75} />
                 ) : (
-                  iconOf(phase.actionId ?? "")
+                  iconOf(phase.actionId ?? "", byId(phase.actionId ?? "")?.icon)
                 )}
               </span>
-              {phase.fromOcr ? "识图取字" : (byId(phase.actionId ?? "")?.label ?? "结果")}
+              {/* 识图流：一步式动作（快捷键识图翻译/解释/总结）标题跟随动作；
+                  纯取字（无自动动作）才是「识图取字」。用户在动作条切换动作后
+                  actionId 随之变化，标题跟随当前内容 */}
+              {phase.fromOcr
+                ? phase.actionId
+                  ? `识图${byId(phase.actionId)?.label ?? "结果"}`
+                  : "识图取字"
+                : (byId(phase.actionId ?? "")?.label ?? "结果")}
               {(phase.streaming || doneFlash) && (
                 <span className={`dot ${doneFlash ? "done" : ""}`} title={phase.streaming ? "生成中" : "已完成"} />
               )}
@@ -2092,7 +2133,7 @@ export default function App() {
                       runAction(a.id);
                     })}
                   >
-                    <span className="ic">{iconOf(a.id)}</span>
+                    <span className="ic">{iconOf(a.id, a.icon)}</span>
                     <span>{a.label}</span>
                   </button>
                   {(a.id === "translate" || a.id === "search") &&
