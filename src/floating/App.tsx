@@ -7,6 +7,7 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import {
   AlignLeft,
+  CalendarDays,
   Check,
   ChevronDown,
   ClipboardCheck,
@@ -16,6 +17,7 @@ import {
   Languages,
   Lightbulb,
   Mail,
+  MapPin,
   Phone,
   Pin,
   PinOff,
@@ -50,13 +52,22 @@ const IS_PIN = WIN_LABEL.startsWith("pin-");
 
 // 上下文智能动作：由「提取信息」统一承载（多值/混合进面板），不再逐个上胶囊条
 // （id 集合见 shared/actions.ts CONTEXT_ACTION_IDS）
-type ExtractGroups = { tel: string[]; email: string[]; link: string[]; code: string[] };
+type ExtractGroups = {
+  tel: string[];
+  email: string[];
+  link: string[];
+  code: string[];
+  date: string[];
+  addr: string[];
+};
 
 const EXTRACT_GROUPS: Array<{ id: keyof ExtractGroups; label: string }> = [
   { id: "tel", label: "电话" },
   { id: "email", label: "邮箱" },
   { id: "link", label: "链接" },
   { id: "code", label: "验证码" },
+  { id: "date", label: "日期" },
+  { id: "addr", label: "地点" },
 ];
 
 /** 数量最多的实体类型（面板图标用） */
@@ -66,6 +77,57 @@ function dominantGroup(groups: ExtractGroups): string {
     if (groups[g.id].length > groups[best].length) best = g.id;
   }
   return best;
+}
+
+// ---------- 日期实体（加入日历场景动作） ----------
+// 识别在 Rust 侧（NSDataDetector，系统级/离线/确定性，entities.rs）；
+// TS 只负责格式化展示与 .ics 时间串计算（JS 原生 Date 处理本地时区）
+
+/** Rust detect_dates 的日期命中（entities.rs DateHit，camelCase） */
+interface DateHit {
+  unix: number;
+  duration: number;
+  start: number;
+  len: number;
+}
+
+/** 命中的展示标签："10月1日 周四 15:00"；零点视为全天（不带时间） */
+function formatDateLabel(h: DateHit): string {
+  const d = new Date(h.unix * 1000);
+  const base = `${d.getMonth() + 1}月${d.getDate()}日 周${"日一二三四五六"[d.getDay()]}`;
+  if (d.getHours() === 0 && d.getMinutes() === 0) return base;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${base} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** 日期命中 → 本地 .ics 交给系统日历（预填事件）。标题取选中文本前 40 字 */
+function openInCalendar(hit: DateHit, title: string, onDone?: (ok: boolean) => void): void {
+  const d = new Date(hit.unix * 1000);
+  const allDay = d.getHours() === 0 && d.getMinutes() === 0;
+  const p = (n: number) => String(n).padStart(2, "0");
+  const dt = (x: Date) =>
+    `${x.getFullYear()}${p(x.getMonth() + 1)}${p(x.getDate())}T${p(x.getHours())}${p(x.getMinutes())}00`;
+  const durMs = (hit.duration > 0 ? hit.duration : 3600) * 1000;
+  const start = allDay ? `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}` : dt(d);
+  const endDate = new Date(d.getTime() + (allDay ? 86400000 : durMs));
+  const end = allDay
+    ? `${endDate.getFullYear()}${p(endDate.getMonth() + 1)}${p(endDate.getDate())}`
+    : dt(endDate);
+  invoke("open_in_calendar", { start, end, title: title.slice(0, 40), allDay })
+    .then((ok) => onDone?.(ok === true))
+    .catch(() => onDone?.(false));
+}
+
+/** 面板行点击：从文本重检测（µs 级）并按展示标签匹配命中，打开日历。
+ *  OCR 窗口侧不保存命中列表——重新检测比跨窗口传状态简单 */
+function detectAndOpenCalendar(text: string, label: string, onDone?: (ok: boolean) => void): void {
+  invoke<DateHit[]>("detect_dates", { text })
+    .then((hits) => {
+      const hit = (hits ?? []).find((h) => formatDateLabel(h) === label);
+      if (hit) openInCalendar(hit, text, onDone);
+      else onDone?.(false);
+    })
+    .catch(() => onDone?.(false));
 }
 
 /** URL 展示：域名正文字色、路径弱化灰，并列多条时一眼分辨站点。
@@ -116,6 +178,8 @@ const ICONS: Record<string, React.ReactNode> = {
   email: <Mail size={14} strokeWidth={1.75} />,
   code: <ClipboardCheck size={14} strokeWidth={1.75} />,
   tel: <Phone size={14} strokeWidth={1.75} />,
+  date: <CalendarDays size={14} strokeWidth={1.75} />,
+  addr: <MapPin size={14} strokeWidth={1.75} />,
   __extract: <ScanSearch size={14} strokeWidth={1.75} />,
   // 自定义动作共用一枚图标：用户自己起的名字已经是辨识度，不做图标选择器
   __custom: <Sparkles size={14} strokeWidth={1.75} />,
@@ -144,6 +208,8 @@ type Phase =
     actionId: string;
     label: string;
     groups: ExtractGroups;
+    /** 原始选中文本：日期实体异步合并、「加入日历」行点击时重检测用 */
+    text?: string;
   }
   | {
     /** OCR 识图取字：合并面板（文本可见 + 动作内嵌 + 结果流式）。
@@ -614,7 +680,58 @@ export default function App() {
   // 实体提取与胶囊分流：
   // 无实体 → 现状；恰好 1 个实体 → 对应动作一键直达（占「搜索」位，搜索隐藏）；
   // ≥2 个实体（同类型多个或混合类型）→ 单一「提取信息」按钮，点击进分组面板。
-  // 四类动作均可在主界面动作卡片关闭（关闭的类型不提取、不计数）。
+  // 各类动作均可在主界面动作卡片关闭（关闭的类型不提取、不计数）。
+  // 日期/地点是异步识别（Rust 命令：NSDataDetector 日期 + NLTagger 地名 NER，µs 级）：
+  // text 到达后胶囊先出，命中随即补进分组——晚几十毫秒的渐进出现，换来热路径零负担
+  const [dateHits, setDateHits] = useState<DateHit[]>([]);
+  const [placeHits, setPlaceHits] = useState<string[]>([]);
+  useEffect(() => {
+    if (IS_OCR || IS_PIN) return; // OCR 窗口的实体在提取面板 effect 里拉
+    if (!text.trim()) {
+      setDateHits([]);
+      setPlaceHits([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all([
+      invoke<DateHit[]>("detect_dates", { text }).catch(() => []),
+      invoke<string[]>("detect_places", { text }).catch(() => []),
+    ]).then(([dates, places]) => {
+      if (cancelled) return;
+      setDateHits(dates ?? []);
+      setPlaceHits(places ?? []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [text]);
+
+  // OCR 窗口：提取面板的日期/地点组异步补齐（划词导流的多实体面板在此渲染）。
+  // 只在两组都为空时拉取——合并后 effect 重入会提前返回，不会循环
+  useEffect(() => {
+    if (!IS_OCR || phase.kind !== "extract" || !phase.text) return;
+    if (phase.groups.date.length > 0 || phase.groups.addr.length > 0) return;
+    const t = phase.text;
+    Promise.all([
+      invoke<DateHit[]>("detect_dates", { text: t }).catch(() => []),
+      invoke<string[]>("detect_places", { text: t }).catch(() => []),
+    ]).then(([dates, places]) => {
+      if (!dates?.length && !places?.length) return;
+      setPhase((p) =>
+        p.kind === "extract" && p.text === t
+          ? {
+              ...p,
+              groups: {
+                ...p.groups,
+                date: (dates ?? []).map(formatDateLabel),
+                addr: places ?? [],
+              },
+            }
+          : p,
+      );
+    });
+  }, [phase]);
+
   const extracted = useMemo(() => {
     const all = extractAll(text);
     const groups: ExtractGroups = {
@@ -622,10 +739,18 @@ export default function App() {
       email: actions.email !== false ? all.emails : [],
       link: actions.link !== false ? all.urls : [],
       code: actions.code !== false ? all.codes : [],
+      date: actions.date !== false ? dateHits.map(formatDateLabel) : [],
+      addr: actions.addr !== false ? placeHits : [],
     };
-    const total = groups.tel.length + groups.email.length + groups.link.length + groups.code.length;
+    const total =
+      groups.tel.length +
+      groups.email.length +
+      groups.link.length +
+      groups.code.length +
+      groups.date.length +
+      groups.addr.length;
     return { groups, total };
-  }, [text, actions]);
+  }, [text, actions, dateHits, placeHits]);
 
   // 消费端注册表 = 内置动作 + 已启用的自定义动作。
   // 停用与否在这里一次性筛掉，下游（胶囊条 / 结果窗动作条 / runAction）不再判开关
@@ -667,9 +792,13 @@ export default function App() {
           ? { id: "link", label: "打开链接" }
           : g.email.length === 1
             ? { id: "email", label: "写邮件" }
-            : g.tel.length === 1
-              ? { id: "tel", label: "复制号码" }
-              : { id: "code", label: "复制验证码" };
+            : g.date.length === 1
+              ? { id: "date", label: "加入日历" }
+              : g.addr.length === 1
+                ? { id: "addr", label: "打开地图" }
+                : g.tel.length === 1
+                  ? { id: "tel", label: "复制号码" }
+                  : { id: "code", label: "复制验证码" };
       entries.push({
         id: single.id,
         label: single.label,
@@ -742,19 +871,22 @@ export default function App() {
             expanded: false,
           });
           if (p.run?.id === "__extract") {
-            // 提取信息：结果窗口本地从文本计算分组
+            // 提取信息：结果窗口本地从文本计算分组（日期组异步补齐，见 extract effect）
             const all = extractAll(p.text);
             const groups: ExtractGroups = {
               tel: all.tels,
               email: all.emails,
               link: all.urls,
               code: all.codes,
+              date: [],
+              addr: [],
             };
             setPhase({
               kind: "extract",
               actionId: dominantGroup(groups),
               label: "提取结果",
               groups,
+              text: p.text,
             });
           } else {
             setPhase({
@@ -843,12 +975,15 @@ export default function App() {
                 email: all.emails,
                 link: all.urls,
                 code: all.codes,
+                date: [],
+                addr: [],
               };
               setPhase({
                 kind: "extract",
                 actionId: dominantGroup(groups),
                 label: "提取结果",
                 groups,
+                text: p.text,
               });
             } else {
               setPhase({
@@ -1464,6 +1599,22 @@ export default function App() {
         flash(id, `已复制 ${code}`);
         return;
       }
+
+      if (id === "date") {
+        const hit = dateHits[0];
+        if (!hit) return;
+        openInCalendar(hit, t, (ok) => flash(id, ok ? "已打开日历" : "打开失败"));
+        return;
+      }
+
+      if (id === "addr") {
+        const place = placeHits[0];
+        if (!place) return;
+        invoke("open_url", { url: `maps://?q=${encodeURIComponent(place)}` })
+          .then(() => flash(id, "已在地图打开"))
+          .catch(() => flash(id, "打开失败"));
+        return;
+      }
       return;
     }
 
@@ -1914,6 +2065,29 @@ export default function App() {
                           )}
                         >
                           邮件
+                        </button>
+                      )}
+                      {g.id === "date" && (
+                        <button
+                          onClick={guarded(() => {
+                            if (!phase.text) return;
+                            detectAndOpenCalendar(phase.text, item, (ok) => {
+                              if (!ok) flash("date", "打开失败");
+                            });
+                          })}
+                        >
+                          日历
+                        </button>
+                      )}
+                      {g.id === "addr" && (
+                        <button
+                          onClick={guarded(() =>
+                            invoke("open_url", {
+                              url: `maps://?q=${encodeURIComponent(item)}`,
+                            }).catch(() => undefined),
+                          )}
+                        >
+                          地图
                         </button>
                       )}
                       <button

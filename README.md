@@ -35,17 +35,20 @@ Every piece of text on your screen is one mouse gesture away: select or capture 
   <img src="docs/images/settings_search.png" width="49%" alt="Main window · search settings" />
 </p>
 
-## Implemented Features (M1 / MVP)
+## Implemented Features (v0.1.7)
 
 - **Global selection capture** — select text in any app to summon the bar; drag-select or double-click both work, and the same selection never pops twice
-- **Floating bar** — frosted-glass capsule near your cursor, auto edge-clamping, never steals focus, light/dark theme aware
-- **Nine actions** — Translate / Explain / Summarize (AI-generated, streamed) + Copy / Search / Open Link / Compose Email / Copy Code / Copy Phone; order and visibility configurable
-- **Context-aware actions** — links, emails, verification codes and phone numbers in the selected text are detected automatically: a single entity is one click away (open / compose / copy), multiple entities open a grouped panel for batch operations, and plain text never triggers false popups
+- **Floating bar** — pops centered above the mouse cursor, auto edge-clamping, never steals focus, light/dark theme aware; roughly 80ms from mouse-up to capsule
+- **Eleven actions** — Translate / Explain / Summarize (AI-generated, streamed) + Copy / Search / Open Link / Compose Email / Copy Code / Copy Phone + Add to Calendar / Open in Maps; order and visibility configurable
+- **Context-aware actions** — links, emails, verification codes, phone numbers, dates and places in the selected text are detected automatically: a single entity is one click away (open / compose / copy / calendar / maps), multiple entities open a grouped panel for batch operations, and plain text never triggers false popups
+- **Screen OCR** — hotkey / tray region capture → Vision OCR (isolated helper process, crashes can't take the app down) → one-step OCR translate / explain / summarize; Snipaste-style pinned images can loop back into OCR
+- **Result window** — AI results and recognized text open in a standalone persistent window: pin, drag, remembered position & size, with an Esc / ⌘P / ⌘W keyboard loop
+- **Custom AI actions** — name + prompt + a lucide icon become capsule buttons (up to 10, ordered with the built-ins); editing, try-run, and deletion close the loop inside one dialog
 - **Dedicated permissions page** — Accessibility, Input Monitoring, and a capture health check in one place, with one-click guided authorization
 - **Three translation channels** — AI translation (LLM), Baidu Translate, and DeepL; click for the default, expand to switch
 - **Custom search engines** — ships with Baidu AI / Baidu / Google AI / Google / Bing / GitHub; any `{q}` URL template works
-- **BYOK** — bring your own API key; DeepSeek preset, works with any OpenAI-compatible endpoint
-- **Menu bar resident** — Dock icon hidden by default; closing the main window just hides it while capture keeps running
+- **BYOK** — bring your own API key; DeepSeek preset, works with any OpenAI-compatible endpoint; the prompts behind Translate / Explain / Summarize are editable in settings
+- **Menu bar resident** — Dock icon hidden by default; closing the main window just hides it while capture keeps running; GitHub update checks (notify only, never self-updates)
 - **App blocklist** — no triggering inside terminals, password managers, or other sensitive apps; mute apps from the system panel — system apps are reliably covered too
 - **Compatibility mode** — text selection also works in WeChat, Office, and similar apps, without disturbing your clipboard contents
 

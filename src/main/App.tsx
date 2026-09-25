@@ -176,6 +176,8 @@ const ACTION_LABELS: Record<string, string> = {
   email: "写邮件",
   code: "复制验证码",
   tel: "复制号码",
+  date: "加入日历",
+  addr: "打开地图",
 };
 
 const ACTION_DESC: Record<string, string> = {
@@ -188,6 +190,8 @@ const ACTION_DESC: Record<string, string> = {
   email: "选中的是邮箱时，唤起邮件客户端",
   code: "选中含验证码时，一键复制纯数字",
   tel: "选中含电话号码时，一键复制号码",
+  date: "选中含日期时间时（如“周四下午3点”），一键预填进日历",
+  addr: "选中含地点时（如“国贸B座”），一键在地图打开",
 };
 
 const isAiAction = (id: string) => ACTIONS.find((a) => a.id === id)?.kind === "ai";

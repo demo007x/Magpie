@@ -3,6 +3,7 @@
 mod ai;
 mod app_picker;
 mod capture;
+mod entities;
 mod floating;
 mod ocr;
 mod pin;
@@ -237,7 +238,9 @@ fn open_url(url: String) -> bool {
     true
 }
 
-/// 白名单：http(s)；mailto（严格 local@domain，无空格无路径，杜绝注入面）
+/// 白名单：http(s)；mailto（严格 local@domain，无空格无路径，杜绝注入面）；
+/// maps://（原生地图搜索，[打开地图] 场景动作——查询由 encodeURIComponent 编码，
+/// 仅要求无空白/控制字符且总长受限）
 fn is_safe_url(url: &str) -> bool {
     if url.starts_with("https://") || url.starts_with("http://") {
         return true;
@@ -247,6 +250,9 @@ fn is_safe_url(url: &str) -> bool {
             return false;
         }
         return matches!(addr.split_once('@'), Some((local, domain)) if !local.is_empty() && domain.contains('.'));
+    }
+    if url.starts_with("maps://") {
+        return url.len() < 512 && !url.chars().any(|c| c.is_whitespace() || c.is_control());
     }
     false
 }
@@ -379,6 +385,9 @@ fn main() {
             ai::baidu_translate,
             ai::deepl_translate,
             ai::ai_chat,
+            entities::detect_dates,
+            entities::detect_places,
+            entities::open_in_calendar,
             floating::show_floating_bar,
             floating::resize_floating,
             floating::hide_floating_bar,

@@ -149,6 +149,16 @@ export const ACTIONS: ActionDef[] = [
     label: "复制号码",
     kind: "local",
   },
+  {
+    id: "date",
+    label: "加入日历",
+    kind: "local",
+  },
+  {
+    id: "addr",
+    label: "打开地图",
+    kind: "local",
+  },
 ];
 
 export function actionById(id: string): ActionDef | undefined {
@@ -158,5 +168,5 @@ export function actionById(id: string): ActionDef | undefined {
 /** 上下文动作：选中内容里出现对应实体才上胶囊，因此它们的相互顺序对胶囊无意义
     （恰好一个 → 该动作单独出现；多个 → 合并成一个「提取信息」按钮）。
     设置页据此把它们与常驻动作分成两张卡（见 main/App.tsx） */
-export const CONTEXT_ACTION_IDS = new Set(["link", "email", "tel", "code"]);
+export const CONTEXT_ACTION_IDS = new Set(["link", "email", "tel", "code", "date", "addr"]);
 export const isContextAction = (id: string) => CONTEXT_ACTION_IDS.has(id);

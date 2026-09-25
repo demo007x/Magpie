@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-09-25
+
 ### Added
 
+- **Scene exit actions: Add to Calendar & Open in Maps** — select a sentence with a date ("周四下午3点开会") and a calendar button appears on the capsule, prefilling a new event in the system Calendar; select a place ("国贸B座" / "北京天安门") and a maps button opens the native Maps app. Dates use Apple's NSDataDetector (offline, deterministic, handles Chinese relative dates); places use Apple's NaturalLanguage named-entity recognition (`NLTagger` placeName, offline on-device) — precision-first: junk like bare type words ("校区/园区") and sentence fragments are never surfaced, and missed detections simply mean no button. Both live in the existing entity-extraction framework (single entity → direct capsule button; multiple → the extract panel with per-row actions) and can be toggled per-action in settings. Zero AI APIs, zero external services, zero new permissions.
 - **Custom action icons**: pick a lucide icon (36 presets in 5 groups) when creating or editing a custom action, so your own actions no longer all share the sparkle. The choice shows on the capsule, the overflow panel, and the OCR result window; unset falls back to the default. Stored as the icon name in settings — older configs without the field keep working.
 
 ### Changed
@@ -16,10 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Custom action editing moves into a dialog**: the settings list row no longer expands inline — a pencil button opens a dialog containing the name, prompt, icon picker (grouped), the try-run panel, and delete with an inline confirm step. Writing a prompt, testing it, and tweaking it now happens in one place instead of jumping between the row and a separate dialog.
 - **Adaptive selection debounce**: drag-selection now waits only 30ms before the accessibility query (the selection is already final on mouse-up), while double/triple-click keeps the configurable 200ms wait (the app computes the selection after mouse-up). Perceived capsule latency drops from ~250ms to ~80ms on drag.
 - **Capsule placement**: the floating bar now always appears centered above the mouse cursor (16px card gap, flipping below near the screen top), replacing both the old bottom-right anchoring and an experimental selection-anchored variant — Chromium/Electron apps don't expose selection geometry, so one consistent anchor won out (ADR-06).
+- **OCR source text typography**: the recognized-source area now shares the result area's reading metrics (13px / 1.8 line height / letter spacing) in a neutral gray-blue, with a left quote bar marking it as source and a faint hover tint hinting that the text is editable in place; the collapsed three-line fold height was re-derived for the new metrics.
 
 ### Fixed
 
 - **Range-fallback text capture never worked**: the AXValue type constant for `CFRange` was wrong (3 = CGRect instead of 4), so the "AXSelectedTextRange + AXStringForRange" fallback (needed by WeChat and other Qt-drawn text views) silently failed on every attempt and slid into clipboard compatibility mode. Now functional.
+- **Result-window title ignored the running action**: a 识图总结 (⌃⇧D) session showed the generic 识图取字 title. The title (and icon) now follows the current action — 识图翻译 / 识图解释 / 识图总结 — while pure text recognition keeps 识图取字.
 - **Dev-only double event handling**: event listeners registered in the React effect could leak across StrictMode remounts (cleanup ran before `listen()` resolved), making every selection event be handled twice in dev builds.
 
 ## [0.1.6] - 2026-09-21

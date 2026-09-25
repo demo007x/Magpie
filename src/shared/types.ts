@@ -21,6 +21,10 @@ export interface ActionFlags {
   code: boolean;
   /** 上下文动作：选中文本含电话号码时出现「复制号码」 */
   tel: boolean;
+  /** 上下文动作：选中文本含日期时出现「加入日历」 */
+  date: boolean;
+  /** 上下文动作：选中文本含地点时出现「打开地图」 */
+  addr: boolean;
 }
 
 export interface SearchEngine {

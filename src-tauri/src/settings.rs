@@ -46,6 +46,10 @@ pub struct Actions {
     pub code: bool,
     /// 上下文动作：选中文本含电话号码时「复制号码」
     pub tel: bool,
+    /// 上下文动作：选中文本含日期时「加入日历」（NSDataDetector）
+    pub date: bool,
+    /// 上下文动作：选中文本含地点时「打开地图」（启发式）
+    pub addr: bool,
 }
 
 impl Default for Actions {
@@ -60,6 +64,8 @@ impl Default for Actions {
             email: true,
             code: true,
             tel: true,
+            date: true,
+            addr: true,
         }
     }
 }
