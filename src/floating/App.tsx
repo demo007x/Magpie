@@ -678,8 +678,9 @@ export default function App() {
 
   // 按用户自定义顺序渲染（未配置的按注册表顺序排在后面）。
   // 实体提取与胶囊分流：
-  // 无实体 → 现状；恰好 1 个实体 → 对应动作一键直达（占「搜索」位，搜索隐藏）；
+  // 无实体 → 不出现；恰好 1 个实体 → 对应动作一键直达；
   // ≥2 个实体（同类型多个或混合类型）→ 单一「提取信息」按钮，点击进分组面板。
+  // 动态上下文按钮置顶、不占常驻名额（见 barEntries / ctxEntry 处注释）。
   // 各类动作均可在主界面动作卡片关闭（关闭的类型不提取、不计数）。
   // 日期/地点是异步识别（Rust 命令：NSDataDetector 日期 + NLTagger 地名 NER，µs 级）：
   // text 到达后胶囊先出，命中随即补进分组——晚几十毫秒的渐进出现，换来热路径零负担
@@ -768,13 +769,13 @@ export default function App() {
 
   type BarEntry = { id: string; label: string; icon?: string; onClick: () => void };
 
+  // 常驻动作列表：上下文动作不在其中——它们由本次选中的内容触发，是动态附加层，
+  // 置顶显示、不占「胶囊显示数量」名额、不替换（含隐藏）任何常驻动作
   const barEntries = (() => {
     const entries: BarEntry[] = [];
     for (const a of registry) {
-      // 上下文动作不上胶囊条：由提取结果统一决定胶囊条上的上下文按钮
       if (isContextAction(a.id)) continue;
       if (actions[a.id] === false) continue;
-      if (a.id === "search" && extracted.total > 0) continue; // 搜索位让给提取按钮
       entries.push({
         id: a.id,
         label: a.label,
@@ -785,6 +786,13 @@ export default function App() {
         },
       });
     }
+    entries.sort((a, b) => orderKey(a.id) - orderKey(b.id));
+    return entries;
+  })();
+
+  // 动态上下文按钮：检测到实体才出现，渲染在胶囊最前（对本条选中内容而言，
+  // 它比常驻动作更相关）；与常驻动作互不挤占——8 个常驻 + 1 个上下文 = 9 个可见
+  const ctxEntry: BarEntry | null = (() => {
     if (extracted.total === 1) {
       const g = extracted.groups;
       const single =
@@ -799,16 +807,17 @@ export default function App() {
                 : g.tel.length === 1
                   ? { id: "tel", label: "复制号码" }
                   : { id: "code", label: "复制验证码" };
-      entries.push({
+      return {
         id: single.id,
         label: single.label,
         onClick: () => {
           setMenu(null);
           runAction(single.id);
         },
-      });
-    } else if (extracted.total > 1) {
-      entries.push({
+      };
+    }
+    if (extracted.total > 1) {
+      return {
         id: "__extract",
         label: "提取信息",
         onClick: () => {
@@ -822,10 +831,9 @@ export default function App() {
           invoke("hide_floating_bar").catch(() => undefined);
           setPhase({ kind: "bar" });
         },
-      });
+      };
     }
-    entries.sort((a, b) => orderKey(a.id) - orderKey(b.id));
-    return entries;
+    return null;
   })();
 
   // 胶囊固定显示前 4 个动作（顺序 = 设置页 actionOrder），其余收进最右 ⌄N；
@@ -1847,6 +1855,21 @@ export default function App() {
       {/* 划词胶囊条：仅主浮动窗口渲染（OCR 独立窗口只显示识别面板） */}
       {!IS_OCR && (
       <div className="bar" role="toolbar" ref={barRef}>
+        {/* 动态上下文按钮置顶：检测到实体才出现，附加层不占常驻名额 */}
+        {ctxEntry && (
+          <span className="action-slot">
+            <button
+              className="action"
+              onClick={guarded(() => {
+                setMenu(null);
+                ctxEntry.onClick();
+              })}
+            >
+              <span className="ic">{iconOf(ctxEntry.id)}</span>
+              <span>{flashId === ctxEntry.id ? flashMsg : ctxEntry.label}</span>
+            </button>
+          </span>
+        )}
         {topEntries.map((e) => (
           <span key={e.id} className="action-slot">
             <button
