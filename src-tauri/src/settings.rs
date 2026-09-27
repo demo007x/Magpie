@@ -261,12 +261,7 @@ impl Default for Settings {
             ocr_translate_shortcut: default_ocr_translate_shortcut(),
             ocr_explain_shortcut: default_ocr_explain_shortcut(),
             ocr_summarize_shortcut: default_ocr_summarize_shortcut(),
-            app_blacklist: vec![
-                "Terminal".into(),
-                "iTerm".into(),
-                "1Password".into(),
-                "Passwords".into(),
-            ],
+            app_blacklist: vec!["1Password".into(), "Passwords".into()],
             debounce_ms: 200,
             result_window_pos: None,
             result_window_size: None,

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Default blocklist slimmed**: the out-of-the-box 禁用应用 list is now just 1Password / Passwords — Terminal and iTerm are no longer preset. Existing settings files are unaffected (stored values always win over code defaults).
 - **Context actions lead the capsule**: 提取信息 and single-entity actions (加入日历 / 复制验证码 / …) now appear at the front of the capsule as an additive dynamic layer — they no longer consume the configured capsule slot count, push resident actions into the overflow, or hide 搜索. A full 8-slot capsule shows 9 buttons when the selection matches an entity, and the context button is always the first, most relevant click.
 
 ## [0.1.7] - 2026-09-25
