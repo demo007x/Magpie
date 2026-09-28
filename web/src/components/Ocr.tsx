@@ -63,7 +63,7 @@ export function Ocr() {
               {d.ocr.rules.map((r, i) => {
                 const Icon = RULE_ICONS[i];
                 return (
-                  <li key={r.slice(0, 8)} className="flex gap-3">
+                  <li key={`rule-${i}`} className="flex gap-3">
                     {Icon && (
                       <Icon size={16} strokeWidth={1.9} className="mt-0.5 shrink-0 text-accent" />
                     )}

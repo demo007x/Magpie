@@ -20,10 +20,10 @@ export function Custom() {
       lead={d.custom.lead}
     >
       <GroupTag text={d.custom.group1.tag} note={d.custom.group1.note} />
-      <div className="grid items-start gap-4 lg:grid-cols-[1.1fr_1fr]">
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
         <List items={d.custom.items} />
-        <Reveal delay={0.1} y={20} className="min-w-0">
-          <div className="mock-card overflow-hidden">
+        <Reveal delay={0.1} y={20} className="h-full min-w-0">
+          <div className="mock-card flex h-full flex-col overflow-hidden">
             <div className="flex items-center gap-2 border-b border-line px-5 py-3 text-[12px] text-mute">
               新建 AI 动作
               <span className="ml-auto text-mute-soft">自定义动作 3 / 10</span>
@@ -42,7 +42,7 @@ export function Custom() {
                 value="这个方案真的超级无敌爆炸好用！！！"
                 area
               />
-              <div className="flex items-center gap-2 pt-1">
+              <div className="mt-auto flex items-center gap-2 pt-1">
                 <span className="flex items-center gap-1.5 rounded-lg bg-ink px-3 py-2 text-[12px] font-medium text-bg">
                   <Play size={12} strokeWidth={2.4} />
                   试跑
@@ -59,14 +59,14 @@ export function Custom() {
 
       <div className="mt-14">
         <GroupTag text={d.custom.group2.tag} note={d.custom.group2.note} />
-        <div className="grid items-start gap-4 lg:grid-cols-[1fr_1.1fr]">
-          <Reveal y={20} className="min-w-0">
-            <div className="mock-card overflow-hidden">
+        <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
+          <Reveal y={20} className="h-full min-w-0">
+            <div className="mock-card flex h-full flex-col overflow-hidden">
               <div className="flex items-center gap-2 border-b border-line px-5 py-3 text-[12px] text-mute">
                 搜索引擎
                 <span className="ml-auto text-mute-soft">{"{q}"} 为选中文本占位符</span>
               </div>
-              <ul>
+              <ul className="flex-1">
                 {ENGINE_ROWS.map((e) => (
                   <li
                     key={e.name}
@@ -99,7 +99,7 @@ export function Custom() {
                   </li>
                 ))}
               </ul>
-              <p className="border-t border-line px-5 py-3 text-[11.5px] text-mute-soft">
+              <p className="mt-auto border-t border-line px-5 py-3 text-[11.5px] text-mute-soft">
                 内置引擎支持停用与排序，自定义引擎可增删；调整即时生效。
               </p>
             </div>
@@ -130,7 +130,7 @@ function List({
   delay?: number;
 }) {
   return (
-    <div className="min-w-0 space-y-3">
+    <div className="flex h-full min-w-0 flex-col justify-between gap-3">
       {items.map((c, i) => (
         <Reveal key={c.title} delay={delay + i * 0.06} y={16}>
           <div className="rounded-2xl border border-line bg-panel lift p-5">

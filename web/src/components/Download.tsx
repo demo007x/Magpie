@@ -64,7 +64,7 @@ export function Download() {
                   </span>
                   <div>
                     <p className="text-[15.5px] leading-snug font-semibold tracking-tight">{s.t}</p>
-                    <p className="mt-1 text-[13.5px] leading-relaxed text-mute">{s.d}</p>
+                    <p className="mt-1 whitespace-pre-line text-[13.5px] leading-relaxed text-mute">{s.d}</p>
                   </div>
                 </li>
               ))}
