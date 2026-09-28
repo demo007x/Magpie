@@ -24,6 +24,8 @@ Every piece of text on your screen is one mouse gesture away: select or capture 
 
 **Magpie (拾趣)** is the entry hub for the first text source, triggered by your mouse. Select text or capture the screen in *any* macOS app and a floating bar instantly offers translate / explain / summarize with streaming output. Unlike pure selection tools, Magpie covers all visible text with a dual pipeline (selection + OCR capture) — zero-cost capture via Accessibility APIs with a compatibility-mode fallback that restores the clipboard. Models are BYOK and never locked in; downstream, it connects to the professional tools you already use — **integrate, don't rebuild**.
 
+**Website**: [demo007x.github.io/Magpie](https://demo007x.github.io/Magpie/) — product intro & screenshots
+
 ## Screenshots
 
 ![Magpie in action: select text anywhere → floating bar → streaming result](docs/images/hero.png)
