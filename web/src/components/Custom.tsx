@@ -1,23 +1,27 @@
 import { GripVertical, Play, Trash2 } from "lucide-react";
-import { CUSTOM_AI, CUSTOM_ROUTES, ENGINE_ROWS } from "../data";
+import { ENGINE_ROWS } from "../data";
+import { useSite } from "../i18n";
 import { Reveal } from "./Reveal";
 import { Section } from "./Section";
 
 export function Custom() {
+  const { d } = useSite();
   return (
     <Section
       id="custom"
-      eyebrow="Customization"
+      eyebrow={d.custom.eyebrow}
       title={
         <>
-          模型、提示词、动作、检索与显示，<span className="text-accent">均可在设置中修改</span>
+          {d.custom.titlePre}
+          <span className="text-accent">{d.custom.titleAccent}</span>
+          {d.custom.titlePost}
         </>
       }
-      lead="可自定义的范围包括：模型服务、动作提示词、自定义动作、搜索引擎、翻译服务、快捷键、浮动条动作数量与顺序、应用禁用列表与外观。"
+      lead={d.custom.lead}
     >
-      <GroupTag text="AI 相关" note="Prompt 设置 · 自定义动作 · 模型服务" />
+      <GroupTag text={d.custom.group1.tag} note={d.custom.group1.note} />
       <div className="grid items-start gap-4 lg:grid-cols-[1.1fr_1fr]">
-        <List items={CUSTOM_AI} />
+        <List items={d.custom.items} />
         <Reveal delay={0.1} y={20} className="min-w-0">
           <div className="mock-card overflow-hidden">
             <div className="flex items-center gap-2 border-b border-line px-5 py-3 text-[12px] text-mute">
@@ -54,7 +58,7 @@ export function Custom() {
       </div>
 
       <div className="mt-14">
-        <GroupTag text="检索与显示" note="搜索引擎 · 翻译服务 · 快捷键 · 浮动条 · 应用与外观" />
+        <GroupTag text={d.custom.group2.tag} note={d.custom.group2.note} />
         <div className="grid items-start gap-4 lg:grid-cols-[1fr_1.1fr]">
           <Reveal y={20} className="min-w-0">
             <div className="mock-card overflow-hidden">
@@ -100,7 +104,7 @@ export function Custom() {
               </p>
             </div>
           </Reveal>
-          <List items={CUSTOM_ROUTES} delay={0.06} />
+          <List items={d.custom.routes} delay={0.06} />
         </div>
       </div>
     </Section>

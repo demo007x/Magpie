@@ -1,24 +1,27 @@
 import { KeyRound, ShieldCheck, Eye, BadgeDollarSign } from "lucide-react";
-import { TRUST } from "../data";
+import { useSite } from "../i18n";
 import { Reveal } from "./Reveal";
 import { Section } from "./Section";
 
 const ICONS = [KeyRound, ShieldCheck, Eye, BadgeDollarSign];
 
 export function Trust() {
+  const { d } = useSite();
   return (
     <Section
       id="trust"
-      eyebrow="Privacy & Price"
+      eyebrow={d.trust.eyebrow}
       title={
         <>
-          权限、<span className="text-accent">数据去向与费用</span>
+          {d.trust.titlePre}
+          <span className="text-accent">{d.trust.titleAccent}</span>
+          {d.trust.titlePost}
         </>
       }
-      lead="以下说明拾趣读取的内容、使用的系统权限、数据的存储与发送范围，以及免费与需要自备服务的边界。"
+      lead={d.trust.lead}
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        {TRUST.map((t, i) => {
+        {d.trust.items.map((t, i) => {
           const Icon = ICONS[i];
           return (
             <Reveal key={t.title} delay={(i % 2) * 0.07} y={18}>
@@ -36,7 +39,7 @@ export function Trust() {
 
       <Reveal delay={0.1}>
         <p className="mt-6 text-[13px] leading-relaxed text-mute-soft">
-          系统权限共三项：辅助功能与输入监控用于取词，屏幕录制用于识图框选。权限用途与授权状态在设置页「权限」中逐项列出。
+          {d.trust.note}
         </p>
       </Reveal>
     </Section>

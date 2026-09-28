@@ -1,17 +1,19 @@
-import { FAQ, RELEASES } from "../data";
+import { RELEASES } from "../data";
+import { useSite } from "../i18n";
 import { Reveal } from "./Reveal";
 import { Section } from "./Section";
 
 export function Faq() {
+  const { d } = useSite();
   return (
     <Section
       id="faq"
-      eyebrow="FAQ"
-      title="常见问题"
-      lead="如有其他问题，可在 GitHub 仓库提交 issue。"
+      eyebrow={d.faq.eyebrow}
+      title={d.faq.title}
+      lead={d.faq.lead}
     >
       <div className="grid items-start gap-4 sm:grid-cols-2">
-        {FAQ.map((item, i) => (
+        {d.faq.items.map((item, i) => (
           <Reveal key={item.q} delay={(i % 2) * 0.06} y={18}>
             <div className="group rounded-2xl border border-line bg-panel lift p-6 transition-colors duration-300 hover:border-accent-line hover:bg-card">
               <div className="flex items-baseline gap-2.5">
@@ -35,7 +37,7 @@ export function Faq() {
           rel="noreferrer"
           className="mt-8 inline-flex items-center gap-1.5 text-[13px] text-mute transition-colors hover:text-ink"
         >
-          查看版本更新记录 →
+          {d.faq.more}
         </a>
       </Reveal>
     </Section>

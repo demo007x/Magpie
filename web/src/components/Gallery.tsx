@@ -1,21 +1,24 @@
-import { SHOTS } from "../data";
+import { useSite } from "../i18n";
 import { Reveal } from "./Reveal";
 import { Section } from "./Section";
 
 export function Gallery() {
+  const { d } = useSite();
   return (
     <Section
       id="gallery"
-      eyebrow="Interface"
+      eyebrow={d.gallery.eyebrow}
       title={
         <>
-          实际<span className="text-accent">界面</span>
+          {d.gallery.titlePre}
+          <span className="text-accent">{d.gallery.titleAccent}</span>
+          {d.gallery.titlePost}
         </>
       }
-      lead="浮动条、识图取字、结果窗、设置页与钉图的 macOS 实际截图，未经重绘或合成。"
+      lead={d.gallery.lead}
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        {SHOTS.map((s, i) => (
+        {d.gallery.shots.map((s, i) => (
           <Reveal key={s.file} delay={(i % 2) * 0.06} y={18} className={s.cls}>
             <figure className="group flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-panel lift">
               <a

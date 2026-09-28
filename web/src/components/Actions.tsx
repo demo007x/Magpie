@@ -1,24 +1,27 @@
-import { Copy, Globe, Languages, Lightbulb, ListChecks, Mail, ScanText } from "lucide-react";
-import { ACTIONS } from "../data";
+import { CalendarDays, Copy, Globe, Languages, Lightbulb, ListChecks, Mail, ScanText } from "lucide-react";
+import { useSite } from "../i18n";
 import { Reveal } from "./Reveal";
 import { Section } from "./Section";
 
-const ICONS = [Languages, Lightbulb, ListChecks, Copy, ScanText, Mail];
+const ICONS = [Languages, Lightbulb, ListChecks, Copy, ScanText, Mail, CalendarDays];
 
 export function Actions() {
+  const { d } = useSite();
   return (
     <Section
       id="actions"
-      eyebrow="Actions"
+      eyebrow={d.actions.eyebrow}
       title={
         <>
-          内置 <span className="text-accent">9 个动作</span>，分为 AI 与本地两类
+          {d.actions.titlePre}
+          <span className="text-accent">{d.actions.titleAccent}</span>
+          {d.actions.titlePost}
         </>
       }
-      lead="翻译、解释、总结由所选模型服务完成；复制、搜索、打开链接、写邮件与提取信息在本机完成。浮动条默认显示 4 个动作，其余收入展开面板；可用动作随选中内容类型变化，选中网址时提供「打开链接」，选中邮箱时提供「写邮件」。"
+      lead={d.actions.lead}
     >
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {ACTIONS.map((a, i) => {
+        {d.actions.items.map((a, i) => {
           const Icon = ICONS[i] ?? Globe;
           return (
             <Reveal key={a.name} delay={(i % 3) * 0.06} y={18}>

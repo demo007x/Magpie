@@ -1,7 +1,9 @@
 import { REPO, RELEASES } from "../data";
+import { useSite } from "../i18n";
 import icon from "../assets/app-icon.png";
 
 export function Footer() {
+  const { d } = useSite();
   return (
     <footer className="border-t border-line">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10 sm:flex-row sm:items-center sm:justify-between">
@@ -9,7 +11,7 @@ export function Footer() {
           <img src={icon} alt="" className="h-8 w-8 rounded-[8px]" />
           <div>
             <p className="text-[14px] font-semibold tracking-tight">拾趣 Magpie</p>
-            <p className="text-[12.5px] text-mute">屏幕上任何文字，选中或框选，就地处理。</p>
+            <p className="text-[12.5px] text-mute">{d.footer.tagline}</p>
           </div>
         </div>
 
@@ -18,12 +20,12 @@ export function Footer() {
             GitHub
           </a>
           <a href={RELEASES} target="_blank" rel="noreferrer" className="transition-colors hover:text-ink">
-            更新记录
+            {d.footer.updates}
           </a>
           <a href="#download" className="transition-colors hover:text-ink">
-            下载
+            {d.footer.download}
           </a>
-          <span className="text-mute-soft">© {new Date().getFullYear()} 拾趣 Magpie</span>
+          <span className="text-mute-soft">© {new Date().getFullYear()} {d.footer.copyright}</span>
         </div>
       </div>
     </footer>
