@@ -7,14 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **Capsule hover needed a first click**: the floating bar is a non-activating (never-key) window — macOS doesn't deliver mouse-moved events to it, and WebKit only renders :hover for active pages, so action hover did nothing until some click woke things up. Fixed by feeding the global mouse position from the existing event tap to the frontends (only while the capsule or result window is visible, ~60 Hz) and synthesizing hover on the action under the cursor, in both the capsule and the result-window footer — feedback the moment the cursor arrives, no click, no focus.
+## [0.1.8] - 2026-09-25
 
 ### Changed
 
-- **Default blocklist slimmed**: the out-of-the-box 禁用应用 list is now just 1Password / Passwords — Terminal and iTerm are no longer preset. Existing settings files are unaffected (stored values always win over code defaults).
+- **Floating surfaces visual refresh**: the floating bar and result window now carry the native macOS window shadow (replacing in-webview CSS shadows that were capped by the window bleed), a 0.5px hairline border — the system hairline spec, half the previous weight — with tuned contrast for light/dark, and action separators with a dedicated color that render continuously instead of occasionally breaking or fading.
 - **Context actions lead the capsule**: 提取信息 and single-entity actions (加入日历 / 复制验证码 / …) now appear at the front of the capsule as an additive dynamic layer — they no longer consume the configured capsule slot count, push resident actions into the overflow, or hide 搜索. A full 8-slot capsule shows 9 buttons when the selection matches an entity, and the context button is always the first, most relevant click.
+- **Default blocklist slimmed**: the out-of-the-box 禁用应用 list is now just 1Password / Passwords — Terminal and iTerm are no longer preset. Existing settings files are unaffected (stored values always win over code defaults).
+
+### Fixed
+
+- **Capsule hover needed a first click**: the floating bar and result windows are non-activating (never-key) windows — macOS doesn't deliver mouse-moved events to them, and WebKit only renders :hover for active pages, so action hover did nothing until some click woke things up. Fixed by feeding the global mouse position from the existing event tap to the frontends (only while the capsule or result window is visible, ~60 Hz) and synthesizing hover on the action under the cursor, in both the capsule and the result-window footer — feedback the moment the cursor arrives, no click, no focus.
+- **Capsule hairline rendered unevenly**: window positions are now snapped to the physical pixel grid, so the 0.5px hairline lands crisply on every edge — previously the top and bottom edges could mismatch (one crisp, one blurred) depending on where the capsule popped.
 
 ## [0.1.7] - 2026-09-25
 
