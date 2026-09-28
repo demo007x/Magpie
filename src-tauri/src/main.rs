@@ -307,6 +307,14 @@ fn main() {
                 }
             }
 
+            // 非激活窗口的 hover：悬浮条/结果窗不抢焦点（非 key），默认收不到
+            // mouseMoved 事件——不开启则 CSS :hover 在首次点击前不生效
+            for label in ["floating", "ocr"] {
+                if let Some(w) = app.get_webview_window(label) {
+                    floating::apply_hover_tracking(&w);
+                }
+            }
+
             // 用户强制外观（亮/暗）：原生窗口主题 + 前端 CSS 变量双轨同步。
             // 广播此刻未必有人听（webview 可能未挂载），各前端启动时也会主动读一次
             settings::apply_appearance(&app.handle());

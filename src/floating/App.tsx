@@ -548,8 +548,12 @@ export default function App() {
   // 结果窗口完成闪烁：流式结束瞬间呼吸点变绿，2s 后消失（比单纯延迟消失语义清晰）
   const [doneFlash, setDoneFlash] = useState(false);
   // 弹出瞬间挂起 hover 样式：胶囊常压在光标下，hover 残留会被误认为「选中」；
-  // 首次 mousemove 即恢复
+  // 首次 mousemove 即恢复（非 key 窗口下由 hover://move 合成事件解除，见下）
   const [hoverSuppress, setHoverSuppress] = useState(false);
+  // 合成 hover 当前命中的动作：hover://move 驱动 elementFromPoint 增删类，
+  // 绕开 WebKit 对非活动页面的 :hover 门控（真 mousemove 在本窗口不可靠）
+  const synHoverRef = useRef<HTMLElement | null>(null);
+  const lastSynDiagRef = useRef(0);
   const barRef = useRef<HTMLDivElement | null>(null);
   // 分离卡几何基准：屏幕矩形（贴边翻转判定）、窗口上次落位、bar 在窗口内偏移。
   // 卡片屏幕坐标 = 窗口位置 + 窗口内偏移；winPos 由 show/resize 返回值与
@@ -1013,6 +1017,10 @@ export default function App() {
       // OCR 窗口忽略普通划词广播
       if (IS_OCR) return;
       // 普通划词：浮动条在鼠标位置弹出（x/y 来自选区）
+      // 新划词 = 新胶囊：清掉上一轮残留的合成 hover 类（否则旧高亮在挂起解除后显形，
+      // 表现为"没碰到任何动作却有个动作是 hover 态"）
+      synHoverRef.current?.classList.remove("syn-hover");
+      synHoverRef.current = null;
       setPending({ x: e.payload.x, y: e.payload.y });
       // 屏幕矩形：二级浮层贴边翻转的判定基准（跨屏拖动后由拖拽结束回读刷新）
       invoke<ScreenRect>("screen_rect_at", { x: e.payload.x, y: e.payload.y })
@@ -1067,6 +1075,35 @@ export default function App() {
       if (e.payload.translateEnabled) setTranslateEnabled(e.payload.translateEnabled);
       if (e.payload.translateDefault) setTranslateDefault(e.payload.translateDefault);
       if (e.payload.translateOrder) setTranslateOrder(e.payload.translateOrder);
+    }).then((un) => {
+      if (listenCancelled) un();
+      else unlisteners.push(un);
+    });
+
+    // 合成 hover：Rust 侧 CGEventTap 把全局鼠标位置按光标落点路由到本窗口，
+    // 并已换算成本窗口视口坐标（~60Hz 节流），elementFromPoint 找到光标下的
+    // 动作手动加 hover 类——非 key 窗口收不到 mouseMoved、WebKit 只给活动
+    // 页面渲染 :hover，两者都绕开
+    listen<{ x: number; y: number }>("hover://move", (e) => {
+      const cx = e.payload.x;
+      const cy = e.payload.y;
+      const el = document.elementFromPoint(cx, cy);
+      const btn = el?.closest<HTMLElement>(".action") ?? null;
+      // 诊断：坐标映射与命中目标（若"自动 hover"复现，此日志直接给出错位原因）
+      const now = performance.now();
+      if (now - lastSynDiagRef.current > 300) {
+        lastSynDiagRef.current = now;
+        invoke("ui_debug_log", {
+          msg: `SYN cx=${cx.toFixed(0)} cy=${cy.toFixed(0)} hit=${btn ? (btn.textContent ?? "?").slice(0, 6) : "无"}`,
+        }).catch(() => undefined);
+      }
+      if (btn !== synHoverRef.current) {
+        synHoverRef.current?.classList.remove("syn-hover");
+        if (btn) btn.classList.add("syn-hover");
+        synHoverRef.current = btn;
+      }
+      // 合成 hover 就是真实的鼠标反馈：弹出时挂起的 hover 挂起态一并解除
+      setHoverSuppress(false);
     }).then((un) => {
       if (listenCancelled) un();
       else unlisteners.push(un);

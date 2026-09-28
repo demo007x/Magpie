@@ -22,6 +22,12 @@ pub enum CaptureEvent {
         y: f64,
     },
     DragEnd,
+    /// 全局鼠标移动（悬浮胶囊可见时节流转发）：供前端合成 hover——
+    /// 非 key 窗口收不到 mouseMoved，WebKit 只给活动页面渲染 :hover
+    HoverMove {
+        x: f64,
+        y: f64,
+    },
     /// 全局按下 Esc（回调侧已过滤为仅 Esc 按下，且浮动条/面板可能并未显示）
     Escape,
 }
@@ -205,6 +211,16 @@ pub fn spawn_worker(app: AppHandle, rx: Receiver<CaptureEvent>) {
                     floating::dismiss_ocr_if_unpinned(&app);
                 }
                 CaptureEvent::DragMove { x, y } => floating::apply_drag(&app, x, y),
+                CaptureEvent::HoverMove { x, y } => {
+                    // 按光标落点路由到目标窗口，坐标换算成该窗口的视口坐标
+                    if let Some((label, cx, cy)) = floating::hover_target_at(&app, x, y) {
+                        let _ = app.emit_to(
+                            label.as_str(),
+                            "hover://move",
+                            json!({ "x": cx, "y": cy }),
+                        );
+                    }
+                }
                 CaptureEvent::DragEnd => floating::end_drag(&app),
                 CaptureEvent::Escape => {
                     // Esc 收起与点击空白走同一个事件：钉住/流式中的「忽略」判定

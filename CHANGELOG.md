@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Capsule hover needed a first click**: the floating bar is a non-activating (never-key) window — macOS doesn't deliver mouse-moved events to it, and WebKit only renders :hover for active pages, so action hover did nothing until some click woke things up. Fixed by feeding the global mouse position from the existing event tap to the frontends (only while the capsule or result window is visible, ~60 Hz) and synthesizing hover on the action under the cursor, in both the capsule and the result-window footer — feedback the moment the cursor arrives, no click, no focus.
+
 ### Changed
 
 - **Default blocklist slimmed**: the out-of-the-box 禁用应用 list is now just 1Password / Passwords — Terminal and iTerm are no longer preset. Existing settings files are unaffected (stored values always win over code defaults).

@@ -6,7 +6,8 @@
   /* 边缘定义：原生阴影已关（黑边晕），实色卡靠这圈内描边在同类色背景上立起轮廓。
      必须用 inset box-shadow 而非 border——border 会挤占内容盒，破坏
      「测量内容尺寸 → 窗口尺寸」的恒等关系（bar 折行、高度跳变） */
-  --edge: rgba(0, 0, 0, 0.12);
+  --edge: rgba(0, 0, 0, 0.10);
+  --sep: rgba(0, 0, 0, 0.12);
   --text: #1c1c24;
   --sec: #85858f;
   --line: rgba(28, 28, 46, 0.08);
@@ -29,7 +30,8 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --surf: #282828; /* macOS 深色浮层标准灰阶 */
-    --edge: rgba(255, 255, 255, 0.12);
+    --edge: rgba(255, 255, 255, 0.10);
+    --sep: rgba(255, 255, 255, 0.16);
     --text: #ededf4;
     --sec: #9a9aa8;
     --line: rgba(237, 237, 244, 0.1);
@@ -54,7 +56,8 @@
    （0,1,0），可覆盖系统偏好 */
 :root.theme-light {
   --surf: #ffffff;
-  --edge: rgba(0, 0, 0, 0.12);
+  --edge: rgba(0, 0, 0, 0.10);
+  --sep: rgba(0, 0, 0, 0.12);
   --text: #1c1c24;
   --sec: #85858f;
   --line: rgba(28, 28, 46, 0.08);
@@ -74,7 +77,8 @@
 
 :root.theme-dark {
   --surf: #282828;
-  --edge: rgba(255, 255, 255, 0.12);
+  --edge: rgba(255, 255, 255, 0.10);
+    --sep: rgba(255, 255, 255, 0.16);
   --text: #ededf4;
   --sec: #9a9aa8;
   --line: rgba(237, 237, 244, 0.1);
@@ -140,8 +144,9 @@ body,
   padding: 2px;
   background: var(--surf);
   border-radius: 12px;
-  /* 外投影制造悬浮感：offset+blur ≤ 8px，超出会被 FLOAT_PAD 窗口出血裁掉 */
-  box-shadow: inset 0 0 0 1px var(--edge), 0 2px 6px rgba(0, 0, 0, 0.2);
+  /* 悬浮感由 NSWindow 原生 shadow 承担（shadow:true，macOS 按内容 alpha 形状画影子，
+     自动贴合圆角与亮暗主题）；本文件只保留 inset 发丝描边做边缘定义 */
+  box-shadow: inset 0 0 0 0.5px var(--edge); /* 发丝 = 0.5px：Retina @2x 上恰好 1 物理像素，与系统分隔线同规格；1px 会渲染成 2 物理像素显粗 */
   user-select: none; /* 胶囊条是纯操作面：禁止选中文本（防点击/拖拽时出现选中高亮） */
   -webkit-user-select: none;
   cursor: default;
@@ -165,7 +170,7 @@ body,
   transform: translateY(-50%);
   width: 1px;
   height: 14px;
-  background: var(--line);
+  background: var(--sep);
 }
 
 .chev {
@@ -205,7 +210,7 @@ body,
   display: flex;
   background: var(--surf);
   border-radius: 12px;
-  box-shadow: inset 0 0 0 1px var(--edge), 0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 0 0 0.5px var(--edge); /* 发丝 = 0.5px：Retina @2x 上恰好 1 物理像素，与系统分隔线同规格；1px 会渲染成 2 物理像素显粗 */
   padding: 2px;
   white-space: nowrap;
   /* 只做淡入不做位移：入场动画期间的 transform 会污染
@@ -247,7 +252,7 @@ body,
   transform: translateY(-50%);
   width: 1px;
   height: 14px;
-  background: var(--line);
+  background: var(--sep);
 }
 
 .pchev {
@@ -370,6 +375,13 @@ body,
 .action:hover {
   /* hover 只变色不铺底：小面积胶囊上更安静精致（按下时才有 tint 反馈） */
   background: transparent;
+  color: var(--accent);
+}
+
+/* 合成 hover（syn-hover）：非 key 窗口收不到 mouseMoved、WebKit 只给活动页面
+   渲染 :hover——hover 反馈由 hover://move 驱动的 JS 合成（见 App.tsx），
+   样式与 :hover 保持一致 */
+.action.syn-hover {
   color: var(--accent);
 }
 
@@ -498,11 +510,11 @@ body,
   flex-direction: column;
   color: var(--text);
   /* 结果窗口单卡：四周 8px 透明出血给外投影留渲染空间（窗口不再被卡片铺满），
-     卡片与胶囊同语言：--surf 表面 + inset 描边 + 柔和外投影 */
+     卡片与胶囊同语言：--surf 表面 + inset 描边；外投影为 NSWindow 原生 shadow */
   margin: 8px;
   background: var(--surf);
   border-radius: 12px;
-  box-shadow: inset 0 0 0 1px var(--edge), 0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 0 0 0.5px var(--edge); /* 发丝 = 0.5px：Retina @2x 上恰好 1 物理像素，与系统分隔线同规格；1px 会渲染成 2 物理像素显粗 */
 }
 
 .panel-head {

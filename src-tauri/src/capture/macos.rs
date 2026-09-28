@@ -177,6 +177,7 @@ extern "C" {
 }
 
 // CGEventType：LeftMouseDown=1, LeftMouseUp=2, LeftMouseDragged=6；掩码 = 1 << 类型
+const EV_MOUSE_MOVED: u32 = 5;
 const EV_LEFT_DOWN: u32 = 1;
 const EV_LEFT_UP: u32 = 2;
 const EV_LEFT_DRAGGED: u32 = 6;
@@ -239,6 +240,11 @@ extern "C" fn tap_callback(
     } else {
         0
     };
+    // MouseMoved 高频（~125Hz），仅在悬浮胶囊可见（hover 合成需要）时入队，
+    // 其余时刻直接丢弃——避免淹没事件通道
+    if kind == EV_MOUSE_MOVED && !crate::floating::hover_feed_active() {
+        return ev;
+    }
     if !is_key {
         LAST_EVENT_MS.store(now_ms(), Ordering::Relaxed);
         if !FIRST_EVENT.swap(true, Ordering::Relaxed) {
@@ -435,14 +441,16 @@ unsafe fn create_tap() -> CFMachPortRef {
     )
 }
 
-/// SHICI_ALL_EVENTS=1 时把 MouseMoved 也纳入（诊断用：移动事件量大，心跳立辨死活）
+/// MouseMoved 常驻纳入：悬浮胶囊可见时，全局鼠标位置经此喂给前端合成 hover
+/// （非 key 窗口收不到 mouseMoved，WebKit 又只给"活动"页面渲染 :hover——
+/// 本 tap 是唯一可靠的全局鼠标源）。诊断开关 SHICI_ALL_EVENTS 保留兼容
 fn tap_mask() -> u64 {
     let mut m =
         (1u64 << EV_LEFT_DOWN) | (1u64 << EV_LEFT_UP) | (1u64 << EV_LEFT_DRAGGED) | (1u64 << EV_KEY_DOWN);
     if std::env::var("SHICI_ALL_EVENTS").as_deref() == Ok("1") {
         m |= 1u64 << 5; // kCGEventMouseMoved
     }
-    m
+    m | (1u64 << EV_MOUSE_MOVED)
 }
 
 /// 选词判定状态机（docs/03 §3.2）：拖选 > 6px 或双击 → 防抖 → AX 查询；普通单击 → PlainClick
@@ -450,9 +458,25 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
     let mut down: Option<(f64, f64)> = None;
     let mut last_up: Option<(Instant, f64, f64)> = None;
     let mut last_emitted: Option<(String, f64, f64)> = None;
+    let mut last_hover: Option<Instant> = None;
 
     while let Ok(ev) = rx.recv() {
         match ev.kind {
+            EV_MOUSE_MOVED => {
+                // 悬浮胶囊可见时，把全局鼠标位置喂给前端合成 hover：
+                // 非 key 窗口收不到 mouseMoved，WebKit 又只给"活动"页面渲染 :hover，
+                // 本 tap 是唯一可靠的全局鼠标源。节流 ~60Hz，丢弃陈旧事件
+                if crate::floating::hover_feed_active() {
+                    let now = Instant::now();
+                    if last_hover
+                        .map_or(true, |t: Instant| now.duration_since(t) >= Duration::from_millis(16))
+                        && ev.t.elapsed() <= Duration::from_millis(50)
+                    {
+                        last_hover = Some(now);
+                        let _ = tx.send(CaptureEvent::HoverMove { x: ev.x, y: ev.y });
+                    }
+                }
+            }
             EV_KEY_DOWN => {
                 // 回调已过滤：能到这里必然是 Esc 按下。是否真的收起由 worker 的
                 // 可见性判定 + 前端 dismiss 守卫（钉住/流式中忽略）决定

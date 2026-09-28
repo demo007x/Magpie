@@ -378,13 +378,16 @@ pub fn ocr_window_ready(window: WebviewWindow) {
     if let Ok(Some(m)) = window.primary_monitor() {
         let s = m.scale_factor();
         let pos = m.position();
-        let _ = window.set_position(LogicalPosition::new(
+        let (sx, sy) = snap_pos(
+            &window,
             pos.x as f64 / s + nx,
             pos.y as f64 / s + ny,
-        ));
+        );
+        let _ = window.set_position(LogicalPosition::new(sx, sy));
         persist_result_pos(&window.app_handle(), (nx, ny));
     }
     let _ = show_without_activation(&window);
+    update_hover_feed(window.app_handle());
 }
 
 /// 划词结果导流：结果送入独立结果窗口（复用识图窗口），默认钉住，
@@ -469,6 +472,7 @@ pub fn hide_ocr_window(window: WebviewWindow) {
             st.result_window_size = size.map(|s| [s.0, s.1]);
         });
         let _ = window.hide();
+        update_hover_feed(window.app_handle());
     }
 }
 
@@ -505,6 +509,7 @@ pub fn dismiss_ocr_if_unpinned(app: &AppHandle) {
         if let Some(w) = app.get_webview_window("ocr") {
             let _ = w.hide();
             let _ = app.emit_to("ocr", "selection://dismiss", json!({}));
+            update_hover_feed(app);
         }
     }
 }
@@ -526,6 +531,48 @@ pub type FloatingState = Mutex<FloatingRect>;
 fn window(app: &AppHandle) -> Result<WebviewWindow, String> {
     app.get_webview_window("floating")
         .ok_or_else(|| "floating window not found".to_string())
+}
+
+/// hover 合成数据源开关：悬浮胶囊**或结果窗**任一可见时开启，tap 回调据此放行
+/// MouseMoved（单独用 AtomicBool 而非读窗口状态——tap 回调线程拿不到 AppHandle）。
+/// 各显示/隐藏路径经由 update_hover_feed 维护（唯一写入口，没有独立 setter）
+static HOVER_FEED: AtomicBool = AtomicBool::new(false);
+
+pub fn hover_feed_active() -> bool {
+    HOVER_FEED.load(Ordering::Relaxed)
+}
+
+/// 任一 hover 目标窗口（悬浮胶囊 / 结果窗）可见即开 feed；两个都不可见则关。
+/// 每个显示/隐藏路径的收尾处调用
+pub fn update_hover_feed(app: &AppHandle) {
+    let on = is_visible(app) || ocr_visible(app);
+    HOVER_FEED.store(on, Ordering::Relaxed);
+}
+
+/// 光标落在哪个 hover 目标窗口内 → (窗口 label, 视口坐标)。
+/// 悬浮胶囊优先（同屏叠加时它是最近的交互目标）。视口坐标 = 全局逻辑坐标 − 窗口原点
+pub fn hover_target_at(app: &AppHandle, gx: f64, gy: f64) -> Option<(String, f64, f64)> {
+    if let Some(state) = app.try_state::<FloatingState>() {
+        let r = *state.lock().unwrap();
+        if r.visible && gx >= r.x && gx <= r.x + r.w && gy >= r.y && gy <= r.y + r.h {
+            return Some(("floating".into(), gx - r.x, gy - r.y));
+        }
+    }
+    if let Some(w) = app.get_webview_window("ocr") {
+        if w.is_visible().unwrap_or(false) {
+            let scale = w.scale_factor().unwrap_or(2.0);
+            if let (Ok(pos), Ok(size)) = (w.outer_position(), w.inner_size()) {
+                let lx = pos.x as f64 / scale;
+                let ly = pos.y as f64 / scale;
+                let lw = size.width as f64 / scale;
+                let lh = size.height as f64 / scale;
+                if gx >= lx && gx <= lx + lw && gy >= ly && gy <= ly + lh {
+                    return Some(("ocr".into(), gx - lx, gy - ly));
+                }
+            }
+        }
+    }
+    None
 }
 
 pub fn is_visible(app: &AppHandle) -> bool {
@@ -558,6 +605,7 @@ pub(crate) fn clamp_move_window(win: &WebviewWindow, x: f64, y: f64) {
     let (m_l, m_t, m_r, m_b) = monitor_rect(win, x + w / 2.0, y + h / 2.0);
     let nx = x.clamp(m_l, (m_r - w).max(m_l));
     let ny = y.clamp(m_t, (m_b - h).max(m_t));
+    let (nx, ny) = snap_pos(win, nx, ny);
     let _ = win.set_position(LogicalPosition::new(nx, ny));
 }
 
@@ -644,7 +692,33 @@ fn place(win: &WebviewWindow, ax: f64, ay: f64, w: f64, h: f64) -> (f64, f64) {
         // 下方：卡片顶 = ay + 14；下方也放不下钳回屏内
         (ay + 14.0 - FLOAT_PAD).min((m_b - h).max(m_t))
     };
-    (nx, ny)
+    snap_pos(win, nx, ny)
+}
+
+/// 窗口位置吸附到物理像素网格：0.5px 发丝描边只有在卡片边缘落在设备像素
+/// 边界上时才锐利——浮点位置（光标坐标/拖拽运算）会让描边被抗锯齿糊开，
+/// 且上下/左右边因奇偶不同一边锐一边糊（"胶囊上下形态不一致"的根源）。
+/// 吸附步长 = 1/backingScaleFactor（@2x 屏即 0.5 逻辑像素），偏差 ≤ 半设备像素，无感
+fn snap_pos(win: &WebviewWindow, x: f64, y: f64) -> (f64, f64) {
+    let scale = win.scale_factor().unwrap_or(2.0);
+    let step = 1.0 / scale;
+    ((x / step).round() * step, (y / step).round() * step)
+}
+
+/// 让非激活窗口也接收 mouseMoved 事件：悬浮条/结果窗不抢焦点（非 key window），
+/// macOS 默认不向非 key 窗口派发 mouseMoved——CSS :hover 需要**先点击一次**
+/// 唤醒窗口才生效。而胶囊配置了 acceptFirstMouse（首点即触发动作），
+/// "点之前帮你瞄准"的 hover 意义全在点击之前，故必须打开
+pub fn apply_hover_tracking(win: &WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        use objc2::runtime::AnyObject;
+        let Ok(ns_window) = win.ns_window() else {
+            return;
+        };
+        let ns_window = ns_window as *mut AnyObject;
+        let _: () = objc2::msg_send![ns_window, setAcceptsMouseMovedEvents: true];
+    }
 }
 
 /// 指定点所在显示器的逻辑矩形（前端做浮层翻转判定用）
@@ -704,6 +778,7 @@ pub fn show_floating_bar(
         h,
         visible: true,
     };
+    update_hover_feed(&app);
     Ok(WindowPos { x: nx, y: ny })
 }
 
@@ -728,10 +803,12 @@ pub fn resize_floating(
     let (nx, ny) = match (x, y) {
         (Some(wx), Some(wy)) => {
             let (m_l, m_t, m_r, m_b) = monitor_rect(&win, wx, wy);
-            (
+            let (sx, sy) = snap_pos(
+                &win,
                 wx.clamp(m_l, (m_r - w).max(m_l)),
                 wy.clamp(m_t, (m_b - h).max(m_t)),
-            )
+            );
+            (sx, sy)
         }
         _ => place(&win, ax, ay, w, h),
     };
@@ -781,6 +858,7 @@ pub fn apply_drag(app: &AppHandle, cx: f64, cy: f64) {
         // 整条窗口保持在光标所在显示器内
         let nx = nx.clamp(m_l, (m_r - w).max(m_l));
         let ny = ny.clamp(m_t, (m_b - h).max(m_t));
+        let (nx, ny) = snap_pos(&win, nx, ny);
         let _ = win.set_position(LogicalPosition::new(nx, ny));
         if let Some(state) = app.try_state::<FloatingState>() {
             let mut r = state.lock().unwrap();
@@ -808,6 +886,7 @@ pub fn end_drag(app: &AppHandle) {
 pub fn hide_floating_bar(app: AppHandle) -> Result<(), String> {
     let win = window(&app)?;
     win.hide().map_err(|e| e.to_string())?;
+    update_hover_feed(&app);
     app.state::<FloatingState>().lock().unwrap().visible = false;
     Ok(())
 }
