@@ -1,0 +1,4 @@
+# 官网是独立工程：本文件让 pnpm 把 web/ 当作自己的工作区根，
+# 不再向上级目录找到主项目的 lockfile（否则依赖会装进主项目的 node_modules）
+packages:
+  - "."

@@ -1,0 +1,179 @@
+@import "tailwindcss";
+
+/* 全站只有一处色板：组件里不出现 rgba()、#hex 与 bg-white/N 这类把颜色写死在「深底白字」
+   假设上的工具类（token 上的 /NN 透明度是主题安全的，可以留）。亮色主题只翻 :root 这一段。 */
+@theme {
+  /* 底与面：磨砂黑——近黑而不纯黑，卡片靠内描边与投影从底上抬起。
+     panel 是卡片静止态，card 是它的 hover 态 */
+  --color-bg: #0f1012;
+  --color-elev: #15171a;
+  --color-panel: rgba(30, 32, 37, 0.72);
+  --color-card: #232629;
+  --color-line: rgba(255, 255, 255, 0.08);
+  --color-fill: rgba(255, 255, 255, 0.055); /* 图标底板、中性徽章底 */
+  --color-fill-2: rgba(255, 255, 255, 0.11); /* mock 开关关闭态、窗口红点 */
+
+  /* 文字：mute 拆两级——11–13px 注脚走 mute-soft（对比度单独保证），
+     拖拽把手、分隔点这类纯装饰走 mute-faint */
+  --color-ink: #e9eaec;
+  --color-mute: #9ba0a8;
+  --color-mute-soft: #8f949c;
+  --color-mute-faint: #787d86;
+
+  /* 强调色：主色 + 用于「文字去向」的琥珀；-fill / -line / -ink 是同一色相的三个用途 */
+  --color-accent: #6c8cff;
+  --color-accent-fill: rgba(108, 140, 255, 0.16);
+  --color-accent-line: rgba(108, 140, 255, 0.42);
+  --color-accent-ink: #bccbff;
+  --color-accent-2: #f0a93b;
+  --color-accent-2-fill: rgba(240, 169, 59, 0.08);
+  --color-accent-2-line: rgba(240, 169, 59, 0.25);
+  --color-accent-2-ink: #f0d9a8;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro SC", "SF Pro Text", "PingFang SC",
+    "Helvetica Neue", "Microsoft YaHei", sans-serif;
+}
+
+/* 投影不走 @theme：Tailwind v4 把 --shadow-* 编译成静态值，主题切换时不会跟着翻，
+   所以这里用普通自定义属性 + .lift 类，随 :root 一起翻转。 */
+:root {
+  color-scheme: dark light;
+  --panel-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 26px -14px rgba(0, 0, 0, 0.75);
+}
+
+/* 亮色：磨砂白（暖灰底 + 纯白卡），强调色压深以保住小字对比 */
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-bg: #f1f1f3;
+    --color-elev: #f8f8fa;
+    --color-panel: #ffffff;
+    --color-card: #f7f7f9;
+    --color-line: rgba(22, 24, 28, 0.09);
+    --color-fill: rgba(22, 24, 28, 0.05);
+    --color-fill-2: rgba(22, 24, 28, 0.12);
+    --panel-shadow: 0 1px 2px rgba(22, 24, 28, 0.04), 0 10px 24px -12px rgba(22, 24, 28, 0.16);
+
+    --color-ink: #1c1d21;
+    --color-mute: #5b5e66;
+    --color-mute-soft: #4f525a;
+    --color-mute-faint: #7f838b;
+
+    --color-accent: #3d5cc0;
+    --color-accent-fill: rgba(61, 92, 192, 0.1);
+    --color-accent-line: rgba(61, 92, 192, 0.38);
+    --color-accent-ink: #2b3f80;
+    --color-accent-2: #a9701a;
+    --color-accent-2-fill: rgba(169, 112, 26, 0.1);
+    --color-accent-2-line: rgba(169, 112, 26, 0.26);
+    --color-accent-2-ink: #7a5417;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+  background: var(--color-bg);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-accent-fill);
+}
+
+/* 锚点跳转时给固定导航让出高度 */
+section[id] {
+  scroll-margin-top: 84px;
+}
+
+.hairline {
+  border: 1px solid var(--color-line);
+}
+
+.lift {
+  box-shadow: var(--panel-shadow);
+}
+
+/* 产品里的胶囊是实色卡 + 内描边 + 外投影，这里复刻同一套构造。
+   mock 永远是 macOS 深色外观下的那一层浮窗，所以亮色主题下它不翻：
+   在这里重声明站内 token（utilities 都读 var()），让 mock 内部的文字描边继续按深色算。 */
+.mock-card {
+  --color-bg: #0f1012;
+  --color-elev: #15171a;
+  --color-panel: rgba(30, 32, 37, 0.72);
+  --color-card: #232629;
+  --color-ink: #e9eaec;
+  --color-mute: #9ba0a8;
+  --color-mute-soft: #8f949c;
+  --color-mute-faint: #787d86;
+  --color-line: rgba(255, 255, 255, 0.09);
+  --color-fill: rgba(255, 255, 255, 0.06);
+  --color-fill-2: rgba(255, 255, 255, 0.12);
+  --color-accent-fill: rgba(108, 140, 255, 0.16);
+  --color-accent-line: rgba(108, 140, 255, 0.42);
+  --color-accent-ink: #bccbff;
+
+  background: #2b2e34;
+  border-radius: 12px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.mock-pill {
+  background: #363a42;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+.glow {
+  background: radial-gradient(60% 60% at 50% 0%, var(--color-accent-fill) 0%, transparent 70%);
+}
+
+.grain {
+  background-image:
+    linear-gradient(var(--color-fill) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-fill) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+/* 截图是产品浅色外观下的实际窗口，两个主题共用一套，所以版面色固定偏亮：
+   深色页面上它读作「相纸里的照片」，而不是跟着页面翻色的坏图。
+   flex:1 + 居中：同一行两张图比例不同，差额由版面色吸收，卡片底边保持齐平。 */
+.shot {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  background: #f4f5f7;
+}
+
+/* 截图还没就位时不显示破图：版面上直接写出要补的文件名，位置与最终态一致 */
+.shot[data-missing] {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+}
+
+.shot[data-missing] img {
+  display: none;
+}
+
+.shot[data-missing]::after {
+  content: "待补图 " attr(data-file);
+  font-size: 12px;
+  color: #8a8f98;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

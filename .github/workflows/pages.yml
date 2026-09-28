@@ -1,0 +1,62 @@
+name: Pages
+
+# web/ 官网构建并发布到 GitHub Pages（项目页 demo007x.github.io/Magpie）。
+# 首次使用需一次性开启：仓库 Settings → Pages → Build and deployment →
+# Source 选择「GitHub Actions」。此后推送 web/** 或手动触发即自动发布。
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个 Pages 部署；排队而非取消，避免半成品发布
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      # web/ 是独立工程：自带 lockfile 与 workspace 配置，与主应用零共享
+      - name: 安装前端依赖
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建官网
+        working-directory: web
+        run: pnpm build
+
+      - name: 上传 Pages 产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 发布到 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
