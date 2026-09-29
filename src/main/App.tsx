@@ -14,6 +14,7 @@ import {
   GripVertical,
   Info,
   Keyboard,
+  NotebookPen,
   Palette,
   Plus,
   Languages,
@@ -45,6 +46,7 @@ type Page =
   | "perms"
   | "translate"
   | "search"
+  | "obsidian"
   | "blocklist"
   | "appearance"
   | "about";
@@ -57,6 +59,7 @@ const NAV_ICONS: Record<Page, React.ReactNode> = {
   perms: <ShieldCheck size={15} strokeWidth={1.75} />,
   translate: <Languages size={15} strokeWidth={1.75} />,
   search: <Search size={15} strokeWidth={1.75} />,
+  obsidian: <NotebookPen size={15} strokeWidth={1.75} />,
   blocklist: <Ban size={15} strokeWidth={1.75} />,
   appearance: <Palette size={15} strokeWidth={1.75} />,
   about: <Info size={15} strokeWidth={1.75} />,
@@ -178,6 +181,7 @@ const ACTION_LABELS: Record<string, string> = {
   tel: "复制号码",
   date: "加入日历",
   addr: "打开地图",
+  obsidian: "存入笔记",
 };
 
 const ACTION_DESC: Record<string, string> = {
@@ -192,6 +196,7 @@ const ACTION_DESC: Record<string, string> = {
   tel: "选中含电话号码时，一键复制号码",
   date: "选中含日期时间时（如“周四下午3点”），一键预填进日历",
   addr: "选中含地点时（如“国贸B座”），一键在地图打开",
+  obsidian: "已配置 Obsidian vault 时，把选中内容按摘录模板追加进日记",
 };
 
 const isAiAction = (id: string) => ACTIONS.find((a) => a.id === id)?.kind === "ai";
@@ -792,6 +797,7 @@ export default function App() {
               ["prompts", "Prompt 设置"],
               ["translate", "翻译"],
               ["search", "搜索引擎"],
+              ["obsidian", "Obsidian"],
               ["blocklist", "禁用应用"],
               ["appearance", "外观"],
               ["perms", "权限"],
@@ -1132,6 +1138,7 @@ export default function App() {
                 </div>
               ))}
             </div>
+
 
             <div className="save-bar">
               <button className="btn primary" onClick={save}>
@@ -1666,6 +1673,161 @@ export default function App() {
                   ＋ 自定义
                 </button>
               </div>
+            </div>
+
+            <div className="save-bar">
+              <button className="btn primary" onClick={save}>
+                {saved ? "已保存" : "保存更改"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {page === "obsidian" && (
+          <>
+            <h1>Obsidian</h1>
+            <p className="page-hint">
+              把划词与识图结果按模板直写进 vault 的 markdown 文件——离线可用，无需安装
+              Obsidian 插件。配置 vault 后，胶囊与结果窗会出现「存入笔记」。更改需保存后生效。
+            </p>
+
+            <div className="card">
+              <div className="row-between">
+                <div>
+                  <div className="row-title">Vault 目录</div>
+                  <div className="row-sub">
+                    {settings.obsidian.vaultPath
+                      ? "已接入：写入范围仅限该目录内的相对路径。"
+                      : "选择 vault 根目录（.obsidian 所在的那层）。未选择时「存入笔记」不出现。"}
+                  </div>
+                </div>
+                <div className="row-ctl">
+                  <button
+                    className="btn sm"
+                    onClick={() =>
+                      invoke<string | null>("pick_vault_dir")
+                        .then((p) => {
+                          if (p) patch({ obsidian: { ...settings.obsidian, vaultPath: p } });
+                        })
+                        .catch(() => undefined)
+                    }
+                  >
+                    选择目录…
+                  </button>
+                </div>
+              </div>
+              {settings.obsidian.vaultPath && (
+                <div className="row-between">
+                  <span
+                    className="row-sub"
+                    style={{ wordBreak: "break-all" }}
+                    title={settings.obsidian.vaultPath}
+                  >
+                    {settings.obsidian.vaultPath}
+                  </span>
+                  <button
+                    className="row-del"
+                    title="清除 vault 目录"
+                    aria-label="清除 vault 目录"
+                    onClick={() => patch({ obsidian: { ...settings.obsidian, vaultPath: "" } })}
+                  >
+                    <Trash2 size={13} strokeWidth={1.7} />
+                  </button>
+                </div>
+              )}
+
+              <div className="row-between sep">
+                <div className="field wide">
+                  <span>日记子目录（相对 vault 根，空 = 根目录）</span>
+                  <input
+                    value={settings.obsidian.dailyFolder}
+                    placeholder="如 Journal"
+                    onChange={(e) =>
+                      patch({ obsidian: { ...settings.obsidian, dailyFolder: e.target.value } })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="row-between sep">
+                <div className="field wide">
+                  <span>日记文件名格式（与 Daily Notes 插件约定互认）</span>
+                  <input
+                    value={settings.obsidian.dailyFileName}
+                    placeholder="yyyy-MM-DD"
+                    onChange={(e) =>
+                      patch({ obsidian: { ...settings.obsidian, dailyFileName: e.target.value } })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="row-between sep">
+                <div className="field wide">
+                  <span>任务目标文件（相对 vault，空 = 写入当日日记）</span>
+                  <input
+                    value={settings.obsidian.taskFile}
+                    placeholder="如 Tasks/todo.md"
+                    onChange={(e) =>
+                      patch({ obsidian: { ...settings.obsidian, taskFile: e.target.value } })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="row-between sep">
+                <div className="field wide">
+                  <span>知识卡目录（相对 vault）</span>
+                  <input
+                    value={settings.obsidian.cardFolder}
+                    placeholder="Cards"
+                    onChange={(e) =>
+                      patch({ obsidian: { ...settings.obsidian, cardFolder: e.target.value } })
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <h2 className="sec">模板</h2>
+            <div className="card">
+              <label className="field wide">
+                <span>
+                  摘录块模板（变量：{"{text}"} 选中文本 ·{" "}
+                  {"{source}"} 来源应用 · {"{time}"} 时间）
+                </span>
+                <textarea
+                  className="prompt-input in-field"
+                  spellCheck={false}
+                  rows={3}
+                  value={settings.obsidian.excerptTemplate}
+                  onChange={(e) =>
+                    patch({
+                      obsidian: { ...settings.obsidian, excerptTemplate: e.target.value },
+                    })
+                  }
+                />
+              </label>
+
+              <label className="field wide sep">
+                <span>任务行模板（变量：{"{text}"} 任务内容 · {"{due}"} 截止时间）</span>
+                <textarea
+                  className="prompt-input in-field"
+                  spellCheck={false}
+                  rows={2}
+                  value={settings.obsidian.taskTemplate}
+                  onChange={(e) =>
+                    patch({
+                      obsidian: { ...settings.obsidian, taskTemplate: e.target.value },
+                    })
+                  }
+                />
+              </label>
+
+              <p className="row-sub">
+                摘录可用变量：{"{text}"} 选中文本 · {"{source}"} 来源应用 · {"{time}"} 时间 ·{" "}
+                {"{date}"} 日期。多行选中文本会逐行保持 markdown 引用形态。
+              </p>
             </div>
 
             <div className="save-bar">

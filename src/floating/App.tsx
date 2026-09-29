@@ -18,6 +18,7 @@ import {
   Lightbulb,
   Mail,
   MapPin,
+  NotebookPen,
   Phone,
   Pin,
   PinOff,
@@ -36,7 +37,7 @@ import {
   extractTel,
   extractUrl,
 } from "../shared/textContext";
-import type { CustomAction, SearchEngine, Settings } from "../shared/types";
+import type { CustomAction, ObsidianConfig, SearchEngine, Settings } from "../shared/types";
 
 // 窗口身份（生命周期内不变 → 模块级常量，事件回调不会读到过期值）：
 // floating = 划词浮动条；ocr = 文本识别独立窗口；pin-* = 钉图窗口
@@ -179,6 +180,7 @@ const ICONS: Record<string, React.ReactNode> = {
   code: <ClipboardCheck size={14} strokeWidth={1.75} />,
   tel: <Phone size={14} strokeWidth={1.75} />,
   date: <CalendarDays size={14} strokeWidth={1.75} />,
+  obsidian: <NotebookPen size={14} strokeWidth={1.75} />,
   addr: <MapPin size={14} strokeWidth={1.75} />,
   __extract: <ScanSearch size={14} strokeWidth={1.75} />,
   // 自定义动作共用一枚图标：用户自己起的名字已经是辨识度，不做图标选择器
@@ -550,6 +552,8 @@ export default function App() {
   // 弹出瞬间挂起 hover 样式：胶囊常压在光标下，hover 残留会被误认为「选中」；
   // 首次 mousemove 即恢复（非 key 窗口下由 hover://move 合成事件解除，见下）
   const [hoverSuppress, setHoverSuppress] = useState(false);
+  // Obsidian 接入配置：vaultPath 非空 = 「存入笔记」动作可用
+  const [obsidianCfg, setObsidianCfg] = useState<ObsidianConfig | null>(null);
   // 合成 hover 当前命中的动作：hover://move 驱动 elementFromPoint 增删类，
   // 绕开 WebKit 对非活动页面的 :hover 门控（真 mousemove 在本窗口不可靠）
   const synHoverRef = useRef<HTMLElement | null>(null);
@@ -656,6 +660,8 @@ export default function App() {
   const ocrReadyRef = useRef(false);
   // 识别原文是否超长（超 3 行折叠高度）——决定展开/收起按钮是否显示
   const sourceRef = useRef<HTMLDivElement | null>(null);
+  // 选中发生时来源应用的进程路径（captured 事件带上），供摘录模板 {source} 使用
+  const sourceAppRef = useRef("");
   const [sourceOverflow, setSourceOverflow] = useState(false);
   // 上次下发的窗口位置目标（去重：尺寸与位置都没变就不重复调 resize）
   const lastPosKeyRef = useRef("");
@@ -676,6 +682,7 @@ export default function App() {
         setTranslateEnabled(s.translate?.enabled ?? ["ai"]);
         setTranslateDefault(s.translate?.default ?? "ai");
         setTranslateOrder(s.translate?.order ?? []);
+        setObsidianCfg(s.obsidian ?? null);
       })
       .catch(() => undefined);
   };
@@ -1021,6 +1028,7 @@ export default function App() {
       // 表现为"没碰到任何动作却有个动作是 hover 态"）
       synHoverRef.current?.classList.remove("syn-hover");
       synHoverRef.current = null;
+      sourceAppRef.current = e.payload.app ?? "";
       setPending({ x: e.payload.x, y: e.payload.y });
       // 屏幕矩形：二级浮层贴边翻转的判定基准（跨屏拖动后由拖拽结束回读刷新）
       invoke<ScreenRect>("screen_rect_at", { x: e.payload.x, y: e.payload.y })
@@ -1658,6 +1666,43 @@ export default function App() {
         invoke("open_url", { url: `maps://?q=${encodeURIComponent(place)}` })
           .then(() => flash(id, "已在地图打开"))
           .catch(() => flash(id, "打开失败"));
+        return;
+      }
+
+      if (id === "obsidian") {
+        const cfg = obsidianCfg;
+        if (!cfg?.vaultPath) {
+          flash(id, "未配置 vault");
+          return;
+        }
+        const now = new Date();
+        const p2 = (n: number) => String(n).padStart(2, "0");
+        const date = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
+        const time = `${p2(now.getHours())}:${p2(now.getMinutes())}`;
+        const src = appNameFrom(sourceAppRef.current);
+        // 文件名按用户配置的 Daily Notes 格式展开（yyyy/YYYY・MM・dd/DD），缺 .md 后缀补上
+        const base = (cfg.dailyFileName || "yyyy-MM-DD")
+          .replaceAll(/yyyy/gi, String(now.getFullYear()))
+          .replaceAll("MM", p2(now.getMonth() + 1))
+          .replaceAll(/dd/g, p2(now.getDate()));
+        const fname = base.endsWith(".md") ? base : `${base}.md`;
+        const rel = [cfg.dailyFolder.replace(/^\/+|\/+$/g, ""), fname]
+          .filter(Boolean)
+          .join("/");
+        // 保存内容择优：结果窗里已有 AI 结果时存结果，否则存原文
+        const body =
+          phase.kind === "ocr" && phase.actionId && phase.output && !phase.error
+            ? phase.output
+            : source;
+        // 多行文本逐行补引用前缀，保持摘录块的 markdown 形态
+        const excerpt = cfg.excerptTemplate
+          .replaceAll("{date}", date)
+          .replaceAll("{time}", time)
+          .replaceAll("{source}", src)
+          .replaceAll("{text}", body.split("\n").join("\n> "));
+        invoke("obsidian_append", { relPath: rel, content: excerpt })
+          .then(() => flash(id, "已存入 ✓"))
+          .catch(() => flash(id, "存入失败"));
         return;
       }
       return;
@@ -2355,7 +2400,10 @@ export default function App() {
                 用识别文本直接打开默认引擎——对识别出的书名/术语等尤其实用 */}
             <div className="ocr-actions">
               {registry.filter(
-                (a) => (a.kind === "ai" || a.id === "search") && actions[a.id] !== false,
+                (a) =>
+                  (a.kind === "ai" || a.id === "search" || a.id === "obsidian") &&
+                  actions[a.id] !== false &&
+                  (a.id !== "obsidian" || Boolean(obsidianCfg?.vaultPath)),
               ).map((a) => (
                 <span key={a.id} className="action-slot">
                   <button
@@ -2449,4 +2497,10 @@ export default function App() {
       )}
     </div>
   );
+}
+
+/** 进程路径 → 应用名（取末段、去 .app 后缀）："…/Safari.app/Contents/…" → Safari */
+function appNameFrom(path: string): string {
+  const last = path.split("/").filter(Boolean).pop() ?? "";
+  return last.replace(/\.app$/i, "") || "未知应用";
 }

@@ -25,6 +25,8 @@ export interface ActionFlags {
   date: boolean;
   /** 上下文动作：选中文本含地点时出现「打开地图」 */
   addr: boolean;
+  /** 接入动作：已配置 Obsidian vault 时出现「存入笔记」 */
+  obsidian: boolean;
 }
 
 export interface SearchEngine {
@@ -63,10 +65,31 @@ export interface CustomAction {
   under?: string;
 }
 
+/** Obsidian 接入配置（docs/07）：vault 文件直写——划词/识图/结果按模板落进 vault。
+ *  vaultPath 为空 = 未接入，相关动作不出现。追加为无状态一次性送达，不建队列。 */
+export interface ObsidianConfig {
+  /** vault 根目录（空 = 未接入） */
+  vaultPath: string;
+  /** 日记子目录（相对 vault 根；空 = 根目录） */
+  dailyFolder: string;
+  /** 日记文件名格式（默认 yyyy-MM-DD，与 Obsidian Daily Notes 插件约定互认） */
+  dailyFileName: string;
+  /** 任务目标文件（相对 vault；空 = 写入当日日记） */
+  taskFile: string;
+  /** 知识卡目录（相对 vault） */
+  cardFolder: string;
+  /** 摘录块模板（变量 {text}/{source}/{time}/{date}） */
+  excerptTemplate: string;
+  /** 任务行模板（变量 {text}/{due}） */
+  taskTemplate: string;
+}
+
 export interface Settings {
   providers: Provider[];
   defaultProviderId: string;
   actions: ActionFlags;
+  /** Obsidian 接入配置（vault 直写；vaultPath 空 = 未接入） */
+  obsidian: ObsidianConfig;
   /** 动作展示顺序（浮动条按此渲染）；缺省 id 追加在末尾 */
   actionOrder: string[];
   /** 用户自定义 AI 动作（与 actionOrder 混排，上限 10 个） */

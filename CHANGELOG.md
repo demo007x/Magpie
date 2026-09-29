@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Save to Obsidian**: a new 存入笔记 action appends the selection into your vault's daily note. A dedicated Obsidian settings page hosts the integration: pick a vault folder once, optionally a subfolder and filename format for daily notes (compatible with the Obsidian Daily Notes plugin), plus editable excerpt/task templates with `{time}` / `{source}` / `{text}` / `{date}` placeholders — the action then appends a markdown blockquote (multi-line selections keep their line structure) to the daily note, creating the file and folder on first use. Appears on the capsule and in the result window once a vault is configured (the result window prefers the AI answer over the raw text when one is present), and can be toggled per-action in settings. Entirely local file writes — no plugin, no network.
+
 ## [0.1.8] - 2026-09-25
 
 ### Changed

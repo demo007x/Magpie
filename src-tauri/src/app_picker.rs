@@ -102,3 +102,18 @@ fn pick_impl() -> Option<String> {
 
     Some(name)
 }
+
+/// 系统目录选择面板：供 Obsidian vault 路径选择。用户取消 = None。
+/// 必须在主线程调用（Tauri 同步命令默认在主线程执行）。
+#[tauri::command]
+pub fn pick_vault_dir() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let path = rfd::FileDialog::new()
+            .set_title("选择 Obsidian Vault 目录")
+            .pick_folder()?;
+        return Some(path.to_string_lossy().into_owned());
+    }
+    #[cfg(not(target_os = "macos"))]
+    None
+}

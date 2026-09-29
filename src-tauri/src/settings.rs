@@ -50,6 +50,8 @@ pub struct Actions {
     pub date: bool,
     /// 上下文动作：选中文本含地点时「打开地图」（启发式）
     pub addr: bool,
+    /// 接入动作：已配置 vault 时「存入笔记」（Obsidian 文件直写）
+    pub obsidian: bool,
 }
 
 impl Default for Actions {
@@ -66,6 +68,7 @@ impl Default for Actions {
             tel: true,
             date: true,
             addr: true,
+            obsidian: true,
         }
     }
 }
@@ -163,6 +166,41 @@ impl Default for CustomAction {
     }
 }
 
+/// Obsidian 接入配置（docs/07）：vault 文件直写——划词/识图/结果按模板落进 vault。
+/// vault_path 为空 = 未接入，相关动作不出现。追加为无状态一次性送达，不建队列。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ObsidianConfig {
+    /// vault 根目录（空 = 未接入）
+    pub vault_path: String,
+    /// 日记子目录（相对 vault 根；空 = 根目录）
+    pub daily_folder: String,
+    /// 日记文件名格式（默认 yyyy-MM-DD，与 Obsidian Daily Notes 插件约定互认）
+    pub daily_file_name: String,
+    /// 任务目标文件（相对 vault；空 = 写入当日日记）
+    pub task_file: String,
+    /// 知识卡目录（相对 vault）
+    pub card_folder: String,
+    /// 摘录块模板（变量 {text}/{source}/{time}/{date}）
+    pub excerpt_template: String,
+    /// 任务行模板（变量 {text}/{due}）
+    pub task_template: String,
+}
+
+impl Default for ObsidianConfig {
+    fn default() -> Self {
+        Self {
+            vault_path: String::new(),
+            daily_folder: String::new(),
+            daily_file_name: "yyyy-MM-DD".into(),
+            task_file: String::new(),
+            card_folder: "Cards".into(),
+            excerpt_template: "- **{time}** · 来源：{source}\n  > {text}".into(),
+            task_template: "- [ ] {text} 📅 {due}".into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -200,6 +238,9 @@ pub struct Settings {
     pub ocr_summarize_shortcut: String,
     pub app_blacklist: Vec<String>,
     pub debounce_ms: u64,
+    /// Obsidian 接入（docs/07）：vault 直写配置
+    #[serde(default)]
+    pub obsidian: ObsidianConfig,
     /// 结果窗口上次位置（逻辑坐标）：关闭后下次（含重启）在同位置出现
     #[serde(default)]
     pub result_window_pos: Option<[f64; 2]>,
@@ -263,6 +304,7 @@ impl Default for Settings {
             ocr_summarize_shortcut: default_ocr_summarize_shortcut(),
             app_blacklist: vec!["1Password".into(), "Passwords".into()],
             debounce_ms: 200,
+            obsidian: ObsidianConfig::default(),
             result_window_pos: None,
             result_window_size: None,
             result_window_pinned: true,

@@ -159,6 +159,11 @@ export const ACTIONS: ActionDef[] = [
     label: "打开地图",
     kind: "local",
   },
+  {
+    id: "obsidian",
+    label: "存入笔记",
+    kind: "local",
+  },
 ];
 
 export function actionById(id: string): ActionDef | undefined {

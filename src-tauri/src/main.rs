@@ -5,6 +5,7 @@ mod app_picker;
 mod capture;
 mod entities;
 mod floating;
+mod obsidian;
 mod ocr;
 mod pin;
 mod settings;
@@ -394,6 +395,7 @@ fn main() {
             ai::deepl_translate,
             ai::ai_chat,
             entities::detect_dates,
+            obsidian::obsidian_append,
             entities::detect_places,
             entities::open_in_calendar,
             floating::show_floating_bar,
@@ -435,6 +437,7 @@ fn main() {
             pin::pin_to_ocr,
             pin::pin_from_ocr,
             app_picker::pick_app_bundle,
+            app_picker::pick_vault_dir,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
