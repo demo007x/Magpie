@@ -51,7 +51,7 @@ Every piece of text on your screen is one mouse gesture away: select or capture 
 - **Eleven actions** — Translate / Explain / Summarize (AI-generated, streamed) + Copy / Search / Open Link / Compose Email / Copy Code / Copy Phone + Add to Calendar / Open in Maps; order and visibility configurable in settings
 - **Context-aware actions** — links, emails, verification codes, phone numbers, dates and places in the selected text are detected automatically: a single entity is one click away (open / compose / copy / calendar / maps), multiple entities open a grouped panel for batch operations
 - **Screen OCR** — a custom global hotkey or the tray menu starts a region capture, Vision OCR reads the text, with one-step OCR translate / explain / summarize; Snipaste-style pinned images can loop back into OCR
-- **Result window** — AI results and recognized text open in a standalone persistent window that can be pinned, dragged, and remembers position & size
+- **Result window** — AI results and recognized text open in a standalone persistent window that can be pinned, dragged, and remembers position & size, with default-size presets in the appearance settings
 - **Custom AI actions** — a name + prompt + icon become capsule buttons (up to 10, ordered with the built-ins), with a try-run preview
 - **Dedicated permissions page** — Accessibility, Input Monitoring, and a capture health check in one place, with one-click guided authorization
 - **Three translation channels** — AI translation (LLM), Baidu Translate, and DeepL; click for the default, expand to switch
@@ -72,6 +72,10 @@ Every piece of text on your screen is one mouse gesture away: select or capture 
 ## Getting Started
 
 ```bash
+# Install Rust via rustup if not present (Prerequisites require Rust 1.80+;
+# without it `pnpm tauri dev` fails with "No such file or directory" on cargo)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
 # Clone and install dependencies
 git clone https://github.com/demo007x/Magpie.git
 cd Magpie

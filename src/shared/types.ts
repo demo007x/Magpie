@@ -25,7 +25,7 @@ export interface ActionFlags {
   date: boolean;
   /** 上下文动作：选中文本含地点时出现「打开地图」 */
   addr: boolean;
-  /** 接入动作：已配置 Obsidian vault 时出现「存入笔记」 */
+  /** 接入动作：已配置 Obsidian vault 时出现「存入 Obsidian」（笔记/任务/卡片） */
   obsidian: boolean;
 }
 
@@ -80,8 +80,10 @@ export interface ObsidianConfig {
   cardFolder: string;
   /** 摘录块模板（变量 {text}/{source}/{time}/{date}） */
   excerptTemplate: string;
-  /** 任务行模板（变量 {text}/{due}） */
+  /** 任务行模板（变量 {text} 任务内容 · {due} 截止日期 yyyy-MM-dd · {dueTag} "📅 日期"或空） */
   taskTemplate: string;
+  /** 知识卡内容模板（变量 {text}/{source}/{time}/{date}）；一卡一文件，写入知识卡目录 */
+  cardTemplate: string;
 }
 
 export interface Settings {

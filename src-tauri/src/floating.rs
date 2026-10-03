@@ -432,6 +432,24 @@ pub fn set_result_window_size(window: WebviewWindow, width: f64, height: f64) {
     apply_result_window_size(&window);
 }
 
+/// 外观页选择结果窗口预设尺寸：写入用户尺寸记忆并持久化；
+/// 结果窗口正开着就立即应用（钳制同拖拽路径），关着则下次显示生效。
+/// 预设只是「默认尺寸」的便捷入口，用户拖拽微调仍会记忆并优先
+#[tauri::command]
+pub fn apply_result_preset(app: AppHandle, width: f64, height: f64) {
+    let w = width.clamp(RESULT_MIN_W, RESULT_MAX_W);
+    let h = height.clamp(RESULT_MIN_H, RESULT_MAX_H);
+    if let Ok(mut sz) = LAST_RESULT_SIZE.lock() {
+        *sz = Some((w, h));
+    }
+    crate::settings::patch(&app, |st| st.result_window_size = Some([w, h]));
+    if ocr_visible(&app) {
+        if let Some(win) = app.get_webview_window("ocr") {
+            apply_result_window_size(&win);
+        }
+    }
+}
+
 /// 二级菜单展开/收起：设置菜单生长高度（0 = 收起）并落位。
 /// 窗口向下生长/收回恰好菜单高度——主菜单（动作行）随窗口底边固定，像素不动
 #[tauri::command]
@@ -645,8 +663,62 @@ pub fn move_ocr(window: WebviewWindow, x: f64, y: f64) {
     }
 }
 
-/// (x, y)（逻辑坐标）所在显示器的逻辑矩形 `(left, top, right, bottom)`；找不到则回退主显示器
+/// (x, y)（逻辑坐标）所在屏的可用区域 `visibleFrame`（top-left 原点逻辑坐标）：
+/// 排除菜单栏与 Dock。钳制若按显示器整幅矩形算，贴边时窗口会被推到 Dock
+/// 底下——Dock 恒在最上层且点击不可穿透，压住的部分无法操作。
+/// 取不到（非 macOS / API 失败 / 坐标不在任何屏）时返回 None，调用方回退整幅矩形
+#[cfg(target_os = "macos")]
+fn visible_rect_at(win: &WebviewWindow, x: f64, y: f64) -> Option<(f64, f64, f64, f64)> {
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::NSRect;
+
+    unsafe {
+        let Ok(ns_window) = win.ns_window() else {
+            return None;
+        };
+        let _ = ns_window; // 仅要求窗口活着：screens 是全局类方法，与窗口无关
+        let screens: *mut AnyObject = objc2::msg_send![objc2::class!(NSScreen), screens];
+        if screens.is_null() {
+            return None;
+        }
+        let count: usize = objc2::msg_send![screens, count];
+        if count == 0 {
+            return None;
+        }
+        // 主屏 = screens[0]（Cocoa 全局坐标原点所在屏），坐标翻转以此为基准
+        let primary: *mut AnyObject = objc2::msg_send![screens, objectAtIndex: 0usize];
+        let pframe: NSRect = objc2::msg_send![primary, frame];
+        let primary_h = pframe.size.height;
+
+        for i in 0..count {
+            let s: *mut AnyObject = objc2::msg_send![screens, objectAtIndex: i];
+            let frame: NSRect = objc2::msg_send![s, frame];
+            // Cocoa frame（bottom-left 全局原点）→ top-left 逻辑矩形
+            let fl = frame.origin.x;
+            let ft = primary_h - frame.origin.y - frame.size.height;
+            let fr = frame.origin.x + frame.size.width;
+            let fb = primary_h - frame.origin.y;
+            if x < fl || x > fr || y < ft || y > fb {
+                continue;
+            }
+            let visible: NSRect = objc2::msg_send![s, visibleFrame];
+            let l = visible.origin.x;
+            let t = primary_h - visible.origin.y - visible.size.height;
+            let r = visible.origin.x + visible.size.width;
+            let b = primary_h - visible.origin.y;
+            return Some((l, t, r, b));
+        }
+        None
+    }
+}
+
+/// (x, y)（逻辑坐标）所在显示器的逻辑矩形 `(left, top, right, bottom)`；找不到则回退主显示器。
+/// macOS 上优先返回可见区域（排除菜单栏与 Dock），钳制语义 = 「不落在 Dock / 菜单栏底下」
 pub(crate) fn monitor_rect(win: &WebviewWindow, x: f64, y: f64) -> (f64, f64, f64, f64) {
+    #[cfg(target_os = "macos")]
+    if let Some(v) = visible_rect_at(win, x, y) {
+        return v;
+    }
     for m in win.available_monitors().unwrap_or_default() {
         let s = m.scale_factor();
         let pos = m.position();

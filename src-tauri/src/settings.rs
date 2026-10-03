@@ -183,8 +183,10 @@ pub struct ObsidianConfig {
     pub card_folder: String,
     /// 摘录块模板（变量 {text}/{source}/{time}/{date}）
     pub excerpt_template: String,
-    /// 任务行模板（变量 {text}/{due}）
+    /// 任务行模板（变量 {text}/{due}/{dueTag}）
     pub task_template: String,
+    /// 知识卡内容模板（变量 {text}/{source}/{time}/{date}）
+    pub card_template: String,
 }
 
 impl Default for ObsidianConfig {
@@ -196,7 +198,8 @@ impl Default for ObsidianConfig {
             task_file: String::new(),
             card_folder: "Cards".into(),
             excerpt_template: "- **{time}** · 来源：{source}\n  > {text}".into(),
-            task_template: "- [ ] {text} 📅 {due}".into(),
+            task_template: "- [ ] {text} {dueTag}".into(),
+            card_template: "- **{time}** · 来源：{source}\n  > {text}".into(),
         }
     }
 }

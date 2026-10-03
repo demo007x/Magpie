@@ -421,6 +421,7 @@ fn main() {
             floating::push_selection_result,
             floating::focus_ocr_window,
             floating::set_result_window_size,
+            floating::apply_result_preset,
             floating::persist_result_window_state,
             floating::screen_rect_at,
             floating::floating_window_pos,

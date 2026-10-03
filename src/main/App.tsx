@@ -181,8 +181,14 @@ const ACTION_LABELS: Record<string, string> = {
   tel: "复制号码",
   date: "加入日历",
   addr: "打开地图",
-  obsidian: "存入笔记",
+  obsidian: "存入 Obsidian",
 };
+
+/** Obsidian 模板出厂默认值，与 src-tauri/src/settings.rs 的 ObsidianConfig::default 保持一致
+    （「恢复默认」按钮的目标值；obsidian 配置为全量存储，没有缺省回落机制） */
+const DEFAULT_EXCERPT_TEMPLATE = "- **{time}** · 来源：{source}\n  > {text}";
+const DEFAULT_TASK_TEMPLATE = "- [ ] {text} {dueTag}";
+const DEFAULT_CARD_TEMPLATE = "- **{time}** · 来源：{source}\n  > {text}";
 
 const ACTION_DESC: Record<string, string> = {
   translate: "中文译英文，其他译中文，附学习要点",
@@ -318,6 +324,23 @@ export default function App() {
     setAppearance(mode); // 主窗口即时反馈（Rust 广播回来值相同，幂等）
     applyAppearance(mode);
     invoke("set_appearance", { theme: mode }).catch(() => undefined);
+  };
+
+  /** 结果窗口预设档位（逻辑坐标）：宽度上限即结果窗拖拽钳制的 560，
+      「长文」高度即上限 800，紧凑档 420×340 = 未配置时的出厂默认。
+      点选立即作用于结果窗并持久化（走 Rust 命令，不经过本页保存按钮）；
+      用户拖拽微调仍会记忆，拖后与预设不一致时高亮自然消失 */
+  const RESULT_SIZE_PRESETS: { label: string; size: [number, number] }[] = [
+    { label: "紧凑", size: [420, 340] },
+    { label: "标准", size: [560, 420] },
+    { label: "宽敞", size: [560, 640] },
+    { label: "长文", size: [560, 800] },
+  ];
+
+  const applyResultPreset = (size: [number, number]) => {
+    invoke("apply_result_preset", { width: size[0], height: size[1] }).catch(() => undefined);
+    // save_settings 提交的是本地全量 settings——本地不同步的话，其他页面的保存会回退预设
+    setSettings((s) => (s ? { ...s, resultWindowSize: size } : s));
   };
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saved, setSaved] = useState(false);
@@ -599,6 +622,8 @@ export default function App() {
   // 编辑框始终是「当前生效内容」，内容与默认一致时不落覆盖项——恢复默认因此是删 key，
   // 而不是回写一份当时的默认文本
   const [promptOpen, setPromptOpen] = useState<AiActionId | null>(null);
+  // 模型服务折叠卡：单开（同 Prompt 页），添加服务后自动展开新卡进入编辑
+  const [providerOpen, setProviderOpen] = useState<string | null>(null);
 
   const setPrompt = (id: AiActionId, value: string) => {
     if (!settings) return;
@@ -791,14 +816,16 @@ export default function App() {
         <nav className="nav">
           {(
             [
+              // 导航用最短名词，风格统一：不带「设置/服务/引擎」等可由
+              // 「这是设置 App」推断的后缀；品牌名（Obsidian）保留原文
               ["capture", "划词"],
               ["shortcuts", "快捷键"],
-              ["model", "模型服务"],
-              ["prompts", "Prompt 设置"],
+              ["model", "模型"],
+              ["prompts", "提示词"],
               ["translate", "翻译"],
-              ["search", "搜索引擎"],
+              ["search", "搜索"],
               ["obsidian", "Obsidian"],
-              ["blocklist", "禁用应用"],
+              ["blocklist", "黑名单"],
               ["appearance", "外观"],
               ["perms", "权限"],
               ["about", "关于"],
@@ -825,58 +852,77 @@ export default function App() {
             </p>
 
             <h2 className="sec">服务</h2>
-            {settings.providers.map((p) => (
-              <div className="card" key={p.id}>
-                <div className="grid">
-                  <label className="field">
-                    <span>名称</span>
-                    <input value={p.name} onChange={(e) => patchProvider(p.id, { name: e.target.value })} />
-                  </label>
-                  <label className="field">
-                    <span>模型</span>
-                    <input value={p.model} onChange={(e) => patchProvider(p.id, { model: e.target.value })} />
-                  </label>
-                  <label className="field wide">
-                    <span>服务地址</span>
-                    <input value={p.baseUrl} onChange={(e) => patchProvider(p.id, { baseUrl: e.target.value })} />
-                  </label>
-                  <label className="field wide">
-                    <span>API 密钥</span>
-                    <input
-                      type="password"
-                      value={p.apiKey}
-                      placeholder="sk-…"
-                      onChange={(e) => patchProvider(p.id, { apiKey: e.target.value })}
-                    />
-                  </label>
+            {settings.providers.map((p) => {
+              const open = providerOpen === p.id;
+              return (
+                <div className="card" key={p.id}>
+                  {/* 折叠卡头：名称 + 模型 + 默认标记，点击展开编辑（与 Prompt 页同形态） */}
+                  <div className="prompt-head" onClick={() => setProviderOpen(open ? null : p.id)}>
+                    <div className="row-title">
+                      {p.name || "未命名服务"}
+                      <span className="action-desc">{p.model || "未配置模型"}</span>
+                      {settings.defaultProviderId === p.id && <span className="tag ai">默认</span>}
+                    </div>
+                    {/* 不持 onClick：点把手冒泡到卡片头统一切换（与 Prompt 页同约定） */}
+                    <button className={`svc-chev ${open ? "open" : ""}`} title={open ? "收起" : "展开编辑"}>
+                      <ChevronDown size={13} strokeWidth={2} />
+                    </button>
+                  </div>
+                  <div className={`svc-body ${open ? "open" : ""}`}>
+                    <div>
+                      <div className="grid">
+                        <label className="field">
+                          <span>名称</span>
+                          <input value={p.name} onChange={(e) => patchProvider(p.id, { name: e.target.value })} />
+                        </label>
+                        <label className="field">
+                          <span>模型</span>
+                          <input value={p.model} onChange={(e) => patchProvider(p.id, { model: e.target.value })} />
+                        </label>
+                        <label className="field wide">
+                          <span>服务地址</span>
+                          <input value={p.baseUrl} onChange={(e) => patchProvider(p.id, { baseUrl: e.target.value })} />
+                        </label>
+                        <label className="field wide">
+                          <span>API 密钥</span>
+                          <input
+                            type="password"
+                            value={p.apiKey}
+                            placeholder="sk-…"
+                            onChange={(e) => patchProvider(p.id, { apiKey: e.target.value })}
+                          />
+                        </label>
+                      </div>
+                      <div className="card-foot">
+                        <label className="radio">
+                          <input
+                            type="radio"
+                            name="defaultProvider"
+                            checked={settings.defaultProviderId === p.id}
+                            onChange={() => patch({ defaultProviderId: p.id })}
+                          />
+                          设为默认
+                        </label>
+                        <button
+                          className="row-del"
+                          title="删除该服务"
+                          aria-label="删除该服务"
+                          onClick={() => {
+                            if (settings.providers.length <= 1) {
+                              toast("至少保留一个模型服务", "err");
+                              return;
+                            }
+                            setConfirmDelProvider(p.id);
+                          }}
+                        >
+                          <Trash2 size={13} strokeWidth={1.75} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="card-foot">
-                  <label className="radio">
-                    <input
-                      type="radio"
-                      name="defaultProvider"
-                      checked={settings.defaultProviderId === p.id}
-                      onChange={() => patch({ defaultProviderId: p.id })}
-                    />
-                    设为默认
-                  </label>
-                  <button
-                    className="row-del"
-                    title="删除该服务"
-                    aria-label="删除该服务"
-                    onClick={() => {
-                      if (settings.providers.length <= 1) {
-                        toast("至少保留一个模型服务", "err");
-                        return;
-                      }
-                      setConfirmDelProvider(p.id);
-                    }}
-                  >
-                    <Trash2 size={13} strokeWidth={1.75} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             <button
               className="btn"
               onClick={() => {
@@ -885,6 +931,7 @@ export default function App() {
                   providers: [...settings.providers, p],
                   defaultProviderId: settings.providers.length === 0 ? p.id : settings.defaultProviderId,
                 });
+                setProviderOpen(p.id); // 新卡自动展开，直接进入编辑
               }}
             >
               ＋ 添加服务
@@ -914,7 +961,7 @@ export default function App() {
 
         {page === "prompts" && (
           <>
-            <h1>Prompt 设置</h1>
+            <h1>提示词</h1>
             <p className="page-hint">
               编辑各动作发给模型的指令，输入框内即实际发送的内容，所选文字随后附带。更改需保存后生效。
             </p>
@@ -1688,7 +1735,7 @@ export default function App() {
             <h1>Obsidian</h1>
             <p className="page-hint">
               把划词与识图结果按模板直写进 vault 的 markdown 文件——离线可用，无需安装
-              Obsidian 插件。配置 vault 后，胶囊与结果窗会出现「存入笔记」。更改需保存后生效。
+              Obsidian 插件。配置 vault 后，胶囊与结果窗会出现「存入 Obsidian」。更改需保存后生效。
             </p>
 
             <div className="card">
@@ -1698,7 +1745,7 @@ export default function App() {
                   <div className="row-sub">
                     {settings.obsidian.vaultPath
                       ? "已接入：写入范围仅限该目录内的相对路径。"
-                      : "选择 vault 根目录（.obsidian 所在的那层）。未选择时「存入笔记」不出现。"}
+                      : "选择 vault 根目录（.obsidian 所在的那层）。未选择时「存入 Obsidian」不出现。"}
                   </div>
                 </div>
                 <div className="row-ctl">
@@ -1791,43 +1838,109 @@ export default function App() {
 
             <h2 className="sec">模板</h2>
             <div className="card">
-              <label className="field wide">
-                <span>
-                  摘录块模板（变量：{"{text}"} 选中文本 ·{" "}
-                  {"{source}"} 来源应用 · {"{time}"} 时间）
-                </span>
-                <textarea
-                  className="prompt-input in-field"
-                  spellCheck={false}
-                  rows={3}
-                  value={settings.obsidian.excerptTemplate}
-                  onChange={(e) =>
+              <div className="row-between">
+                <div>
+                  <div className="row-title">摘录块模板</div>
+                  <div className="row-sub">
+                    变量：{"{text}"} 选中文本 · {"{source}"} 来源应用 · {"{time}"} 时间 ·{" "}
+                    {"{date}"} 日期
+                  </div>
+                </div>
+                <button
+                  className="btn sm"
+                  disabled={settings.obsidian.excerptTemplate === DEFAULT_EXCERPT_TEMPLATE}
+                  title="恢复出厂默认模板"
+                  onClick={() =>
                     patch({
-                      obsidian: { ...settings.obsidian, excerptTemplate: e.target.value },
+                      obsidian: { ...settings.obsidian, excerptTemplate: DEFAULT_EXCERPT_TEMPLATE },
                     })
                   }
-                />
-              </label>
+                >
+                  恢复默认
+                </button>
+              </div>
+              <textarea
+                className="prompt-input tpl"
+                spellCheck={false}
+                rows={3}
+                value={settings.obsidian.excerptTemplate}
+                onChange={(e) =>
+                  patch({
+                    obsidian: { ...settings.obsidian, excerptTemplate: e.target.value },
+                  })
+                }
+              />
+              <p className="row-sub">多行选中文本会逐行保持 markdown 引用形态。</p>
+            </div>
 
-              <label className="field wide sep">
-                <span>任务行模板（变量：{"{text}"} 任务内容 · {"{due}"} 截止时间）</span>
-                <textarea
-                  className="prompt-input in-field"
-                  spellCheck={false}
-                  rows={2}
-                  value={settings.obsidian.taskTemplate}
-                  onChange={(e) =>
+            <div className="card">
+              <div className="row-between">
+                <div>
+                  <div className="row-title">任务行模板</div>
+                  <div className="row-sub">
+                    变量：{"{text}"} 任务内容 · {"{due}"} 截止日期 ·{" "}
+                    {"{dueTag}"} 日历标记（无日期时整段省略）
+                  </div>
+                </div>
+                <button
+                  className="btn sm"
+                  disabled={settings.obsidian.taskTemplate === DEFAULT_TASK_TEMPLATE}
+                  title="恢复出厂默认模板"
+                  onClick={() =>
                     patch({
-                      obsidian: { ...settings.obsidian, taskTemplate: e.target.value },
+                      obsidian: { ...settings.obsidian, taskTemplate: DEFAULT_TASK_TEMPLATE },
                     })
                   }
-                />
-              </label>
+                >
+                  恢复默认
+                </button>
+              </div>
+              <textarea
+                className="prompt-input tpl"
+                spellCheck={false}
+                rows={2}
+                value={settings.obsidian.taskTemplate}
+                onChange={(e) =>
+                  patch({
+                    obsidian: { ...settings.obsidian, taskTemplate: e.target.value },
+                  })
+                }
+              />
+            </div>
 
-              <p className="row-sub">
-                摘录可用变量：{"{text}"} 选中文本 · {"{source}"} 来源应用 · {"{time}"} 时间 ·{" "}
-                {"{date}"} 日期。多行选中文本会逐行保持 markdown 引用形态。
-              </p>
+            <div className="card">
+              <div className="row-between">
+                <div>
+                  <div className="row-title">知识卡模板</div>
+                  <div className="row-sub">
+                    变量：{"{text}"} 选中文本 · {"{source}"} 来源应用 · {"{time}"} 时间 ·{" "}
+                    {"{date}"} 日期。一卡一文件，文件名取选中文本首行（≤20 字）。
+                  </div>
+                </div>
+                <button
+                  className="btn sm"
+                  disabled={settings.obsidian.cardTemplate === DEFAULT_CARD_TEMPLATE}
+                  title="恢复出厂默认模板"
+                  onClick={() =>
+                    patch({
+                      obsidian: { ...settings.obsidian, cardTemplate: DEFAULT_CARD_TEMPLATE },
+                    })
+                  }
+                >
+                  恢复默认
+                </button>
+              </div>
+              <textarea
+                className="prompt-input tpl"
+                spellCheck={false}
+                rows={2}
+                value={settings.obsidian.cardTemplate}
+                onChange={(e) =>
+                  patch({
+                    obsidian: { ...settings.obsidian, cardTemplate: e.target.value },
+                  })
+                }
+              />
             </div>
 
             <div className="save-bar">
@@ -1926,6 +2039,39 @@ export default function App() {
                       {label}
                     </button>
                   ))}
+                </div>
+              </div>
+            </div>
+
+            <h2 className="sec">结果窗口</h2>
+            <div className="card">
+              <div className="row-between">
+                <div>
+                  <div className="row-title">默认尺寸</div>
+                  <div className="row-sub">
+                    预设四种大小，点选立即作用于结果窗口；拖拽微调仍然有效并被记住。
+                  </div>
+                </div>
+                <div className="seg sized" role="radiogroup" aria-label="结果窗口默认尺寸">
+                  {RESULT_SIZE_PRESETS.map((p) => {
+                    const rs = settings.resultWindowSize;
+                    const active =
+                      !!rs &&
+                      Math.round(rs[0]) === p.size[0] &&
+                      Math.round(rs[1]) === p.size[1];
+                    return (
+                      <button
+                        key={p.label}
+                        className={active ? "on" : ""}
+                        onClick={() => applyResultPreset(p.size)}
+                      >
+                        {p.label}
+                        <small>
+                          {p.size[0]} × {p.size[1]}
+                        </small>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>

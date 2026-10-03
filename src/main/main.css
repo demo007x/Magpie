@@ -803,6 +803,11 @@ input[type="radio"] {
   min-height: 52px;
 }
 
+/* Obsidian 模板框：两三行的短模板，rows 决定高度，不设下限 */
+.prompt-input.tpl {
+  min-height: 0;
+}
+
 /* 试跑输出：只读、限高内滚，错误直接以红字呈现 */
 .act-out {
   font: inherit;
@@ -1041,6 +1046,29 @@ input[type="radio"] {
 
 .seg button:hover {
   color: var(--text);
+}
+
+/* 双行 seg（结果窗口尺寸档位）：档名 + 具体像素——档位名抽象，
+   不标实际尺寸用户只能逐个点开试 */
+.seg.sized button {
+  height: auto;
+  padding: 4px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  line-height: 1.3;
+}
+
+.seg.sized button small {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--sec);
+}
+
+.seg.sized button.on small {
+  color: var(--text);
+  opacity: 0.65;
 }
 
 .seg button.on {

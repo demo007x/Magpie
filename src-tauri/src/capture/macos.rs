@@ -519,6 +519,13 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
                     // 截图取词等系统交互期间的拖选：跳过判定与 AX 查询（防止在
                     // 截图模态会话里触发 AX 异常导致进程 abort）
                     debug_log("mouse-up：静音期间忽略拖选");
+                } else if focused_pid() == Some(std::process::id() as i32) {
+                    // 选区发生在自身窗口（主窗/结果窗等 webview）：必须先于一切 AX 查询排除。
+                    // 聚焦应用是自己时，任何 AX 下探都会走进 WKWebView 的辅助功能树，
+                    // 而该路径 WebKit 仅限主线程调用，后台线程一碰即被主动 abort
+                    // （EXC_BREAKPOINT，crashDueToApplicationCallingMainThreadOnlyWebKitAPIFromBackgroundThread）。
+                    // worker 层的「自身进程」过滤在查询之后，救不了已发出的查询
+                    debug_log("mouse-up：选区在自身窗口内，跳过取词");
                 } else {
                     // 自适应防抖：拖选的选区随拖动实时更新，松手即最终态，短等即可；
                     // 双击/三击的选区是松手后应用计算的，需给足处理时间（沿用 debounce_ms 档，
@@ -670,6 +677,15 @@ unsafe fn ax_selected_text(app_handle: &AppHandle, x: f64, y: f64) -> Option<(St
     let rc_app = AXUIElementCopyAttributeValue(sys, consts.focused_app, &mut app);
     if rc_app == 0 && !app.is_null() {
         let app_el = app as AXUIElementRef;
+        // 拿到句柄立刻校验归属：detect_loop 的闸门与真正查询之间隔着防抖 + 整条
+        // 查询链（兼容模式可达 749ms），期间焦点可能切回自己（用户点了胶囊等），
+        // 只对「即将下探的这个句柄」校验才没有竞态窗口
+        if is_own_element(app_el) {
+            debug_log("AX: 聚焦应用是自身进程，跳过取词");
+            CFRelease(app as *mut c_void);
+            CFRelease(sys as *mut c_void);
+            return None;
+        }
         let mut pid: c_int = 0;
         let _ = AXUIElementGetPid(app_el, &mut pid);
 
@@ -797,6 +813,17 @@ fn focused_pid() -> Option<i32> {
     }
 }
 
+/// 元素是否属于本进程：下探进本进程 WKWebView 的辅助功能树会在后台线程触发
+/// WebKit 主线程断言（EXC_BREAKPOINT 必崩）；跨进程元素走 XPC 由对端 servicing，
+/// 对端崩是自己崩，伤不到我们。凡对拿到的 AX 句柄做下探，先过这道闸
+fn is_own_element(el: AXUIElementRef) -> bool {
+    unsafe {
+        let mut pid: c_int = 0;
+        AXUIElementGetPid(el, &mut pid);
+        pid == std::process::id() as i32
+    }
+}
+
 /// 坐标定位回退：AXUIElementCopyElementAtPosition（top-left 原点，与 CGEvent 同系）
 /// 取光标下元素，沿 AXParent 向上找带选区文本的节点。绕开聚焦链路。
 unsafe fn query_at_position(
@@ -815,6 +842,12 @@ unsafe fn query_at_position(
         return None;
     }
     let mut cur = el as AXUIElementRef;
+    // 光标下的元素可能是自己的浮层（结果窗/钉图恰好在光标处而聚焦应用是别的应用），
+    // 同属禁行区；父链沿元素自身向上，归属不变，查一次即可
+    if is_own_element(cur) {
+        CFRelease(cur as *mut c_void);
+        return None;
+    }
     let mut text = None;
     for depth in 0..=5 {
         text = copy_selected_text(cur, consts, true)

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { toast } from "../shared/toast";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -522,18 +523,22 @@ export default function App() {
   const [flashMsg, setFlashMsg] = useState("");
   const [engines, setEngines] = useState<SearchEngine[]>([]);
   const [defaultSearch, setDefaultSearch] = useState("");
-  // 展开的二级浮层（同屏只开一个入口）："search"/"translate" 仅供 OCR 结果窗口
-  // 的 chips 沿用；浮动条用 overflow（收纳面板）/ chev:*（胶囊动作换渠道）/
-  // pmenu:*（收纳面板项换渠道），二级一律窄单列浮出菜单（形式全局统一）
+  // 展开的二级浮层（同屏只开一个入口）："search"/"translate"/"obsidian" 仅供 OCR
+  // 结果窗口的动作行 chips 沿用（obsidian = 存入目标：笔记/任务/卡片）；浮动条用
+  // overflow（收纳面板）/ chev:*（胶囊动作换渠道/存入目标）/
+  // pmenu:*（收纳面板项换渠道/存入目标），二级一律窄单列浮出菜单（形式全局统一）
   const [menu, setMenu] = useState<
     | null
     | "search"
     | "translate"
+    | "obsidian"
     | "overflow"
     | "chev:translate"
     | "chev:search"
+    | "chev:obsidian"
     | "pmenu:translate"
     | "pmenu:search"
+    | "pmenu:obsidian"
   >(null);
   // 二级菜单当前选中的服务：初始跟随默认服务，点谁谁选中；
   // 点主菜单按钮（走默认服务）时置 null 回落到默认高亮
@@ -552,7 +557,7 @@ export default function App() {
   // 弹出瞬间挂起 hover 样式：胶囊常压在光标下，hover 残留会被误认为「选中」；
   // 首次 mousemove 即恢复（非 key 窗口下由 hover://move 合成事件解除，见下）
   const [hoverSuppress, setHoverSuppress] = useState(false);
-  // Obsidian 接入配置：vaultPath 非空 = 「存入笔记」动作可用
+  // Obsidian 接入配置：vaultPath 非空 = 「存入 Obsidian」动作可用
   const [obsidianCfg, setObsidianCfg] = useState<ObsidianConfig | null>(null);
   // 合成 hover 当前命中的动作：hover://move 驱动 elementFromPoint 增删类，
   // 绕开 WebKit 对非活动页面的 :hover 门控（真 mousemove 在本窗口不可靠）
@@ -778,7 +783,7 @@ export default function App() {
     return i >= 0 ? i : id === "__ctx" ? searchIdx : 999;
   };
 
-  type BarEntry = { id: string; label: string; icon?: string; onClick: () => void };
+  type BarEntry = { id: string; label: string; icon?: string; hasMenu?: boolean; onClick: () => void };
 
   // 常驻动作列表：上下文动作不在其中——它们由本次选中的内容触发，是动态附加层，
   // 置顶显示、不占「胶囊显示数量」名额、不替换（含隐藏）任何常驻动作
@@ -787,10 +792,14 @@ export default function App() {
     for (const a of registry) {
       if (isContextAction(a.id)) continue;
       if (actions[a.id] === false) continue;
+      // 「存入 Obsidian」只在已配置 vault 时出现（与结果窗动作行、设置页口径一致）
+      if (a.id === "obsidian" && !obsidianCfg?.vaultPath) continue;
       entries.push({
         id: a.id,
         label: a.label,
         icon: a.icon,
+        // 存入 Obsidian 的 ⌄ 目标菜单（笔记/任务/卡片），vault 未配置时不出现
+        hasMenu: a.id === "obsidian",
         onClick: () => {
           setMenu(null);
           runAction(a.id);
@@ -1281,7 +1290,9 @@ export default function App() {
   // 分离卡布局：窗口 = 胶囊与已展开二级卡片的并集 + 四周 FLOAT_PAD 透明留白。
   // 二级卡片锚在触发点左缘/左下向右生长，贴屏幕右缘翻转为右对齐触发点；
   // 翻转时窗口向左扩展，bar 的 margin-left 随之补偿——胶囊像素不动。
-  // 落位以 show/resize 返回的实际窗口位置为准（Rust 钳制可能改写目标值）
+  // 落位以 show/resize 返回的实际窗口位置为准（Rust 钳制可能改写目标值）。
+  // 依赖含实体识别结果（dateHits/placeHits）：上下文按钮是「胶囊先出、命中补进」
+  // 的渐进出现，会改变胶囊宽度——不重测窗口的话新按钮会被顶出窗口右边界（缺一半）
   useLayoutEffect(() => {
     const bar = barRef.current;
     if (!bar) return;
@@ -1340,13 +1351,25 @@ export default function App() {
           trig.closest<HTMLElement>(".action-slot") ?? trig.closest<HTMLElement>(".pitem") ?? trig;
         const tr = item.getBoundingClientRect();
         if (menu.startsWith("pmenu:") && panel) {
-          // 横向 = 触发项左缘正下方（贴右缘翻转为右缘对齐）；纵向 = 所属卡片底边 + CARD_GAP
+          // 竖排菜单的行内二级 = 行侧弹出（NSMenu 心智）：默认从面板右缘向右弹，
+          // 窗口右缘放不下则向左弹回面板左缘（面板贴右缘翻转后必走此支）。
+          // 起算点必须用面板边缘而非行矩形——行两侧内缩着面板 padding，
+          // 按行算会把 CARD_GAP 吃掉、二级与面板贴死甚至叠 1px。
+          // 也不能级联在面板下方——竖排面板限高内滚（overflow-y），子卡若是
+          // 面板的 DOM 子元素会被裁切，故提升到窗口层级、按行坐标横向定位
           const pr = panel.getBoundingClientRect();
           const base = cards[0];
+          const panelL = base.x;
+          const panelR = base.x + (pr.right - pr.left);
+          const rowT = base.y + (tr.top - pr.top);
+          let x = panelR + CARD_GAP;
+          if (barScreen && scr && barScreen.x + x + w > scr.right - 8) {
+            x = panelL - w - CARD_GAP;
+          }
           cards.push({
             el: drop,
-            x: anchored(base.x + (tr.left - pr.left), base.x + (tr.right - pr.left), w),
-            y: base.y + base.h + CARD_GAP,
+            x,
+            y: rowT,
             w,
             h,
           });
@@ -1412,7 +1435,7 @@ export default function App() {
         .then(settle)
         .catch(() => undefined);
     }
-  }, [phase, pending, menu, flashId]);
+  }, [phase, pending, menu, flashId, dateHits, placeHits]);
 
   // 底边拖拽：仅调高度（单独的向下/向上拖动）
   const startResultResizeV = (e: ReactMouseEvent) => {
@@ -1592,7 +1615,12 @@ export default function App() {
     flashTimerRef.current = window.setTimeout(() => setFlashId(null), 1200);
   };
 
-  const runAction = (id: string, serviceOverride?: string, sourceOverride?: string) => {
+    const runAction = (
+      id: string,
+      serviceOverride?: string,
+      sourceOverride?: string,
+      targetOverride?: string,
+    ) => {
     const action = liveRef.current.registry.find((a) => a.id === id);
     if (!action) return;
     // 动作文本源：显式指定（划词结果导流时由 pending 带入）> OCR 面板用识别文本 > 普通划词用选中文本
@@ -1671,22 +1699,25 @@ export default function App() {
 
       if (id === "obsidian") {
         const cfg = obsidianCfg;
+        // 反馈走全局 toast 而非按钮 flash：从收纳面板发起时面板先收起，
+        // flash 挂在已卸载的按钮上等于无提示（全局 toast 窗口不受影响）
         if (!cfg?.vaultPath) {
-          flash(id, "未配置 vault");
+          toast("未配置 Obsidian vault，请在设置页选择", "err");
           return;
         }
+        const target = targetOverride ?? "note";
         const now = new Date();
         const p2 = (n: number) => String(n).padStart(2, "0");
         const date = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
         const time = `${p2(now.getHours())}:${p2(now.getMinutes())}`;
         const src = appNameFrom(sourceAppRef.current);
-        // 文件名按用户配置的 Daily Notes 格式展开（yyyy/YYYY・MM・dd/DD），缺 .md 后缀补上
+        // 日记文件名按用户配置的 Daily Notes 格式展开（yyyy/YYYY・MM・dd/DD），缺 .md 后缀补上
         const base = (cfg.dailyFileName || "yyyy-MM-DD")
           .replaceAll(/yyyy/gi, String(now.getFullYear()))
           .replaceAll("MM", p2(now.getMonth() + 1))
-          .replaceAll(/dd/g, p2(now.getDate()));
+          .replaceAll(/dd/gi, p2(now.getDate()));
         const fname = base.endsWith(".md") ? base : `${base}.md`;
-        const rel = [cfg.dailyFolder.replace(/^\/+|\/+$/g, ""), fname]
+        const dailyRel = [cfg.dailyFolder.replace(/^\/+|\/+$/g, ""), fname]
           .filter(Boolean)
           .join("/");
         // 保存内容择优：结果窗里已有 AI 结果时存结果，否则存原文
@@ -1694,15 +1725,66 @@ export default function App() {
           phase.kind === "ocr" && phase.actionId && phase.output && !phase.error
             ? phase.output
             : source;
-        // 多行文本逐行补引用前缀，保持摘录块的 markdown 形态
+
+        // 存任务：写入任务目标文件（空 = 当日日记）。{due} 取选中文本里的日期实体
+        //（detect_dates µs 级，用时重检——与「提取信息」面板同一模式，不跨窗口传状态）；
+        // {dueTag} = "📅 日期" 或空，模板用它占位即可在无日期时整段省略
+        if (target === "task") {
+          const rel = cfg.taskFile.trim() ? cfg.taskFile.trim() : dailyRel;
+          const oneLine = body.replace(/\s*\n\s*/g, " ").trim();
+          invoke<DateHit[]>("detect_dates", { text: oneLine })
+            .then((hits) => {
+              const h = (hits ?? [])[0];
+              const d = h ? new Date(h.unix * 1000) : null;
+              const due = d
+                ? `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`
+                : "";
+              const dueTag = d ? `📅 ${due}` : "";
+              const line = cfg.taskTemplate
+                .replaceAll("{text}", oneLine)
+                .replaceAll("{due}", due)
+                .replaceAll("{dueTag}", dueTag);
+              invoke("obsidian_append", { relPath: rel, content: line })
+                .then(() => toast("已存入任务"))
+                .catch(() => toast("存入 Obsidian 失败", "err"));
+            })
+            .catch(() => toast("存入 Obsidian 失败", "err"));
+          return;
+        }
+
+        // 存卡片：一卡一文件写入知识卡目录，文件名 = 选中文本首行清理后截 20 字
+        //（非法文件名字符剔除，超长截断，空选区回退时间戳命名）
+        if (target === "card") {
+          const first = body.split("\n").map((s) => s.trim()).find(Boolean) ?? "";
+          const safe = first
+            .replace(/[/\\:*?"<>|#^[\]]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+          const title =
+            Array.from(safe).slice(0, 20).join("") || `卡片 ${date} ${time.replace(":", "")}`;
+          const rel = [cfg.cardFolder.replace(/^\/+|\/+$/g, ""), `${title}.md`]
+            .filter(Boolean)
+            .join("/");
+          const content = cfg.cardTemplate
+            .replaceAll("{date}", date)
+            .replaceAll("{time}", time)
+            .replaceAll("{source}", src)
+            .replaceAll("{text}", body.split("\n").join("\n> "));
+          invoke("obsidian_append", { relPath: rel, content: content })
+            .then(() => toast(`已存入卡片：${title}`))
+            .catch(() => toast("存入 Obsidian 失败", "err"));
+          return;
+        }
+
+        // 存笔记（默认）：摘录块追加当日日记，多行文本逐行补引用前缀保持 markdown 形态
         const excerpt = cfg.excerptTemplate
           .replaceAll("{date}", date)
           .replaceAll("{time}", time)
           .replaceAll("{source}", src)
           .replaceAll("{text}", body.split("\n").join("\n> "));
-        invoke("obsidian_append", { relPath: rel, content: excerpt })
-          .then(() => flash(id, "已存入 ✓"))
-          .catch(() => flash(id, "存入失败"));
+        invoke("obsidian_append", { relPath: dailyRel, content: excerpt })
+          .then(() => toast(`已存入 ${fname}`))
+          .catch(() => toast("存入 Obsidian 失败", "err"));
         return;
       }
       return;
@@ -1972,16 +2054,17 @@ export default function App() {
               <span>{flashId === e.id ? flashMsg : e.label}</span>
             </button>
             {((e.id === "search" && enabledEngines.length > 1) ||
-              (e.id === "translate" && enabledTranslates.length > 1)) && (
+              (e.id === "translate" && enabledTranslates.length > 1) ||
+              (e.id === "obsidian" && e.hasMenu)) && (
                 <button
                   className="chev"
                   data-trig={`chev:${e.id}`}
-                  title={e.id === "search" ? "更多搜索引擎" : "更多翻译服务"}
+                  title={e.id === "search" ? "更多搜索引擎" : e.id === "translate" ? "更多翻译服务" : "存入目标"}
                   onClick={guarded(() =>
                     setMenu((m) =>
                       m === `chev:${e.id}`
                         ? null
-                        : (`chev:${e.id}` as "chev:translate" | "chev:search"),
+                        : (`chev:${e.id}` as "chev:translate" | "chev:search" | "chev:obsidian"),
                     ),
                   )}
                 >
@@ -1997,7 +2080,7 @@ export default function App() {
         {restEntries.length > 0 && (
           <span className="action-slot">
             <button
-              className="action more"
+              className={`action more ${menu === "overflow" || menu?.startsWith("pmenu:") ? "open" : ""}`}
               data-trig="overflow"
               title={`还有 ${restEntries.length} 个动作`}
               onClick={guarded(() =>
@@ -2025,7 +2108,8 @@ export default function App() {
           {restEntries.map((e) => {
             const hasMenu =
               (e.id === "translate" && enabledTranslates.length > 1) ||
-              (e.id === "search" && enabledEngines.length > 1);
+              (e.id === "search" && enabledEngines.length > 1) ||
+              (e.id === "obsidian" && Boolean(obsidianCfg?.vaultPath));
             return (
               <span key={e.id} className="pitem">
                 <button
@@ -2047,14 +2131,13 @@ export default function App() {
                 </button>
                 {hasMenu && (
                   <button
-                    className="pchev"
+                    className={`pchev ${menu === `pmenu:${e.id}` ? "open" : ""}`}
                     data-trig={`pmenu:${e.id}`}
                     title={e.id === "translate" ? "更多翻译服务" : "更多搜索引擎"}
                     onClick={guarded(() =>
                       setMenu((m) =>
-                        m === `pmenu:${e.id}`
-                          ? null
-                          : (`pmenu:${e.id}` as "pmenu:translate" | "pmenu:search"),
+                        // 二级收起 = 回到父级（面板保持展开），置 null 会把收纳面板一起收掉
+                        m === `pmenu:${e.id}` ? "overflow" : (`pmenu:${e.id}` as "pmenu:translate" | "pmenu:search"),
                       ),
                     )}
                   >
@@ -2074,12 +2157,20 @@ export default function App() {
       {/* 窄单列浮出菜单：胶囊动作 ⌄ 与收纳面板项 ⌄ 共用同一形式（全局统一） */}
       {!IS_OCR && !!menu && menu !== "overflow" && menu !== "search" && menu !== "translate" && (
         (() => {
-          const kind = menu.split(":")[1] as "translate" | "search";
+          const kind = menu.split(":")[1] as "translate" | "search" | "obsidian";
+          // 存入 Obsidian 的目标菜单：主按钮 = 存笔记（默认项打点）。
+          // 项名只写目标名词——菜单挂在「存入 Obsidian」的 ⌄ 下，"存入"动词不必逐行重复
           const items =
-            kind === "translate"
-              ? enabledTranslates.map((s) => ({ key: s.id, label: s.label }))
-              : enabledEngines.map((en) => ({ key: en.name, label: en.name }));
-          const cur = kind === "translate" ? defaultTranslate?.id : defaultEngine?.name;
+            kind === "obsidian"
+              ? [
+                  { key: "note", label: "笔记" },
+                  { key: "task", label: "任务" },
+                  { key: "card", label: "卡片" },
+                ]
+              : kind === "translate"
+                ? enabledTranslates.map((s) => ({ key: s.id, label: s.label }))
+                : enabledEngines.map((en) => ({ key: en.name, label: en.name }));
+          const cur = kind === "obsidian" ? "note" : kind === "translate" ? defaultTranslate?.id : defaultEngine?.name;
           return (
             <div className="pop menu" ref={menuPopRef}>
               {items.map((it) => (
@@ -2088,7 +2179,9 @@ export default function App() {
                   className={`mitem ${cur === it.key ? "on" : ""}`}
                   onClick={guarded(() => {
                     setMenu(null);
-                    if (kind === "translate") {
+                    if (kind === "obsidian") {
+                      runAction("obsidian", undefined, undefined, it.key);
+                    } else if (kind === "translate") {
                       runAction("translate", it.key);
                     } else {
                       const en = enabledEngines.find((x) => x.name === it.key);
@@ -2418,15 +2511,25 @@ export default function App() {
                     <span className="ic">{iconOf(a.id, a.icon)}</span>
                     <span>{a.label}</span>
                   </button>
-                  {(a.id === "translate" || a.id === "search") &&
+                  {(a.id === "translate" || a.id === "search" || a.id === "obsidian") &&
                     (a.id === "translate"
                       ? enabledTranslates.length > 1
-                      : enabledEngines.length > 1) && (
+                      : a.id === "obsidian"
+                        ? true
+                        : enabledEngines.length > 1) && (
                       <button
                         className="chev"
-                        title={a.id === "translate" ? "更多翻译服务" : "更多搜索引擎"}
+                        title={
+                          a.id === "translate"
+                            ? "更多翻译服务"
+                            : a.id === "obsidian"
+                              ? "存入目标"
+                              : "更多搜索引擎"
+                        }
                         onClick={guarded(() =>
-                          setMenu((m) => (m === a.id ? null : (a.id as "search" | "translate"))),
+                          setMenu((m) =>
+                            m === a.id ? null : (a.id as "search" | "translate" | "obsidian"),
+                          ),
                         )}
                       >
                         <ChevronDown
@@ -2481,6 +2584,28 @@ export default function App() {
                       })}
                     >
                       {e.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {menu === "obsidian" && (
+                <div className="chips">
+                  {(
+                    [
+                      ["note", "笔记"],
+                      ["task", "任务"],
+                      ["card", "卡片"],
+                    ] as Array<[string, string]>
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      className={`chip ${key === "note" ? "primary" : ""}`}
+                      onClick={guarded(() => {
+                        setMenu(null);
+                        runAction("obsidian", undefined, undefined, key);
+                      })}
+                    >
+                      {label}
                     </button>
                   ))}
                 </div>

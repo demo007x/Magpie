@@ -3,6 +3,7 @@
    表面冷净，强调色饱满，选中/进行中用渐变点亮。原生窗口阴影 + 自主配色。 */
 :root {
   --surf: #ffffff;
+  --menu-bg: #f2f2f5; /* 二级菜单底：比胶囊暗一档，视觉降级表达从属（勿与 --surf 拉平） */
   /* 边缘定义：原生阴影已关（黑边晕），实色卡靠这圈内描边在同类色背景上立起轮廓。
      必须用 inset box-shadow 而非 border——border 会挤占内容盒，破坏
      「测量内容尺寸 → 窗口尺寸」的恒等关系（bar 折行、高度跳变） */
@@ -30,6 +31,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --surf: #282828; /* macOS 深色浮层标准灰阶 */
+    --menu-bg: #1f1f23;
     --edge: rgba(255, 255, 255, 0.10);
     --sep: rgba(255, 255, 255, 0.16);
     --text: #ededf4;
@@ -56,6 +58,7 @@
    （0,1,0），可覆盖系统偏好 */
 :root.theme-light {
   --surf: #ffffff;
+  --menu-bg: #f2f2f5;
   --edge: rgba(0, 0, 0, 0.10);
   --sep: rgba(0, 0, 0, 0.12);
   --text: #1c1c24;
@@ -77,6 +80,7 @@
 
 :root.theme-dark {
   --surf: #282828;
+  --menu-bg: #1f1f23;
   --edge: rgba(255, 255, 255, 0.10);
     --sep: rgba(255, 255, 255, 0.16);
   --text: #ededf4;
@@ -201,7 +205,7 @@ body,
 }
 
 /* ---- 二级浮层（分离卡）----
-   收纳面板（.pop.overflow，单行平铺不限宽）与窄单列浮出菜单（.pop.menu）
+   收纳面板（.pop.overflow，竖排锚定菜单）与窄单列浮出菜单（.pop.menu）
    共用同一卡片语言：绝对定位盖在正文上，胶囊纹丝不动；
    位置与窗口并集由布局 effect 计算（锚触发点左下、贴右缘翻转） */
 .pop {
@@ -231,34 +235,46 @@ body,
 }
 
 .pop.overflow {
-  flex-direction: row;
-  gap: 2px;
+  /* 竖排菜单形态：与胶囊的"工具条"语言刻意拉开——更暗的底色、更大的内边距，
+     避免被误读为第二颗胶囊（层级：它是 ⌃N 展开的内容，不是另一个主体）。
+     宽度 = 最长行自然宽度（与 .pop.menu 同哲学，不设 min-width——短项菜单
+     不该被撑宽）；max-width 兜底超长自定义动作名，限高内滚：动作再多也只是
+     往下长。行内二级菜单因 overflow 裁切不能作为行的子元素渲染，
+     由布局 effect 提升到窗口层级定位 */
+  flex-direction: column;
+  gap: 1px;
   width: max-content;
+  max-width: 220px;
+  max-height: 264px;
+  overflow-y: auto;
+  background: var(--menu-bg);
+  padding: 4px;
 }
 
-/* 收纳面板项：主体点击 = 默认服务执行，⌄ 才弹换渠道/引擎菜单 */
+/* 收纳面板项：主体点击 = 默认服务执行，⌄ 才弹换渠道/引擎菜单。
+   竖排菜单行：整行可点（action 撑满），⌄ 恒在行尾 */
 .pitem {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  width: 100%;
   position: relative; /* 项内二级菜单的定位基准 */
 }
 
-/* 相邻项之间的竖向分割线：与胶囊动作分隔线同语言（1px 短线画在 gap 里） */
-.pitem + .pitem::before {
-  content: "";
-  position: absolute;
-  left: -1.5px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 1px;
-  height: 14px;
-  background: var(--sep);
+.pop.overflow .action {
+  flex: 1 1 auto;
+  border-radius: 7px;
+  min-width: 0; /* 允许收缩，配合 max-width 的省略号兜底 */
+}
+
+.pop.overflow .action > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pchev {
-  width: 16px;
+  width: 18px;
   height: 26px;
-  margin-left: -5px;
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -272,6 +288,21 @@ body,
 .pchev:hover {
   background: var(--hov);
   color: var(--text);
+}
+
+.pchev.open {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* ⌃N 展开中：触发钮整体点亮，明示面板从属（箭头旋转由 chev-svg.open 负责） */
+.action.more.open {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.action.more.open b {
+  color: var(--accent);
 }
 
 /* ⌄N 收纳徽标 */
@@ -293,6 +324,7 @@ body,
   gap: 1px;
   width: max-content;
   padding: 4px;
+  background: var(--menu-bg); /* 与收纳面板同一菜单语言（比胶囊暗一档） */
 }
 
 .mitem {
