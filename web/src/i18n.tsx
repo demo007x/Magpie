@@ -29,7 +29,7 @@ const zh = {
     note: "弹出约 0.1 秒 · 模型服务自选 · 识图与提取在本机完成 · 不收集使用数据",
     stats: [
       { value: "2", label: "种取字方式", note: "划词 · 识图" },
-      { value: "11", label: "个内置动作", note: "AI 动作 3 个 · 本地动作 8 个" },
+      { value: "12", label: "个内置动作", note: "AI 动作 3 个 · 本地动作 9 个" },
       { value: "10", label: "个自定义动作", note: "提示词自行设定" },
       { value: "6", label: "个内置搜索引擎", note: "支持自定义引擎" },
     ],
@@ -37,9 +37,9 @@ const zh = {
   actions: {
     eyebrow: "Actions",
     titlePre: "内置 ",
-    titleAccent: "11 个动作",
+    titleAccent: "12 个动作",
     titlePost: "，分为 AI 与本地两类",
-    lead: "翻译、解释、总结由所选模型服务完成；复制、搜索、打开链接、写邮件与提取信息在本机完成。浮动条默认显示 4 个动作，其余收入展开面板；可用动作随选中内容类型变化，选中网址时提供「打开链接」，选中邮箱时提供「写邮件」。",
+    lead: "翻译、解释、总结由所选模型服务完成；复制、搜索、打开链接、写邮件、提取信息与存入 Obsidian 在本机完成。浮动条默认显示 4 个动作，其余收入展开面板；可用动作随选中内容类型变化，选中网址时提供「打开链接」，选中邮箱时提供「写邮件」。",
     items: [
       { name: "翻译", desc: "自动判断翻译方向，结果实时显示。支持 AI 翻译、百度翻译、DeepL 三种服务，可设定默认服务。" },
       { name: "解释", desc: "对术语、概念、典故与长句给出说明，无需另开对话窗口。" },
@@ -48,6 +48,7 @@ const zh = {
       { name: "提取信息", desc: "自动识别选区中的网址、邮箱、验证码与电话号码。仅一种信息时直接提供对应动作，多种信息时集中显示。" },
       { name: "打开链接 / 写邮件", desc: "选中网址可直接打开，选中邮箱可直接撰写邮件，电话号码一键复制。" },
       { name: "加入日历 / 打开地图", desc: "选中含日期、时间或地点的文字，一键预填日历事件或在地图中打开——信息直接落地，不停留在窗口里。" },
+      { name: "存入 Obsidian", desc: "选中文本按模板直写进 vault：摘录追加进当日日记，任务行写入待办（自动识别选区里的截止日期），知识卡一卡一文件。全程本地文件写入，无需安装插件。" },
     ],
   },
   ocr: {
@@ -131,11 +132,12 @@ const zh = {
     titlePre: "取字、处理、转送、留存，",
     titleAccent: "四个环节连续可用",
     titlePost: "",
-    lead: "拾趣覆盖取字、处理、转送、留存四个环节：除 AI 动作与本机动作外，正在扩展笔记、待办等应用接入，处理结果可继续流向用户已在用的应用与笔记体系。",
+    lead: "拾趣覆盖取字、处理、转送、留存四个环节：Obsidian 直写已上线——摘录、任务、知识卡按模板落进 vault；Notion、flomo 等应用接入正在扩展，处理结果可继续流向用户已在用的应用与笔记体系。",
     families: [
       { state: "已上线", live: true, name: "AI 处理", items: ["翻译（三种服务）", "解释", "总结", "自定义动作最多 10 个", "提示词逐条可改"] },
       { state: "已上线", live: true, name: "本地动作", items: ["复制 / 搜索", "打开链接 / 写邮件", "网址、邮箱、验证码、号码提取", "结果窗独立显示，可钉住、可拖动"] },
-      { state: "开发中", live: false, name: "应用接入", items: ["存至笔记应用（Notion / Obsidian / flomo / 备忘录）", "待办、日程、生词本等同类接入", "随内容附带来源应用、链接与时间"] },
+      { state: "已上线", live: true, name: "Obsidian 接入", items: ["存入笔记：摘录直写当日日记", "存入任务：自动带上识别的截止日期", "存入卡片：一卡一文件，标题取自选中文本", "三套模板均可自定义，无需插件"] },
+      { state: "开发中", live: false, name: "应用接入", items: ["存至 Notion / flomo / 备忘录等笔记应用", "待办、生词本等同类接入", "随内容附带来源应用、链接与时间"] },
     ],
     example: "流程示例：选中 → 解释 → 复制 → 粘贴至笔记。",
     exampleCta: "下载拾趣",
@@ -228,7 +230,7 @@ const en: Dict = {
     note: "Pops in ~0.1s · bring your own model service · OCR & extraction run on-device · No usage tracking",
     stats: [
       { value: "2", label: "capture methods", note: "Selection · OCR" },
-      { value: "11", label: "built-in actions", note: "3 AI · 8 local" },
+      { value: "12", label: "built-in actions", note: "3 AI · 9 local" },
       { value: "10", label: "custom actions", note: "write your own prompts" },
       { value: "6", label: "built-in search engines", note: "custom engines supported" },
     ],
@@ -236,9 +238,9 @@ const en: Dict = {
   actions: {
     eyebrow: "Actions",
     titlePre: "",
-    titleAccent: "11 built-in actions",
+    titleAccent: "12 built-in actions",
     titlePost: ", in AI and local families",
-    lead: "Translate, explain and summarize run through your configured model service; copy, search, open link, compose email and information extraction run locally on your machine. The bar shows 4 actions by default with the rest folded into an expand panel; available actions adapt to the selection — a URL offers Open Link, an email offers Compose Email.",
+    lead: "Translate, explain and summarize run through your configured model service; copy, search, open link, compose email, information extraction and Save to Obsidian run locally on your machine. The bar shows 4 actions by default with the rest folded into an expand panel; available actions adapt to the selection — a URL offers Open Link, an email offers Compose Email.",
     items: [
       { name: "Translate", desc: "Picks the translation direction automatically and shows results in real time. Works with AI translation, Baidu Translate and DeepL; a default service can be set." },
       { name: "Explain", desc: "Explains terms, concepts, allusions and long sentences — no need to open a separate chat window." },
@@ -247,6 +249,7 @@ const en: Dict = {
       { name: "Extract info", desc: "Detects URLs, emails, verification codes and phone numbers in the selection. A single hit gets a direct action; multiple hits open a grouped panel." },
       { name: "Open link / Compose email", desc: "Select a URL to open it, select an email address to compose, copy phone numbers with one click." },
       { name: "Add to Calendar / Open in Maps", desc: "Select text containing a date, time or place — prefill a calendar event or open it in Maps with one click. Information lands where it belongs instead of staying in a window." },
+      { name: "Save to Obsidian", desc: "Writes the selection straight into your vault from templates: excerpts append to the daily note, task lines go to your to-dos (due dates detected in the selection), and cards are one file each. Entirely local file writes — no plugin needed." },
     ],
   },
   ocr: {
@@ -330,11 +333,12 @@ const en: Dict = {
     titlePre: "",
     titleAccent: "Capture, process, hand off, keep",
     titlePost: " — four stages in one continuous flow",
-    lead: "Magpie covers capture, processing, hand-off and keeping: beyond AI and local actions, note and to-do integrations are on the way — results keep flowing into the apps and note systems you already use.",
+    lead: "Magpie covers capture, processing, hand-off and keeping: direct-to-vault Obsidian writes are live — excerpts, tasks and cards land in your vault from templates — while Notion, flomo and more integrations are on the way, so results keep flowing into the apps and note systems you already use.",
     families: [
       { state: "Live", live: true, name: "AI actions", items: ["Translate (three services)", "Explain", "Summarize", "Up to 10 custom actions", "Per-action prompt editing"] },
       { state: "Live", live: true, name: "Local actions", items: ["Copy / Search", "Open link / Compose email", "URL, email, code & phone extraction", "Standalone result window — pinnable and draggable"] },
-      { state: "In development", live: false, name: "App integrations", items: ["Send to note apps (Notion / Obsidian / flomo / Apple Notes)", "Similar hand-offs: to-dos, calendar, vocabulary", "Source app, link and time attached to content"] },
+      { state: "Live", live: true, name: "Obsidian integration", items: ["Save to note: excerpts append to the daily note", "Save to task: due date detected from the selection", "Save to card: one file per card, titled from the selection", "All three templates editable — no plugin required"] },
+      { state: "In development", live: false, name: "App integrations", items: ["Send to Notion / flomo / Apple Notes", "Similar hand-offs: to-dos, vocabulary", "Source app, link and time attached to content"] },
     ],
     example: "Flow: select → explain → copy → paste into notes.",
     exampleCta: "Download Magpie",
