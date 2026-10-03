@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.9] - 2026-10-03
 
 ### Added
 
@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Model providers collapse into summary cards**: each provider on the 模型服务 page was a permanently expanded form — with several providers the page became a wall of inputs. Providers now render as collapsed cards (name + model + a 默认 badge) in the same accordion style as the Prompt page; the edit fields and the default/delete controls expand on click, one card at a time, and a freshly added provider opens immediately for editing.
+- **Settings sidebar renamed for consistency**: nav labels mixed styles (模型服务 / Prompt 设置 / 禁用应用 …). They now use the shortest consistent nouns — 模型, 提示词, 搜索, 黑名单 (matching the README's 应用黑名单 wording) — with brand names kept as-is (Obsidian); page headings keep their full descriptive names while "Prompt 设置" also became 提示词 to match its nav entry.
 - **Overflow actions open as an anchored menu**: the ⌃N overflow panel was a detached card built from the same capsule chrome — side by side, the two read as equal sibling toolbars rather than a tool and what it expanded. It is now a vertical menu: darker background one step below the capsule, hairline border, full-width rows with the channel switch (⌄) pinned to each row's end, capped height with internal scrolling, and the ⌃N trigger stays lit while open. The channel/engine flyout now springs from the row's side (flipping left against the screen edge) instead of cascading below the panel.
 
 ### Fixed
@@ -22,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Capsule clipped on the right when an entity action appeared**: date/place detection is deliberately deferred a few dozen milliseconds so the capsule pops instantly and context actions (加入日历 / 打开地图 / …) pop in as they resolve — but the window was only sized at first show, so a late-arriving context button widened the bar past the window edge, visually cutting off the last action and the overflow trigger (intermittent, only for selections containing entities). Entity results are now layout dependencies: the window re-measures and grows the moment they land.
 - **Capsule could land underneath the Dock**: edge clamping used the full display frame, so selecting text near the screen edge (with the Dock on the right) pushed the capsule partly under the Dock — which is always on top and unclickable — leaving trailing actions unreachable. Clamping now uses the screen's visible frame (excluding the menu bar and the Dock), for the capsule, the drag paths, and the OCR window alike.
 - **Crash when selecting text inside Magpie's own windows**: with the caret in a main-window input, a selection gesture crashed the app. The capture thread's accessibility query walked into the focused WKWebView's accessibility tree, and WebKit intentionally aborts when that main-thread-only API is touched from a background thread (EXC_BREAKPOINT). The existing own-process filter ran only after the query — too late. Detection now bails out before any AX query when the focused application is Magpie itself (this also skips the Safari fallback and the compatibility-mode ⌘C, which made no sense for own windows). Follow-up hardening: focus can flip to Magpie mid-query (e.g. the user clicks the capsule while the compatibility-mode fallback is still polling, ~750ms), so the ownership check now sits on the AX element handle itself — right before any subtree walk or the cursor-position lookup — closing the check-to-query race window entirely.
-- **Save to Obsidian failed silently when unconfigured**: the capsule showed 存入笔记 even without a vault (only the result window filtered it), and its "not configured" feedback was a button-label flash inside the overflow panel — which the click itself closed first, so nothing was ever seen. The action now appears on the capsule only once a vault is configured (matching the settings page), and its outcomes (saved / failed / not configured) surface as global toasts that survive the panel closing.
+- **Save to Obsidian failed silently when unconfigured**: the capsule showed 存入 Obsidian even without a vault (only the result window filtered it), and its "not configured" feedback was a button-label flash inside the overflow panel — which the click itself closed first, so nothing was ever seen. The action now appears on the capsule only once a vault is configured (matching the settings page), and its outcomes (saved / failed / not configured) surface as global toasts that survive the panel closing.
 
 ## [0.1.8] - 2026-09-25
 
