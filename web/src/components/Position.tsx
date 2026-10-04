@@ -1,8 +1,9 @@
-import { Layers, ListChecks, ScanText } from "lucide-react";
+import { Layers, ListChecks, NotebookPen, ScanText } from "lucide-react";
 import { useSite } from "../i18n";
 import { Reveal } from "./Reveal";
 
-const ICONS = [Layers, ListChecks, ScanText];
+// 图标与 families 顺序一一对应，新增族时必须同步补图标——否则取到 undefined 当组件渲染即白屏
+const ICONS = [Layers, ListChecks, NotebookPen, ScanText];
 
 export function Position() {
   const { d } = useSite();
@@ -25,7 +26,7 @@ export function Position() {
           </p>
         </Reveal>
 
-        <div className="mt-12 grid gap-4 lg:grid-cols-3">
+        <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {d.position.families.map((f, i) => {
             const Icon = ICONS[i];
             return (

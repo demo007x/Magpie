@@ -137,7 +137,7 @@ const zh = {
       { state: "已上线", live: true, name: "AI 处理", items: ["翻译（三种服务）", "解释", "总结", "自定义动作最多 10 个", "提示词逐条可改"] },
       { state: "已上线", live: true, name: "本地动作", items: ["复制 / 搜索", "打开链接 / 写邮件", "网址、邮箱、验证码、号码提取", "结果窗独立显示，可钉住、可拖动"] },
       { state: "已上线", live: true, name: "Obsidian 接入", items: ["存入笔记：摘录直写当日日记", "存入任务：自动带上识别的截止日期", "存入卡片：一卡一文件，标题取自选中文本", "三套模板均可自定义，无需插件"] },
-      { state: "开发中", live: false, name: "应用接入", items: ["存至 Notion / flomo / 备忘录等笔记应用", "待办、生词本等同类接入", "随内容附带来源应用、链接与时间"] },
+      { state: "开发中", live: false, name: "应用接入", items: ["存至 Notion / flomo / 备忘录等笔记应用", "生词本、稍后读等同类接入"] },
     ],
     example: "流程示例：选中 → 解释 → 复制 → 粘贴至笔记。",
     exampleCta: "下载拾趣",
@@ -174,10 +174,28 @@ const zh = {
     stepsTitle: "安装步骤",
     steps: [
       { t: "下载", d: "在 GitHub Releases 获取 macOS 通用版（.dmg），打开后将拾趣拖入「应用程序」。" },
-      { t: "首次打开（未公证应用）", d: "双击可能被 macOS 拦截，两种方式解除：\n① 系统设置 → 隐私与安全性 → 点击「仍要打开」\n② 终端执行 xattr -cr /Applications/Magpie.app" },
-      { t: "授予权限", d: "在设置页「权限」按提示开启辅助功能与输入监控；识图需另开「屏幕录制」。" },
+      {
+        t: "首次打开（未公证应用）",
+        d: "双击可能被 macOS 拦截，两种方式解除：\n① 系统设置 → 隐私与安全性 → 点击「仍要打开」\n② 终端执行下方命令",
+        code: "xattr -cr /Applications/Magpie.app",
+      },
+      {
+        t: "补签应用（重要，跳过会导致权限不生效）",
+        d: "当前构建为临时签名，直接授权会出现「系统设置里已勾选、应用仍提示未授权」。终端执行：",
+        code: "codesign --force --deep --sign - /Applications/Magpie.app",
+      },
     ],
-    note: "更新或重装后需重新确认辅助功能权限，确认后长期有效。",
+    perm: {
+      title: "授予权限（最后一步，逐项设置）",
+      lead: "退出应用后逐项操作：系统设置 → 隐私与安全性 → 对应面板 → 「＋」添加 /Applications/Magpie.app → 打开开关。此前授权过的，先「−」删除旧条目再重新添加。右侧链接可直接打开对应面板（限 macOS）。",
+      items: [
+        { name: "辅助功能", why: "读取所选文字，供翻译、解释、总结使用", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" },
+        { name: "输入监控", why: "监听选区动作，选完文字即弹出浮动条", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_InputMonitoring" },
+        { name: "屏幕录制", why: "框选识别屏幕文字（识图与钉图功能）", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture" },
+      ],
+      open: "打开面板",
+    },
+    note: "应用为临时签名：每次更新或重装后需重新执行补签命令并重新确认权限，之后长期有效。",
   },
   faq: {
     eyebrow: "FAQ",
@@ -338,7 +356,7 @@ const en: Dict = {
       { state: "Live", live: true, name: "AI actions", items: ["Translate (three services)", "Explain", "Summarize", "Up to 10 custom actions", "Per-action prompt editing"] },
       { state: "Live", live: true, name: "Local actions", items: ["Copy / Search", "Open link / Compose email", "URL, email, code & phone extraction", "Standalone result window — pinnable and draggable"] },
       { state: "Live", live: true, name: "Obsidian integration", items: ["Save to note: excerpts append to the daily note", "Save to task: due date detected from the selection", "Save to card: one file per card, titled from the selection", "All three templates editable — no plugin required"] },
-      { state: "In development", live: false, name: "App integrations", items: ["Send to Notion / flomo / Apple Notes", "Similar hand-offs: to-dos, vocabulary", "Source app, link and time attached to content"] },
+      { state: "In development", live: false, name: "App integrations", items: ["Send to Notion / flomo / Apple Notes", "Similar hand-offs: vocabulary, read-later"] },
     ],
     example: "Flow: select → explain → copy → paste into notes.",
     exampleCta: "Download Magpie",
@@ -375,10 +393,28 @@ const en: Dict = {
     stepsTitle: "Installation steps",
     steps: [
       { t: "Download", d: "Get the universal .dmg from GitHub Releases, open it and drag Magpie into Applications." },
-      { t: "First launch (unsigned build)", d: "Gatekeeper will block the double-click — either:\n① System Settings → Privacy & Security → Open Anyway\n② Terminal: xattr -cr /Applications/Magpie.app" },
-      { t: "Grant permissions", d: "In Settings → Permissions, enable Accessibility and Input Monitoring; OCR additionally needs Screen Recording." },
+      {
+        t: "First launch (unsigned build)",
+        d: "Gatekeeper will block the double-click — either:\n① System Settings → Privacy & Security → Open Anyway\n② Or run the command below in Terminal",
+        code: "xattr -cr /Applications/Magpie.app",
+      },
+      {
+        t: "Re-sign the app (required, or permissions won't stick)",
+        d: "The build is ad-hoc signed — granting permissions directly shows as granted in System Settings but never takes effect in the app. Run in Terminal:",
+        code: "codesign --force --deep --sign - /Applications/Magpie.app",
+      },
     ],
-    note: "After updates or a reinstall, permissions need re-confirming once — they then stay valid.",
+    perm: {
+      title: "Grant permissions (final step, one by one)",
+      lead: "Quit the app first, then for each item: System Settings → Privacy & Security → the matching pane → \"+\" to add /Applications/Magpie.app → toggle on. If you granted before re-signing, remove the old entries first. The links on the right open each pane directly (macOS only).",
+      items: [
+        { name: "Accessibility", why: "Read the selected text for translate, explain and summarize", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" },
+        { name: "Input Monitoring", why: "Watch for selection gestures so the floating bar pops up", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_InputMonitoring" },
+        { name: "Screen Recording", why: "Capture and recognize screen regions (OCR & pinned images)", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture" },
+      ],
+      open: "Open pane",
+    },
+    note: "The build is ad-hoc signed: after every update or reinstall, run the re-sign command and re-confirm permissions once — they then stay valid.",
   },
   faq: {
     eyebrow: "FAQ",
