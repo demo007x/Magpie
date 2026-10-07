@@ -15,7 +15,7 @@ import {
   Info,
   Keyboard,
   NotebookPen,
-  Palette,
+  SlidersHorizontal,
   Plus,
   Languages,
   Search,
@@ -48,7 +48,7 @@ type Page =
   | "search"
   | "obsidian"
   | "blocklist"
-  | "appearance"
+  | "general"
   | "about";
 
 const NAV_ICONS: Record<Page, React.ReactNode> = {
@@ -61,7 +61,7 @@ const NAV_ICONS: Record<Page, React.ReactNode> = {
   search: <Search size={15} strokeWidth={1.75} />,
   obsidian: <NotebookPen size={15} strokeWidth={1.75} />,
   blocklist: <Ban size={15} strokeWidth={1.75} />,
-  appearance: <Palette size={15} strokeWidth={1.75} />,
+  general: <SlidersHorizontal size={15} strokeWidth={1.75} />,
   about: <Info size={15} strokeWidth={1.75} />,
 };
 
@@ -326,15 +326,15 @@ export default function App() {
     invoke("set_appearance", { theme: mode }).catch(() => undefined);
   };
 
-  /** 结果窗口预设档位（逻辑坐标）：宽度上限即结果窗拖拽钳制的 560，
-      「长文」高度即上限 800，紧凑档 420×340 = 未配置时的出厂默认。
+  /** 结果窗口预设档位（逻辑坐标），横竖两个方向 × 紧凑/宽敞两个量级：
+      横向宽度顶格 560（拖拽钳制上限）、竖向大档高度顶格 800（同上）。
       点选立即作用于结果窗并持久化（走 Rust 命令，不经过本页保存按钮）；
       用户拖拽微调仍会记忆，拖后与预设不一致时高亮自然消失 */
   const RESULT_SIZE_PRESETS: { label: string; size: [number, number] }[] = [
-    { label: "紧凑", size: [420, 340] },
-    { label: "标准", size: [560, 420] },
-    { label: "宽敞", size: [560, 640] },
-    { label: "长文", size: [560, 800] },
+    { label: "紧凑·横", size: [560, 320] },
+    { label: "紧凑·竖", size: [400, 560] },
+    { label: "宽敞·横", size: [560, 480] },
+    { label: "宽敞·竖", size: [480, 800] },
   ];
 
   const applyResultPreset = (size: [number, number]) => {
@@ -826,7 +826,7 @@ export default function App() {
               ["search", "搜索"],
               ["obsidian", "Obsidian"],
               ["blocklist", "黑名单"],
-              ["appearance", "外观"],
+              ["general", "通用"],
               ["perms", "权限"],
               ["about", "关于"],
             ] as Array<[Page, string]>
@@ -2013,9 +2013,10 @@ export default function App() {
           </>
         )}
 
-        {page === "appearance" && (
+        {page === "general" && (
           <>
-            <h1>外观</h1>
+            <h1>通用</h1>
+            <p className="page-hint">主题、启动、程序坞与结果窗口的应用级设置，除注明外更改即时生效。</p>
             <h2 className="sec">主题</h2>
             <div className="card">
               <div className="row-between">
@@ -2040,6 +2041,59 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+              </div>
+            </div>
+
+            <h2 className="sec">启动</h2>
+            <div className="card">
+              <div className="row-between">
+                <div>
+                  <div className="row-title">登录时自动启动</div>
+                  <div className="row-sub">
+                    开机登录后自动运行拾趣并驻留菜单栏，无需手动打开。更改即时生效。
+                  </div>
+                </div>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={settings.launchAtLogin}
+                    onChange={(e) => {
+                      const enabled = e.target.checked;
+                      invoke("set_launch_at_login", { enabled })
+                        .then(() =>
+                          setSettings((s) => (s ? { ...s, launchAtLogin: enabled } : s)),
+                        )
+                        .catch((err) => toast(`设置失败：${err}`, "err"));
+                    }}
+                  />
+                  <span className="knob" />
+                </label>
+              </div>
+            </div>
+
+            <h2 className="sec">程序坞</h2>
+            <div className="card">
+              <div className="row-between">
+                <div>
+                  <div className="row-title">在程序坞中显示图标</div>
+                  <div className="row-sub">
+                    默认仅以菜单栏形态常驻。开启后程序坞同时显示图标；关闭时点主窗口关闭按钮仅隐藏窗口，退出请用菜单栏右键「退出应用」。
+                  </div>
+                </div>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={settings.showDockIcon}
+                    onChange={(e) => {
+                      const next = { ...settings, showDockIcon: e.target.checked };
+                      setSettings(next);
+                      invoke("save_settings", { settings: next }).catch(() =>
+                        toast("保存失败，请重试", "err"),
+                      );
+                    }}
+                  />
+                  <span className="knob" />
+                </label>
               </div>
             </div>
 
@@ -2081,7 +2135,7 @@ export default function App() {
           <>
             <h1>关于</h1>
             <p className="page-hint">
-              查看版本、检查更新、设定程序坞图标显隐。更新检测仅读取 GitHub Releases 的公开版本信息，不发送本机数据。
+              查看版本与检查更新。更新检测仅读取 GitHub Releases 的公开版本信息，不发送本机数据。
             </p>
             <div className="card about-card">
               <img className="mark big" src={markIcon} alt="拾趣" />
@@ -2091,31 +2145,9 @@ export default function App() {
               <div className="about-motto">得于阅，存于思</div>
               <div className="about-ver">版本 {appVersion || "—"}</div>
             </div>
-            <h2 className="sec">应用</h2>
+            <h2 className="sec">更新</h2>
             <div className="card">
               <div className="row-between">
-                <div>
-                  <div className="row-title">在程序坞中显示图标</div>
-                  <div className="row-sub">
-                    默认仅以菜单栏形态常驻。开启后程序坞同时显示图标；关闭时点主窗口关闭按钮仅隐藏窗口，退出请用菜单栏右键「退出应用」。
-                  </div>
-                </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={settings.showDockIcon}
-                    onChange={(e) => {
-                      const next = { ...settings, showDockIcon: e.target.checked };
-                      setSettings(next);
-                      invoke("save_settings", { settings: next }).catch(() =>
-                        toast("保存失败，请重试", "err"),
-                      );
-                    }}
-                  />
-                  <span className="knob" />
-                </label>
-              </div>
-              <div className="row-between sep">
                 <div>
                   <div className="row-title">检查新版本</div>
                   <div className="row-sub">{updateHint(upd)}</div>

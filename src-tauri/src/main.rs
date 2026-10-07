@@ -15,9 +15,24 @@ mod update;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager, RunEvent,
+    AppHandle, Emitter, Manager, RunEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+
+/// 通用页开关：登录时自动启动。先改 LaunchAgent（OS 侧事实），成功才落 settings；
+/// 失败时返回错误由前端 toast，settings 保持原状——OS 状态与镜像不同步比失败更糟
+#[tauri::command]
+fn set_launch_at_login(app: AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let al = app.autolaunch();
+    if enabled {
+        al.enable().map_err(|e| e.to_string())?;
+    } else {
+        al.disable().map_err(|e| e.to_string())?;
+    }
+    crate::settings::patch(&app, |s| s.launch_at_login = enabled);
+    Ok(())
+}
 
 /// 快捷键的菜单栏显示形式："Alt+S" → "⌥S"，"CmdOrCtrl+Shift+O" → "⌘⇧O"
 fn shortcut_display(s: &str) -> String {
@@ -216,11 +231,26 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
-/// TS 侧调试日志通道（仅 debug 构建输出），用于照亮 Rust→TS 事件链路
+/// dev 模式（裸二进制）托盘在 macOS 26+ 不显示（tray-icon#273：非 bundle
+/// 二进制的状态项被系统隐藏）——而应用是菜单栏常驻形态，主窗口启动即隐藏，
+/// 没有托盘就没有任何入口能再打开它。debug 构建启动即显示主窗口保底，
+/// 让 dev 环境在托盘缺席时依然可操作；release 构建不受影响。
+#[cfg(debug_assertions)]
+fn dev_show_main_window(app: &tauri::AppHandle) {
+    eprintln!("[magpie:dev] 裸二进制托盘在 macOS 26+ 不显示，主窗口已自动打开");
+    show_main_window(app);
+}
+
+#[cfg(not(debug_assertions))]
+fn dev_show_main_window(_app: &tauri::AppHandle) {}
+
+/// TS 侧调试日志通道（仅 debug 构建输出），用于照亮 Rust→TS 事件链路。
+/// 自动带调用窗口的 label——同一日志在 floating/ocr/toast 各实例都会触发，
+/// 不标来源的话重复行无法区分
 #[tauri::command]
-fn ui_debug_log(msg: String) {
+fn ui_debug_log(window: tauri::WebviewWindow, msg: String) {
     if cfg!(debug_assertions) {
-        eprintln!("[magpie:ui] {msg}");
+        eprintln!("[magpie:ui][{}] {msg}", window.label());
     }
 }
 
@@ -279,11 +309,32 @@ fn main() {
                 })
                 .build(),
         )
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![]),
+        ))
         .setup(|app| {
             let handle = app.handle().clone();
             settings::init(&handle);
             // 结果面板「钉住」偏好：沿用用户最后一次点钉的选择（默认钉住）
             floating::init_result_pin(&handle);
+
+            // 自启状态同步：LaunchAgent 是 OS 侧事实，settings 只是镜像——
+            // 应用启动时若两者漂移（系统清理了 plist 等），按 settings 静默拉齐
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let enabled = settings::current(&handle).launch_at_login;
+                let al = handle.autolaunch();
+                match al.is_enabled() {
+                    Ok(true) if !enabled => {
+                        let _ = al.disable();
+                    }
+                    Ok(false) if enabled => {
+                        let _ = al.enable();
+                    }
+                    _ => {}
+                }
+            }
 
             // 按用户配置决定是否在 Dock 显示图标（默认关：纯菜单栏常驻）
             #[cfg(target_os = "macos")]
@@ -300,6 +351,10 @@ fn main() {
             // 识图类全局快捷键（设置页可配，保存即时生效）：识别 + 可选自动执行动作
             app.manage(OcrShortcuts(std::sync::Mutex::new(Vec::new())));
             apply_ocr_shortcuts(&handle);
+            // 中文识别模型预热（macOS 26+ 按需资源，见 ocr.rs）：后台静默，一次即缓存
+            ocr::warmup();
+            // dev 保底：托盘缺席时主窗口是唯一入口（见 dev_show_main_window 注释）
+            dev_show_main_window(&handle);
 
             // 弹出层窗口原生圆角（CSS 圆角压在透明窗口边界必出毛刺，见 floating.rs）
             for label in ["floating", "ocr", "toast"] {
@@ -422,6 +477,7 @@ fn main() {
             floating::focus_ocr_window,
             floating::set_result_window_size,
             floating::apply_result_preset,
+            set_launch_at_login,
             floating::persist_result_window_state,
             floating::screen_rect_at,
             floating::floating_window_pos,

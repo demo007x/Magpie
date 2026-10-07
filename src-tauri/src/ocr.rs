@@ -105,6 +105,36 @@ pub fn push_ocr_result(
     );
 }
 
+/// macOS 26+ 兼容：中文识别模型改为按需资源——系统更新后首次识别中文会
+/// 阻塞十余秒等待模型拉取（实测 13.9s，CPU 占用极低 = 纯等待网络），
+/// 之后系统级缓存，所有进程都在半秒内；旧版 macOS 模型内置，无此代价。
+/// 启动后后台用内置的含中文小图跑一次微型 OCR 预热，把这次代价挪到
+/// 非交互时刻——新旧版本用户在交互流程里都只体验半秒级识别。
+pub fn warmup() {
+    std::thread::spawn(move || {
+        // 错开启动争抢窗口；纯后台，任何失败静默（预热失败 ≠ 功能失败，
+        // 真正的识别有自己的错误提示）
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        let Ok(exe) = std::env::current_exe() else {
+            return;
+        };
+        let Some(dir) = exe.parent() else {
+            return;
+        };
+        let helper = dir.join("ocr_helper");
+        if !helper.exists() {
+            return; // dev 缺助手二进制时静默跳过（cargo build --bin ocr_helper 可补）
+        }
+        let img = std::env::temp_dir().join("magpie-ocr-warmup.png");
+        if std::fs::write(&img, include_bytes!("../icons/ocr-warmup.png")).is_err() {
+            return;
+        }
+        let _ = Command::new(&helper).arg(&img).output();
+        let _ = std::fs::remove_file(&img);
+        eprintln!("[ocr] 中文模型预热完成");
+    });
+}
+
 /// 把识别文本推给 OCR 独立窗口显示（钉图→识别文字流程：文本就绪、无图）。
 /// 事件用全局广播而不是 emit_to：JS listen() 注册的是 Any 目标，
 /// emit_to 的按窗口过滤不匹配 Any 监听器（此前识别面板因此永不出现）。

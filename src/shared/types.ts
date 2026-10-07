@@ -107,6 +107,8 @@ export interface Settings {
   actionPrompts: Record<string, string>;
   /** 是否在 macOS Dock 显示图标（关 = 纯菜单栏常驻模式） */
   showDockIcon: boolean;
+  /** 登录时自动启动（LaunchAgent；开关即时生效，Rust 落盘） */
+  launchAtLogin: boolean;
   /** 识图取字全局快捷键（如 "Alt+O"、"CmdOrCtrl+Shift+O"；空串 = 禁用） */
   ocrShortcut: string;
   /** 识图翻译全局快捷键（截图→识别→默认翻译服务；空串 = 禁用） */

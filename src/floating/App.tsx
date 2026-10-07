@@ -562,7 +562,6 @@ export default function App() {
   // 合成 hover 当前命中的动作：hover://move 驱动 elementFromPoint 增删类，
   // 绕开 WebKit 对非活动页面的 :hover 门控（真 mousemove 在本窗口不可靠）
   const synHoverRef = useRef<HTMLElement | null>(null);
-  const lastSynDiagRef = useRef(0);
   const barRef = useRef<HTMLDivElement | null>(null);
   // 分离卡几何基准：屏幕矩形（贴边翻转判定）、窗口上次落位、bar 在窗口内偏移。
   // 卡片屏幕坐标 = 窗口位置 + 窗口内偏移；winPos 由 show/resize 返回值与
@@ -958,8 +957,9 @@ export default function App() {
     listen<{ text: string; x: number; y: number; app?: string }>("selection://captured", (e) => {
       // 钉图窗口与划词流无关：忽略广播（防止误触发浮动条弹出/窗口移动）
       if (IS_PIN) return;
-      // 同一事件广播到所有窗口，OCR 窗口不重复打印（floating 主窗口一条即可）
-      if (!IS_OCR) {
+      // app=ocr 是 OCR/结果流的内部合成事件（len=0、坐标 -1），由下方 OCR 分支消费；
+      // 结果窗（IS_OCR）靠这些事件显示结果面板——两者都只是不记日志，流程照常
+      if (e.payload.app !== "ocr" && !IS_OCR) {
         invoke("ui_debug_log", {
           msg: `收到 captured 事件：len=${e.payload.text.length} (${e.payload.x.toFixed(0)},${e.payload.y.toFixed(0)}) app=${e.payload.app ?? "-"}`,
         }).catch(() => undefined);
@@ -1106,15 +1106,12 @@ export default function App() {
       const cy = e.payload.y;
       const el = document.elementFromPoint(cx, cy);
       const btn = el?.closest<HTMLElement>(".action") ?? null;
-      // 诊断：坐标映射与命中目标（若"自动 hover"复现，此日志直接给出错位原因）
-      const now = performance.now();
-      if (now - lastSynDiagRef.current > 300) {
-        lastSynDiagRef.current = now;
-        invoke("ui_debug_log", {
-          msg: `SYN cx=${cx.toFixed(0)} cy=${cy.toFixed(0)} hit=${btn ? (btn.textContent ?? "?").slice(0, 6) : "无"}`,
-        }).catch(() => undefined);
-      }
       if (btn !== synHoverRef.current) {
+        // 诊断：仅在 hover 目标变化（进入/离开动作）时记录——稳态移动 60Hz
+        // 逐事件记录会每秒刷数十行，淹没真正有用的日志
+        invoke("ui_debug_log", {
+          msg: `SYN ${btn ? `进入 ${(btn.textContent ?? "?").slice(0, 6)}` : "离开动作"}`,
+        }).catch(() => undefined);
         synHoverRef.current?.classList.remove("syn-hover");
         if (btn) btn.classList.add("syn-hover");
         synHoverRef.current = btn;

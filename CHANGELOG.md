@@ -5,13 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-10-07
+
+### Added
+
+- **Launch at login**: a new 启动 section in the general settings page toggles automatic launch at login (LaunchAgent-based, applied immediately and persisted). The settings page hosting it was also reorganized: 外观 is now 通用 and holds theme, launch, Dock-icon visibility (moved out of the About page) and the result-window size presets; the About page now focuses on version info and update checks. Nav labels were unified (模型 / 提示词 / 搜索 / 黑名单).
+
+### Changed
+
+- **Result window presets redesigned into two orientations × two sizes**: 紧凑·横 560×320, 紧凑·竖 400×560, 宽敞·横 560×480, and 宽敞·竖 480×800 (height at the maximum) — replacing v0.1.9's four all-landscape presets so portrait reading (Q&A, chat-style flows, long summaries) and landscape reading each get a compact and a roomy option. Picking one applies to the open result window immediately and persists as the remembered size; dragging still works and simply stops highlighting a preset once the size diverges.
+
+### Fixed
+
+- **First OCR after a macOS update could block for ~14 seconds**: macOS 26+ ships Chinese recognition models as on-demand assets — the first Chinese recognition after a system update stalls waiting for the model download (measured 13.9s at 16% CPU, i.e. pure network wait), after which recognition is system-cached and fast. The app now runs a tiny built-in Chinese-text OCR in the background at startup, absorbing the model load outside any interactive flow; on older macOS versions where models are built in, the warm-up is a sub-second no-op.
+
 ## [0.1.9] - 2026-10-03
 
 ### Added
 
-- **Result window size presets**: the appearance page gains a 结果窗口 section with four default sizes for the result window — 紧凑 420×340 (the out-of-box default), 标准 560×420, 宽敞 560×640, and 长文 560×800 (the maximum, suited to long summaries and OCR transcripts). Picking one applies to the open result window immediately and persists as the remembered size; dragging the window's resize handles still works and simply stops highlighting a preset once the size diverges.
-
 - **Save to Obsidian**: a new 存入 Obsidian action appends the selection into your vault, with three targets under its ⌄ menu — **笔记** (the daily note, via the excerpt template), **任务** (a checkbox line written to the task file, or the daily note when unset; a date recognized in the selection fills the `{due}` field, and `{dueTag}` collapses to nothing when there is none), and **卡片** (one file per card in the cards folder, named after the selection's first line, ≤20 chars). A dedicated Obsidian settings page hosts the integration: pick a vault folder once, optionally a subfolder and filename format for daily notes (compatible with the Obsidian Daily Notes plugin), plus editable excerpt/task/card templates with `{time}` / `{source}` / `{text}` / `{date}` / `{due}` / `{dueTag}` placeholders — the action then appends a markdown blockquote (multi-line selections keep their line structure) to the daily note, creating the file and folder on first use. Appears on the capsule and in the result window once a vault is configured (the result window prefers the AI answer over the raw text when one is present), and can be toggled per-action in settings. Entirely local file writes — no plugin, no network.
+
+- **Result window size presets**: the general settings page gains a 结果窗口 section with four default sizes for the result window — 紧凑 420×340 (the out-of-box default), 标准 560×420, 宽敞 560×640, and 长文 560×800 (the maximum, suited to long summaries and OCR transcripts). Picking one applies to the open result window immediately and persists as the remembered size; dragging the window's resize handles still works and simply stops highlighting a preset once the size diverges.
 
 ### Changed
 

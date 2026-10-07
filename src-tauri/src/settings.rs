@@ -228,6 +228,8 @@ pub struct Settings {
     pub action_prompts: HashMap<String, String>,
     /// 是否在 macOS Dock 显示图标（关 = 纯菜单栏常驻模式）
     pub show_dock_icon: bool,
+    /// 登录时自动启动（LaunchAgent；UI 开关经 set_launch_at_login 同步 OS 状态）
+    pub launch_at_login: bool,
     /// 识图取字全局快捷键（如 "Alt+O"、"CmdOrCtrl+Shift+O"）；空串 = 禁用
     pub ocr_shortcut: String,
     /// 识图翻译全局快捷键（截图→识别→默认翻译服务）；空串 = 禁用
@@ -301,6 +303,7 @@ impl Default for Settings {
             translate: TranslateConfig::default(),
             action_prompts: HashMap::new(),
             show_dock_icon: false,
+            launch_at_login: false,
             ocr_shortcut: "Alt+S".into(),
             ocr_translate_shortcut: default_ocr_translate_shortcut(),
             ocr_explain_shortcut: default_ocr_explain_shortcut(),
