@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Website gallery redesigned into uniform framed cards**: the six real-app screenshots sat in one grid with wildly different aspect ratios and content densities — tiny subjects floating in whitespace next to dense PDF captures, and in-shot UI crowding the captions below. Each screenshot now sits contained at its natural ratio on a fixed-height light mat (framed: rounded corners, subtle shadow), with a fixed-height caption footer — six equal cards in a clean 2×3 rhythm, nothing cropped, nothing overlapped.
+
+### Added
+
+- **Finder image-pick OCR (访达选图取字)**: a new tray item opens a file picker for an image (png/jpg/heic/webp/…), recognizes it through the same on-device Vision pipeline as screen OCR, and lands in the same result panel — copy, search, translate, explain, summarize and pinning all work on the recognized text, with the picked image available for pinning (a temp copy; the original file is never touched). Cancelling the picker stays silent; empty results and errors reuse the OCR toast copy, adapted for files. Ships with a global hotkey (default ⌥F, re-recordable in settings alongside the other OCR shortcuts; empty = disabled).
+
+- **GitHub repository entry in the tray menu**: the tray menu's navigation group gains a GitHub 仓库 item (below 功能设置) that opens the project repository in the default browser via the same URL whitelist used by the in-app link actions. Kept flat — no submenu nesting.
+
+### Fixed
+
+- **`http://localhost:4173/` was offered as "copy verification code" instead of "open link"**: the URL check required the host to contain a dot, which locked out the entire `localhost` family (while dotted `127.0.0.1` passed) — and since the rejected URL never registered its protected range, the port digits fell through to the verification-code rule and the capsule popped with 复制验证码. `localhost` and `[::1]`-style IPv6 literals now pass the host check; the protected-range logic then keeps the port out of code candidates and the capsule offers 打开链接. Arbitrary single-segment hosts (`http://myserver/`) stay rejected, and scheme-less bare domains remain unrecognized as before.
+
+- **Capsule popped when dragging scrollbars in VSCode (and other Monaco-based editors)**: dragging a scrollbar is shape-identical to a text-selection drag, and since the whole AX query chain finds no selection, the compatibility fallback fired — simulating ⌘C, which in VSCode copies **the line under the cursor** when nothing is selected. Two gates now: a drag whose grab point lands on a native scrollbar/slider/splitter (role-checked, ≤3 ancestor levels) is skipped in every app, and the Electron editor family (VSCode/Insiders/VSCodium/Cursor/Windsurf) skips the ⌘C fallback entirely — real selections there are reliably captured via the Chromium accessibility nudge, so the fallback only ever produced synthesized current-line text. Trade-off: with the editor's accessibility support manually set to "off", text capture in those editors no longer falls back to ⌘C.
+
+- **Capsule popped when dragging or opening files in Finder**: dragging a folder/file to move it is shape-identical to a text-selection drag (>6px), and Finder's icon view exposes no text nodes at all (the filename label is not an AX text element), so every AX query path came up empty and the always-on compatibility fallback fired — simulating ⌘C, to which Finder responds by placing the **selected item's filename** on the clipboard as plain text. The filename was then captured as if it were a selection: the capsule popped over the folder and the user's clipboard was briefly rewritten. The selection path now runs while Finder is focused only when the focused element is a real text field (rename sheet, Go to Folder, …); file drags and double-click-to-open skip capture entirely (no AX query, no ⌘C).
+
 ## [0.1.11] - 2026-10-07
 
 ### Added

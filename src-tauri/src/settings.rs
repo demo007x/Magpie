@@ -241,6 +241,9 @@ pub struct Settings {
     /// 识图总结全局快捷键（截图→识别→AI 总结）；空串 = 禁用
     #[serde(default = "default_ocr_summarize_shortcut")]
     pub ocr_summarize_shortcut: String,
+    /// 访达选图取字全局快捷键（选图片文件→识别）；空串 = 禁用
+    #[serde(default = "default_file_ocr_shortcut")]
+    pub file_ocr_shortcut: String,
     pub app_blacklist: Vec<String>,
     pub debounce_ms: u64,
     /// Obsidian 接入（docs/07）：vault 直写配置
@@ -278,6 +281,10 @@ fn default_ocr_summarize_shortcut() -> String {
     "Alt+D".into()
 }
 
+fn default_file_ocr_shortcut() -> String {
+    "Alt+F".into()
+}
+
 fn default_appearance() -> String {
     "auto".into()
 }
@@ -308,6 +315,7 @@ impl Default for Settings {
             ocr_translate_shortcut: default_ocr_translate_shortcut(),
             ocr_explain_shortcut: default_ocr_explain_shortcut(),
             ocr_summarize_shortcut: default_ocr_summarize_shortcut(),
+            file_ocr_shortcut: default_file_ocr_shortcut(),
             app_blacklist: vec!["1Password".into(), "Passwords".into()],
             debounce_ms: 200,
             obsidian: ObsidianConfig::default(),

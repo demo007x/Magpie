@@ -13,17 +13,18 @@ const zh = {
       { id: "custom", label: "自定义" },
       { id: "trust", label: "隐私与费用" },
       { id: "faq", label: "常见问题" },
+      { id: "download", label: "安装" },
     ],
     updates: "更新记录",
     download: "下载",
     langBtn: "EN",
   },
   hero: {
-    badge: "macOS · 永久免费",
+    badge: "macOS 划词 AI 工具 · 永久免费",
     h1a: "屏幕上任何文字，",
     h1b: "选中或框选，",
     h1c: "就地处理",
-    lead: "拖选或双击文字即显示浮动条；图片、视频与扫描文档中的文字可框选识别。支持翻译、解释、总结、搜索与信息提取，结果在独立窗口中显示，可复制、可继续处理。",
+    lead: "一款 macOS 划词 AI 工具：拖选或双击文字即显示浮动条，图片、视频与扫描文档中的文字可框选识别。翻译、解释、总结实时出结果；复制、搜索、写入 Obsidian、预填日历等动作把结果直接落地，不锁在对话窗口里。",
     cta1: "下载 macOS 版",
     cta2: "GitHub Releases",
     note: "弹出约 0.1 秒 · 模型服务自选 · 识图与提取在本机完成 · 不收集使用数据",
@@ -84,13 +85,14 @@ const zh = {
     titlePre: "实际",
     titleAccent: "界面",
     titlePost: "",
-    lead: "浮动条、识图取字、结果窗、设置页与钉图的 macOS 实际截图。",
+    lead: "浮动条、识图取字、结果窗、设置页、钉图与 Obsidian 直写的 macOS 实际截图。",
     shots: [
       { file: "floating-bar.png", label: "划词浮动条", note: "选中或双击文字后就地显示；点开「翻译」可切换 AI 翻译、百度翻译与 DeepL。", w: 1119, h: 559, cls: "" },
       { file: "ocr-crop.png", label: "识图取字", note: "框选屏幕区域即可识别——视频字幕、扫描件与图片里的文字同样可取。", w: 1176, h: 585, cls: "" },
       { file: "translate-result.png", label: "翻译结果", note: "结果实时显示，附术语与译法说明，可复制或继续交给其他动作。", w: 778, h: 583, cls: "" },
+      { file: "obsidian.png", label: "存入 Obsidian", note: "在 PDF 等任意界面划选文字，直接存入 Obsidian：摘录进日记、任务带截止日期、卡片一卡一文件，按模板直写 vault。", w: 752, h: 542, cls: "" },
+      { file: "pinned.png", label: "钉图", note: "截图可固定在屏幕上，钉住后仍能再次识别、复制与搜索。", w: 1436, h: 620, cls: "" },
       { file: "settings-actions.png", label: "设置 · 划词", note: "开关、排序与自定义动作的管理入口，所有调整即时生效。", w: 879, h: 761, cls: "" },
-      { file: "pinned.png", label: "钉图", note: "截图可固定在屏幕上，钉住后仍能再次识别、复制与搜索。", w: 1436, h: 620, cls: "sm:col-span-2" },
     ],
   },
   audience: {
@@ -98,7 +100,7 @@ const zh = {
     titlePre: "主要使用者：",
     titleAccent: "高频处理文字内容的人",
     titlePost: "",
-    lead: "写作、编辑、翻译、研究与阅读场景中，查阅、核实、摘录、留存的频率最高。拾趣针对该流程提供取字与处理动作，不涉及内容创作。",
+    lead: "写作、编辑、翻译、研究与阅读场景中，查阅、核实、摘录、留存的频率最高；对已用 Obsidian、Notion 等笔记工具沉淀内容的人，收集还需要有归宿。拾趣针对该流程提供取字与处理动作，不涉及内容创作。",
     people: [
       { who: "作者 / 编辑", scene: "引用、查证与注释：选中即可解释与复制，无需在窗口之间来回切换。" },
       { who: "译者 / 语言学习者", scene: "提示词可按个人翻译规范设定；常用转换可保存为自定义动作；自定义搜索引擎可接入个人词条库。" },
@@ -176,7 +178,7 @@ const zh = {
       { t: "下载", d: "在 GitHub Releases 获取 macOS 通用版（.dmg），打开后将拾趣拖入「应用程序」。" },
       {
         t: "首次打开（未公证应用）",
-        d: "双击可能被 macOS 拦截，两种方式解除：\n① 系统设置 → 隐私与安全性 → 点击「仍要打开」\n② 终端执行下方命令",
+        d: "双击可能被 macOS 拦截，三种方式任选其一：\n① 右键点击应用 → 选择「打开」\n② 系统设置 → 隐私与安全性 → 点击「仍要打开」\n③ 终端执行下方命令",
         code: "xattr -cr /Applications/Magpie.app",
       },
       {
@@ -187,7 +189,7 @@ const zh = {
     ],
     perm: {
       title: "授予权限（最后一步，逐项设置）",
-      lead: "退出应用后逐项操作：系统设置 → 隐私与安全性 → 对应面板 → 「＋」添加 /Applications/Magpie.app → 打开开关。此前授权过的，先「−」删除旧条目再重新添加。右侧链接可直接打开对应面板（限 macOS）。",
+      lead: "退出应用后逐项操作：系统设置 → 隐私与安全性 → 对应面板 → 「＋」添加 /Applications/Magpie.app → 打开开关。此前授权过的，先「−」删除旧条目再重新添加。每张卡片上的「打开面板」链接可直接跳到对应设置（限 macOS）。",
       items: [
         { name: "辅助功能", why: "读取所选文字，供翻译、解释、总结使用", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" },
         { name: "输入监控", why: "监听选区动作，选完文字即弹出浮动条", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_InputMonitoring" },
@@ -208,7 +210,7 @@ const zh = {
       { q: "文字会被上传吗？", a: "识别与提取均在本机完成，屏幕内容不上传。使用 AI 动作时，所选文字发送至用户自行配置的模型服务。" },
       { q: "下载后无法打开怎么办？", a: "当前版本未完成 Apple 签名与公证，首次打开需右键选择「打开」并确认。更新或重装后需重新确认辅助功能权限。" },
       { q: "划词未显示浮动条？", a: "在设置页「权限」确认辅助功能与输入监控已开启，并检查该应用是否位于禁用应用列表。微信、Office 等界面由应用自行绘制的软件，划词可能取不到文字，可改用识图取字。" },
-      { q: "与其他划词工具的区别？", a: "一、除可选中文本外，还可读取图片、视频与扫描文档中的文字。二、结果保留在独立窗口中，可继续复制、搜索或转向其他应用，不限于对话界面。" },
+      { q: "与其他划词工具的区别？", a: "一、划词之外还可识图：图片、视频与扫描文档中的文字同样可取。二、结果不锁在对话窗口：保留在独立窗口中，可复制、搜索，也可直写 Obsidian、预填日历与地图。三、模型服务自选，不绑定特定厂商。" },
     ],
   },
   footer: {
@@ -232,17 +234,18 @@ const en: Dict = {
       { id: "custom", label: "Customization" },
       { id: "trust", label: "Privacy" },
       { id: "faq", label: "FAQ" },
+      { id: "download", label: "Install" },
     ],
     updates: "Changelog",
     download: "Download",
     langBtn: "中文",
   },
   hero: {
-    badge: "macOS · Free forever",
+    badge: "AI text-selection tool for macOS · Free forever",
     h1a: "Any text on your screen,",
     h1b: "select or capture it,",
     h1c: "handle it in place",
-    lead: "Drag-select or double-click any text to summon the floating bar; text inside images, videos and scanned documents can be captured by region. Translate, explain, summarize, search and extract information — results appear in a standalone window you can copy from and keep working with.",
+    lead: "An AI selection tool for macOS: drag-select or double-click text to summon the floating bar, and capture text inside images, videos and scanned documents by region. Translate, explain and summarize in real time; copy, search, save to Obsidian or prefill a calendar — results land where you work instead of being locked in a chat window.",
     cta1: "Download for macOS",
     cta2: "GitHub Releases",
     note: "Pops in ~0.1s · bring your own model service · OCR & extraction run on-device · No usage tracking",
@@ -303,13 +306,14 @@ const en: Dict = {
     titlePre: "The actual ",
     titleAccent: "interface",
     titlePost: "",
-    lead: "Real macOS screenshots of the floating bar, OCR, result window, settings and pinned images.",
+    lead: "Real macOS screenshots of the floating bar, OCR, result window, settings, pinned images and the Obsidian hand-off.",
     shots: [
       { file: "floating-bar.png", label: "Selection bar", note: "Appears in place after selection or double-click; open Translate to switch between AI, Baidu and DeepL services.", w: 1119, h: 559, cls: "" },
       { file: "ocr-crop.png", label: "OCR capture", note: "Drag a region to read text — video subtitles, scanned pages and content inside images all work.", w: 1176, h: 585, cls: "" },
       { file: "translate-result.png", label: "Translation result", note: "Results appear in real time with terminology notes; copy or hand off to other actions.", w: 778, h: 583, cls: "" },
+      { file: "obsidian.png", label: "Save to Obsidian", note: "Select text anywhere — a PDF included — and save it straight into Obsidian: excerpts to the daily note, tasks with detected due dates, one card per file, written to your vault from templates.", w: 752, h: 542, cls: "" },
+      { file: "pinned.png", label: "Pinned image", note: "Screenshots can be pinned on screen for re-recognition, copying and search.", w: 1436, h: 620, cls: "" },
       { file: "settings-actions.png", label: "Settings · Selection", note: "Toggles, ordering and custom AI actions live here — every change applies instantly.", w: 879, h: 761, cls: "" },
-      { file: "pinned.png", label: "Pinned image", note: "Screenshots can be pinned on screen for re-recognition, copying and search.", w: 1436, h: 620, cls: "sm:col-span-2" },
     ],
   },
   audience: {
@@ -317,7 +321,7 @@ const en: Dict = {
     titlePre: "Built for ",
     titleAccent: "people who process text all day",
     titlePost: "",
-    lead: "Writing, editing, translation, research and reading — looking things up, verifying, excerpting and keeping happen at the highest frequency. Magpie provides capture and processing actions for exactly that flow; content creation is out of scope.",
+    lead: "Writing, editing, translation, research and reading — looking things up, verifying, excerpting and keeping happen at the highest frequency; for people who already keep notes in Obsidian or Notion, collecting also needs a destination. Magpie provides capture and processing actions for exactly that flow; content creation is out of scope.",
     people: [
       { who: "Authors & editors", scene: "Quote, verify and annotate: select to explain and copy — no jumping between windows." },
       { who: "Translators & language learners", scene: "Set prompts to your own translation style; save frequent conversions as custom actions; custom search engines can hook into your personal glossary." },
@@ -395,7 +399,7 @@ const en: Dict = {
       { t: "Download", d: "Get the universal .dmg from GitHub Releases, open it and drag Magpie into Applications." },
       {
         t: "First launch (unsigned build)",
-        d: "Gatekeeper will block the double-click — either:\n① System Settings → Privacy & Security → Open Anyway\n② Or run the command below in Terminal",
+        d: "A double-click may be blocked by Gatekeeper — any one of these works:\n① Right-click the app → choose Open\n② System Settings → Privacy & Security → Open Anyway\n③ Or run the command below in Terminal",
         code: "xattr -cr /Applications/Magpie.app",
       },
       {
@@ -406,7 +410,7 @@ const en: Dict = {
     ],
     perm: {
       title: "Grant permissions (final step, one by one)",
-      lead: "Quit the app first, then for each item: System Settings → Privacy & Security → the matching pane → \"+\" to add /Applications/Magpie.app → toggle on. If you granted before re-signing, remove the old entries first. The links on the right open each pane directly (macOS only).",
+      lead: "Quit the app first, then for each item: System Settings → Privacy & Security → the matching pane → \"+\" to add /Applications/Magpie.app → toggle on. If you granted before re-signing, remove the old entries first. Each card's Open-pane link jumps straight to the matching settings pane (macOS only).",
       items: [
         { name: "Accessibility", why: "Read the selected text for translate, explain and summarize", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" },
         { name: "Input Monitoring", why: "Watch for selection gestures so the floating bar pops up", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_InputMonitoring" },
@@ -427,7 +431,7 @@ const en: Dict = {
       { q: "Is my text uploaded?", a: "Recognition and extraction run on your machine; screen content is never uploaded. AI actions send the selected text to the model service you configured yourself." },
       { q: "The app won't open after download?", a: "This build isn't signed and notarized by Apple yet: right-click the app and choose Open to confirm the first launch. After updates or a reinstall, permissions need re-confirming." },
       { q: "No floating bar on selection?", a: "Check Settings → Permissions for Accessibility and Input Monitoring, and make sure the app isn't in the blocklist. Apps that draw their own UI (WeChat, Office…) may not yield text — use OCR capture instead." },
-      { q: "How is this different from other selection tools?", a: "One: beyond selectable text, it reads text from images, videos and scanned documents. Two: results stay in a standalone window — copy, search or hand off to other apps, not locked in a chat." },
+      { q: "How is this different from other selection tools?", a: "One: beyond selectable text, it reads text from images, videos and scanned documents. Two: results aren't locked in a chat — they stay in a standalone window you can copy and search, write straight to Obsidian, or turn into calendar events and map searches. Three: bring your own model service — no vendor lock-in." },
     ],
   },
   footer: {

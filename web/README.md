@@ -12,7 +12,7 @@ pnpm build          # tsc --noEmit + vite build → dist/
 pnpm preview        # 预览构建产物
 ```
 
-**pnpm 版本**：本目录有 `pnpm-workspace.yaml`，把自己声明为独立工作区根。不要删——没有它时 pnpm 会向上级目录找到主项目的 lockfile，把依赖装进仓库根的 `node_modules/.pnpm` 并改写根 `pnpm-lock.yaml`。装依赖请用与本机 store 一致的 pnpm（12.x，`~/Library/pnpm/pnpm`），PATH 里的 `pnpm` 是 9.x（store v3，会报 `ERR_PNPM_UNEXPECTED_STORE`）。
+**pnpm 版本**：本目录有 `pnpm-workspace.yaml`，把自己声明为独立工作区根。不要删——没有它时 pnpm 会向上级目录找到主项目的 lockfile，把依赖装进仓库根的 `node_modules/.pnpm` 并改写根 `pnpm-lock.yaml`。装依赖请用 pnpm 12.x（与本机 store 一致，版本不符报 `ERR_PNPM_UNEXPECTED_STORE`）。本机现用 homebrew 的 `/opt/homebrew/bin/pnpm`（12.4.2，即 PATH 默认）。
 
 ## 部署
 
@@ -45,9 +45,10 @@ pnpm preview        # 预览构建产物
 
 ## 界面截图
 
-`Gallery`（`#gallery`，导航项「界面」）展示真机截图，清单在 `src/data.ts` 的 `SHOTS`：文件名、说明、**真实像素尺寸**（写进 `width`/`height` 属性占位，加载时不跳动）与跨列 `cls`。图片放 `public/shots/`，`<img>` 用**相对路径** `shots/x.png`（`base: "./"`，绝对路径在子路径部署下会 404）。文件缺失时不显示破图：`.shot[data-missing]` 会在版面上写出待补的路径。
+`Gallery`（`#gallery`，导航项「界面」）展示真机截图，清单在 `src/i18n.tsx` 的 `gallery.shots`（zh / en 两份都要改）：文件名、说明、**真实像素尺寸**（写进 `width`/`height` 属性占位，加载时不跳动）与跨列 `cls`。图片放 `public/shots/`，`<img>` 用**相对路径** `shots/x.png`（`base: "./"`，绝对路径在子路径部署下会 404）。文件缺失时不显示破图：`.shot[data-missing]` 会在版面上写出待补的路径。
 
 - **两个主题共用一套图**，所以版面色 `.shot` 固定为亮灰（不随主题翻）：深色页面上读作「相纸里的照片」，而不是跟着页面翻色的坏图。截图本身是产品的浅色外观，与 `.mock-card`（恒深色）是两套口径——站点里 mock 与真图并存时这个差异会被看见，改动前先确认统一到哪一侧。
-- 排版按图片真实比例走，不裁切（`object-cover` 会切掉窗口边缘 UI）、不套固定 `aspect`。成对放的两张比例要接近，否则同一行两张卡高低不齐。
-- 交付流程：PNG 原图进 `public/shots/` 作为源文件，再 `cwebp -q 82 -m 6 x.png -o x.webp` 生成页面实际使用的版本（`<picture>` 优先 webp，PNG 兜底；五张图 1.03MB → 133KB）。
+- 排版为画框式：图区固定高（`h-[240px] sm:h-[340px]`），截图按原比例 contain 居中于固定亮灰衬底上，本体带圆角投影；说明文字区固定最小高。不裁切（contain 不切内容），新增截图无需考虑与邻卡的比例搭配。
+- 点击截图打开页内灯箱看大图：Esc / 点幕布 / 右上 × 关闭，←/→ 方向键或两侧箭头切换上一张下一张；灯箱为固定深色幕布（`.lightbox*`，两个主题一致）
+- 交付流程：PNG 原图进 `public/shots/` 作为源文件，再压出页面实际使用的 webp 版本（`<picture>` 优先 webp，PNG 兜底）：`cwebp -q 82 -m 6 x.png -o x.webp`，本机无 cwebp 时用 `pnpm dlx sharp-cli -i x.png -o x.webp -f webp --quality 82`（sips 不支持 webp 编码）。
 - 截图内容自查：不出现真实 API key、账号邮箱、个人文件路径与个人文档；演示文本用中立内容。

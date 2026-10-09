@@ -117,6 +117,8 @@ export interface Settings {
   ocrExplainShortcut: string;
   /** 识图总结全局快捷键（截图→识别→AI 总结；空串 = 禁用） */
   ocrSummarizeShortcut: string;
+  /** 访达选图取字全局快捷键（选图片文件→识别；空串 = 禁用） */
+  fileOcrShortcut: string;
   appBlacklist: string[];
   debounceMs: number;
   /** 结果窗口位置记忆（逻辑坐标） */

@@ -19,6 +19,8 @@ cargo check             # 在 src-tauri/ 下执行
 cargo build             # 链接验证（FFI 符号错误只有链接时暴露，cargo check 不够）
 pnpm tauri build        # 打包（需 src-tauri/icons/ 齐全，缺失时用 pnpm tauri icon app-icon.png 生成）
 pnpm build:mac          # universal-apple-darwin 通用包
+pnpm build:debug:app    # debug .app 包（macOS 26 下 dev 裸二进制的托盘状态项被系统隐藏、
+                        # Dock 显示 exec 图标——测托盘/程序坞图标必须用 bundle 出的 .app）
 ```
 
 无前端测试框架；Rust 侧有 FFI 烟雾测试（`cargo test`，见 entities.rs）。常规验证 = `pnpm check` + `cargo check` + `cargo build`，交互验证走 `pnpm tauri dev` 真机划词。
@@ -44,6 +46,7 @@ Rust 侧 `src-tauri/src/`：
 关键非显性设计（改代码前先懂）：
 
 - **AX 常量用 `ax_string()` 构造（CFString），勿用 dlsym / `extern static`**（`capture/macos.rs::ax_consts`）：dlsym 在部分 macOS 版本对这些符号返回 NULL（-25201 错误），`extern static` 能过 check 但链接必败（函数可用 `ApplicationServices` 伞框架链接，常量不行）。
+- **手势误判闸门必须挡在取词链之前**（`capture/macos.rs`，勿删）：兼容模式 ⌘C 会被两类手势误触发——① Finder 文件交互（`in_finder_file_context`：图标视图文件项是 `AXGroup>AXImage`，AX 链路必落空，Finder 对 ⌘C 的响应是把**选中项文件名**写进剪贴板被误捕）；② Electron 编辑器家族（`skip_compat_for_focused_app`：VSCode/Cursor 等空选区 ⌘C 会**复制光标所在行**，滚动条/文件树拖拽全中招，真选区走轻推后的 AX 链路）。另有拖拽起点控件闸门（`drag_starts_on_control`：滚动条/滑杆/分隔条上不可能开始文本拖选）。Windows 文件管理器与编辑器的同类手势在 M2 的 UIA 实现里需对等处理。
 - **AI 传输走 Rust 哑管道而非 WebView 直连**（ADR-03）：BYOK 任意第三方端点大概率无 CORS 头；`ai.rs` 只做协议转发，prompt/动作/agent 全部在 TS 层（`src/shared/actions.ts` 动作注册表：加动作 = 注册对象，Rust 零改动）。
 - **浮动条的 dismiss 逻辑**：普通单击 → `selection://dismiss`；点击浮动条自身用 `floating::rect_contains`（Rust 侧坐标抑制）避免误关——浮动条窗口不抢焦点，点击它不会改变聚焦进程。
 - **浮动条是预建常驻隐藏窗口**（show/hide 而非创建/销毁），定位用鼠标逻辑坐标 + `monitor_bounds` 防出屏钳制（多显示器 DPI 转换都在 `floating.rs`）。

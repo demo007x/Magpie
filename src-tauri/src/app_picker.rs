@@ -117,3 +117,17 @@ pub fn pick_vault_dir() -> Option<String> {
     #[cfg(not(target_os = "macos"))]
     None
 }
+
+/// 系统文件选择面板：选一张图片供「访达选图取字」识别。用户取消 = None。
+/// 必须在主线程调用（rfd 对 AppKit 的线程约束同下方两个选择器）；
+/// 且不能在托盘菜单事件回调内直接调用——先交由独立线程承载，
+/// 见 main.rs::start_file_ocr_flow 的线程模型说明。
+pub fn pick_image_file() -> Option<std::path::PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("选择要识别的图片")
+        .add_filter(
+            "图片",
+            &["png", "jpg", "jpeg", "heic", "webp", "bmp", "tif", "tiff", "gif"],
+        )
+        .pick_file()
+}

@@ -72,7 +72,8 @@ const SHORTCUT_ITEMS: Array<{
     | "ocrShortcut"
     | "ocrTranslateShortcut"
     | "ocrExplainShortcut"
-    | "ocrSummarizeShortcut";
+    | "ocrSummarizeShortcut"
+    | "fileOcrShortcut";
   label: string;
   desc: string;
   /** 出厂默认键位：重置按钮的目标值 */
@@ -94,15 +95,44 @@ const SHORTCUT_ITEMS: Array<{
     key: "ocrExplainShortcut",
     label: "识图解释",
     default: "Alt+E",
-    desc: "框选截图，AI 自动解释识别出的内容——术语、代码、生僻概念一看就懂。默认 ⌥E。",
+    desc: "框选截图，AI 自动解释识别出的内容。默认 ⌥E。",
   },
   {
     key: "ocrSummarizeShortcut",
     label: "识图总结",
     default: "Alt+D",
-    desc: "框选截图，AI 自动提炼识别出的文字要点，长文一眼抓住重点。默认 ⌥D。",
+    desc: "框选截图，AI 自动提炼识别出的文字要点。默认 ⌥D。",
+  },
+  {
+    key: "fileOcrShortcut",
+    label: "访达选图取字",
+    default: "Alt+F",
+    desc: "选择一张图片文件，识别其中的文字，后续操作与识图取字一致。默认 ⌥F。",
   },
 ];
+
+// 快捷键显示转换：存储统一为 Tauri 跨平台格式（"Alt+S"），显示按平台翻译——
+// macOS 用 ⌥⌃⇧⌘ 符号，Windows 保留 Alt/Ctrl 原文。与 Rust 侧 shortcut_display
+//（托盘菜单键位）同一套映射
+const IS_MAC = /Mac/i.test(navigator.platform);
+const MOD_SYMBOLS: Record<string, string> = {
+  Alt: "⌥",
+  Option: "⌥",
+  CmdOrCtrl: "⌘",
+  Cmd: "⌘",
+  Meta: "⌘",
+  Super: "⌘",
+  Control: "⌃",
+  Ctrl: "⌃",
+  Shift: "⇧",
+};
+function displayShortcut(v: string): string {
+  if (!v) return "";
+  return v
+    .split("+")
+    .map((p) => (IS_MAC ? (MOD_SYMBOLS[p] ?? p) : p))
+    .join("");
+}
 
 // 快捷键录制框：点击聚焦后捕获用户按下的组合键，规范化为 Tauri Shortcut 格式。
 // 只读（禁手输）；Esc 取消；无修饰键的单击提示不合法（避免吞掉单键全局快捷键）。
@@ -116,13 +146,15 @@ function ShortcutRecorder({
   const [recording, setRecording] = useState(false);
   const [hint, setHint] = useState("");
 
+  const sym = (m: string) => (IS_MAC ? (MOD_SYMBOLS[m] ?? m) : m);
+
   return (
     <input
       readOnly
       style={{ width: 180, flexShrink: 0, cursor: "pointer" }}
       className={recording ? "recording" : ""}
-      value={recording ? hint || "按下组合键…" : value}
-      placeholder="点击录制，如 Alt+S"
+      value={recording ? hint || "按下组合键…" : displayShortcut(value)}
+      placeholder={IS_MAC ? "点击录制，如 ⌥S" : "点击录制，如 Alt+S"}
       onFocus={() => {
         setRecording(true);
         setHint("");
@@ -143,7 +175,7 @@ function ShortcutRecorder({
         if (e.shiftKey) mods.push("Shift");
         // 只按了修饰键：先给出已按下的提示，等待主键
         if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) {
-          setHint(mods.length ? `${mods.join("+")}+…` : "按下组合键…");
+          setHint(mods.length ? `${mods.map(sym).join("+")}+…` : "按下组合键…");
           return;
         }
         if (mods.length === 0) {

@@ -29,7 +29,7 @@ export function Nav() {
           <span className="text-[13px] text-mute">Magpie</span>
         </a>
 
-        <div className="hidden w-[588px] grid-cols-6 items-center justify-items-center lg:grid">
+        <div className="hidden w-[588px] grid-cols-7 items-center justify-items-center lg:grid">
           {d.nav.items.map((item) => (
             <a
               key={item.id}

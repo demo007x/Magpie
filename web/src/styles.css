@@ -146,10 +146,10 @@ section[id] {
 
 /* 截图是产品浅色外观下的实际窗口，两个主题共用一套，所以版面色固定偏亮：
    深色页面上它读作「相纸里的照片」，而不是跟着页面翻色的坏图。
-   flex:1 + 居中：同一行两张图比例不同，差额由版面色吸收，卡片底边保持齐平。 */
+   画框式：图区高度由 Gallery.tsx 的工具类固定（h-[240px] sm:h-[340px]），
+   截图按原比例 contain 居中，行间留白由固定衬底吸收——六卡完全等大。 */
 .shot {
   display: flex;
-  flex: 1;
   align-items: center;
   justify-content: center;
   background: #f4f5f7;
@@ -170,6 +170,40 @@ section[id] {
   content: "待补图 " attr(data-file);
   font-size: 12px;
   color: #8a8f98;
+}
+
+/* 灯箱（Gallery 点图查看大图）：固定深色幕布——照片查看器的黑幕是两个主题
+   下的通用约定，不随主题翻色（与 .shot 固定亮灰同理，固定色面写在本文件） */
+.lightbox {
+  background: rgba(9, 10, 12, 0.88);
+  backdrop-filter: blur(6px);
+}
+
+.lightbox img {
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.lightbox-caption {
+  color: #f5f6f8;
+}
+
+.lightbox-caption-sub {
+  color: #b9bdc6;
+}
+
+.lightbox-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 9999px;
+  color: #e8eaee;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.lightbox-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 @media (prefers-reduced-motion: reduce) {

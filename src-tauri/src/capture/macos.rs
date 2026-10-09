@@ -79,6 +79,7 @@ struct AxConsts {
     selected_text: CFStringRef,
     selected_text_range: CFStringRef,
     string_for_range: CFStringRef,
+    role: CFStringRef,
     focused_app: CFStringRef,
     focused_element: CFStringRef,
     focused_window: CFStringRef,
@@ -103,6 +104,7 @@ fn ax_consts() -> &'static AxConsts {
         selected_text: ax_string("AXSelectedText"),
         selected_text_range: ax_string("AXSelectedTextRange"),
         string_for_range: ax_string("AXStringForRange"),
+        role: ax_string("AXRole"),
         focused_app: ax_string("AXFocusedApplication"),
         focused_element: ax_string("AXFocusedUIElement"),
         focused_window: ax_string("AXFocusedWindow"),
@@ -453,7 +455,8 @@ fn tap_mask() -> u64 {
     m | (1u64 << EV_MOUSE_MOVED)
 }
 
-/// 选词判定状态机（docs/03 §3.2）：拖选 > 6px 或双击 → 防抖 → AX 查询；普通单击 → PlainClick
+/// 选词判定状态机（docs/03 §3.2）：拖选 > 6px 或双击 → 防抖 → AX 查询；普通单击 → PlainClick；
+/// Finder 文件交互（拖动/双击，聚焦元素非文本框）在一切 AX 查询前排除
 fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: u64) {
     let mut down: Option<(f64, f64)> = None;
     let mut last_up: Option<(Instant, f64, f64)> = None;
@@ -526,6 +529,13 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
                     // （EXC_BREAKPOINT，crashDueToApplicationCallingMainThreadOnlyWebKitAPIFromBackgroundThread）。
                     // worker 层的「自身进程」过滤在查询之后，救不了已发出的查询
                     debug_log("mouse-up：选区在自身窗口内，跳过取词");
+                } else if down.map_or(false, |(dx, dy)| drag_starts_on_control(dx, dy)) {
+                    // 拖拽起点在滚动条/滑杆/分隔条上（VSCode 滚动条等）：滚动/调参手势，非选词
+                    debug_log("mouse-up：拖拽起点是控件（滚动条/滑杆/分隔条），跳过");
+                } else if in_finder_file_context() {
+                    // Finder 文件交互（拖动移动 / 双击打开）形态上与拖选/双击选词完全一致，
+                    // 但放行会经兼容模式 ⌘C 把文件名误捕为划词（见该函数注释）
+                    debug_log("mouse-up：Finder 文件交互，非选词，跳过");
                 } else {
                     // 自适应防抖：拖选的选区随拖动实时更新，松手即最终态，短等即可；
                     // 双击/三击的选区是松手后应用计算的，需给足处理时间（沿用 debounce_ms 档，
@@ -813,6 +823,125 @@ fn focused_pid() -> Option<i32> {
     }
 }
 
+/// 聚焦元素的角色（AXRole）。查询失败 = None（AX 服务异常/无聚焦元素）。
+unsafe fn focused_element_role() -> Option<String> {
+    let sys = AXUIElementCreateSystemWide();
+    if sys.is_null() {
+        return None;
+    }
+    let mut el: CFTypeRefC = std::ptr::null();
+    let rc = AXUIElementCopyAttributeValue(sys, ax_consts().focused_element, &mut el);
+    let mut role = None;
+    if rc == 0 && !el.is_null() {
+        // 闸门判定与本次查询之间焦点可能切回自身（是 Finder 的分支判定在前），
+        // 下探进自家 WKWebView 的辅助功能树会触发 WebKit 主线程断言，先验归属
+        if is_own_element(el as AXUIElementRef) {
+            CFRelease(el as *mut c_void);
+            CFRelease(sys as *mut c_void);
+            return None;
+        }
+        let mut val: CFTypeRefC = std::ptr::null();
+        let rc_role =
+            AXUIElementCopyAttributeValue(el as AXUIElementRef, ax_consts().role, &mut val);
+        if rc_role == 0 {
+            role = cf_type_to_string(val);
+        }
+        CFRelease(el as *mut c_void);
+    }
+    CFRelease(sys as *mut c_void);
+    role
+}
+
+/// 聚焦元素是否为真文本编辑框（重命名/输入框/前往文件夹等）。
+/// 角色查询失败按非文本处理——Finder 场景宁可漏一次取词也不误弹胶囊。
+fn focused_element_is_text_editor() -> bool {
+    match unsafe { focused_element_role() } {
+        Some(role) => matches!(
+            role.as_str(),
+            "AXTextField" | "AXTextArea" | "AXTextView" | "AXComboBox"
+        ),
+        None => false,
+    }
+}
+
+/// Finder 闸门：聚焦应用是 Finder 且聚焦元素不是文本框 → 本次"拖选/双击"
+/// 实为文件交互（拖动移动 / 双击打开），跳过取词。
+///
+/// 为什么要这道闸：拖动文件夹位移必 >6px，状态机判为拖选，而 Finder 图标视图的
+/// 文件项是 AXGroup>AXImage（文件名标签不暴露为文本节点），AX 查询链全部落空 →
+/// 落入兼容模式模拟 ⌘C —— 实测 Finder 对 ⌘C 的响应是把**选中项的文件名**作为
+/// 纯文本写入剪贴板，文件名随即被当成划词，胶囊误弹、用户剪贴板被短暂改写。
+/// 仅重命名等真文本框（focused_element_is_text_editor）放行取词。
+fn in_finder_file_context() -> bool {
+    let finder = focused_pid()
+        .and_then(running_bundle_id)
+        .map_or(false, |bid| bid.eq_ignore_ascii_case("com.apple.finder"));
+    finder && !focused_element_is_text_editor()
+}
+
+/// 控件拖拽闸门：拖拽**起点**的命中元素（含 ≤3 层祖先）是滚动条/滑杆/分隔条 →
+/// 是滚动/调参/分栏手势。任何应用的文本拖选都不会从这类控件上开始，整链跳过。
+///
+/// 实证案例：VSCode 水平滚动条拖动被状态机判为拖选，Monaco 滚动条是
+/// role="presentation" 的自绘 div（不暴露为 AXScrollBar），AX 链路落空后经兼容
+/// 模式 ⌘C 误捕——VSCode 空选区 ⌘C 的行为是复制光标所在行。双击滚动条（翻页）
+/// 同理。原生滚动条/滑杆在本闸门直接拦截；Monaco 自绘滚动条由编辑器家族闸门
+/// （skip_compat_for_focused_app）兜住。
+fn drag_starts_on_control(x: f64, y: f64) -> bool {
+    const CONTROL_ROLES: [&str; 4] = ["AXScrollBar", "AXSlider", "AXValueIndicator", "AXSplitter"];
+    unsafe {
+        let sys = AXUIElementCreateSystemWide();
+        if sys.is_null() {
+            return false;
+        }
+        let mut el: CFTypeRefC = std::ptr::null();
+        let rc = AXUIElementCopyElementAtPosition(sys, x as f32, y as f32, &mut el);
+        let mut hit = false;
+        if rc == 0 && !el.is_null() {
+            if is_own_element(el as AXUIElementRef) {
+                CFRelease(el as *mut c_void);
+            } else {
+                let mut cur = el as AXUIElementRef;
+                for depth in 0..=3 {
+                    let mut rv: CFTypeRefC = std::ptr::null();
+                    let rc_role = AXUIElementCopyAttributeValue(cur, ax_consts().role, &mut rv);
+                    let role = if rc_role == 0 { cf_type_to_string(rv) } else { None };
+                    debug_log(format!(
+                        "AX: 拖拽起点命中角色（上溯 {depth}）：{}",
+                        role.as_deref().unwrap_or("?")
+                    ));
+                    if role.map_or(false, |r| CONTROL_ROLES.contains(&r.as_str())) {
+                        hit = true;
+                        break;
+                    }
+                    if depth == 3 {
+                        break;
+                    }
+                    let mut parent: CFTypeRefC = std::ptr::null();
+                    let rc_p = AXUIElementCopyAttributeValue(cur, ax_consts().parent, &mut parent);
+                    if rc_p != 0 || parent.is_null() {
+                        break;
+                    }
+                    if is_own_element(parent as AXUIElementRef) {
+                        CFRelease(parent as *mut c_void);
+                        break;
+                    }
+                    CFRelease(cur);
+                    cur = parent as AXUIElementRef;
+                }
+                CFRelease(cur);
+            }
+        } else if rc != 0 {
+            debug_log(format!(
+                "AX: 拖拽起点定位不可用 rc={rc}（{}）",
+                ax_error_name(rc)
+            ));
+        }
+        CFRelease(sys as *mut c_void);
+        hit
+    }
+}
+
 /// 元素是否属于本进程：下探进本进程 WKWebView 的辅助功能树会在后台线程触发
 /// WebKit 主线程断言（EXC_BREAKPOINT 必崩）；跨进程元素走 XPC 由对端 servicing，
 /// 对端崩是自己崩，伤不到我们。凡对拿到的 AX 句柄做下探，先过这道闸
@@ -999,10 +1128,41 @@ fn main_clear_text(app: &AppHandle) {
     });
 }
 
+/// Electron 编辑器家族（Monaco 系）bundle id：空选区 ⌘C 会复制光标所在行，
+/// 兼容模式对该家族只会产出合成文本，真选区经轻推后 AX 链路必然可取（见下）。
+fn bid_in_editor_family(bid: &str) -> bool {
+    matches!(
+        bid,
+        "com.microsoft.VSCode"
+            | "com.microsoft.VSCodeInsiders"
+            | "com.vscodium"
+            | "com.todesktop.230313mzl4w4u92" // Cursor
+            | "com.exafunction.windsurf" // Windsurf
+    )
+}
+
+/// 兼容模式对 Electron 编辑器家族（VSCode/Cursor/Windsurf 等）跳过：
+/// 该家族任何 AX 落空的拖拽（滚动条、文件树、标签页等）经 ⌘C 都会把**光标所在行**
+/// 误捕成划词（VSCode 空选区 ⌘C = 复制当前行），而真文本选区在 Chromium 轻推
+/// （AXManualAccessibility）后由 AX 链路稳定取到，⌘C 兜底对它只有误报价值。
+/// 代价：用户手动关闭编辑器辅助功能支持（accessibilitySupport: "off"）时取词失效。
+fn skip_compat_for_focused_app() -> bool {
+    let skip = focused_pid()
+        .and_then(running_bundle_id)
+        .map_or(false, |bid| bid_in_editor_family(&bid));
+    if skip {
+        debug_log("兼容模式：Electron 编辑器家族（空选区 ⌘C 会复制当前行），跳过");
+    }
+    skip
+}
+
 /// 兼容模式取词：快照剪贴板 → 模拟 ⌘C → 轮询变化 → 取词 → 还原快照。
 /// 剪贴板操作全部走主线程（见上方 helpers）。
 /// 返回 (文本, 聚焦应用 pid（查不到为 0）)；失败 = None（静默）。
 pub fn force_fetch_via_copy(app: &AppHandle) -> Option<(String, i32)> {
+    if skip_compat_for_focused_app() {
+        return None;
+    }
     const POLL_TIMES: usize = 60; // 60 × 10ms = 600ms 上限；应用响应后首个周期即命中
     const POLL_INTERVAL: Duration = Duration::from_millis(10);
 

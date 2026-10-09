@@ -6,7 +6,8 @@
 // 代码属性访问结构上不可区分，一律不识别（产品决策 2026-09）。
 // 带 scheme 的 URL 不做 TLD 白名单校验：scheme 是用户显式选中的强信号，
 // 白名单只会误杀小众 ccTLD（.sh/.md 等域名服务，2026-09-18 实测误杀），
-// 仅要求 host 含点（排除 https://localhost 类无意义主机）。
+// 仅要求 host 含点，localhost / [::1] 等无点主机单列放行（开发服务器地址
+// 是高频选区，一刀切拒掉后端口数字反倒落进验证码候选，2026-10-08）。
 
 export type TextContext = "url" | "email" | null;
 
@@ -26,13 +27,16 @@ const TEL_CN_ALL_RE =
 
 const TRAIL_PUNCT_RE = /[.,;:!?、。，；：！？…"'’”]+$/;
 
-/** host 是否可信：剥 scheme/路径/端口后必须含点（排除 localhost 类单段主机） */
+/** host 是否可信：剥 scheme/路径/端口后须含点，或为 localhost / IPv6 字面量。
+ * 含点规则排除任意单段主机；localhost 与 [::1] 是开发服务器的常态地址，
+ * 且拒掉它们时 URL 内的端口数字会被验证码规则捡走（extractAll 的保护区间
+ * 只登记被采纳的 URL）。127.0.0.1 等点分 IPv4 天然含点，无需特判 */
 function hasPlausibleHost(url: string): boolean {
   const host = url
     .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
     .split(/[/?#]/)[0]
     .split(":")[0];
-  return host.includes(".");
+  return host.includes(".") || host.toLowerCase() === "localhost" || host.startsWith("[");
 }
 
 /** 剥离 URL 尾部标点；右括号仅在括号不平衡时剥离（保留 Wikipedia 式链接的括号） */
