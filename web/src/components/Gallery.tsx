@@ -42,42 +42,57 @@ export function Gallery() {
       }
       lead={d.gallery.lead}
     >
-      <div className="grid gap-4 sm:grid-cols-2">
-        {shots.map((s, i) => (
-          <Reveal key={s.file} delay={(i % 2) * 0.06} y={18} className={s.cls}>
-            <figure className="group flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-panel lift">
-              <button
-                type="button"
-                onClick={() => setViewing(i)}
-                aria-label={`查看大图：${s.label}`}
-                className="shot h-[240px] cursor-zoom-in border-b border-line p-4 sm:h-[340px] sm:p-6"
-                data-file={`public/shots/${s.file}`}
-              >
-                <picture>
-                  <source srcSet={`shots/${s.file.replace(/\.png$/, ".webp")}`} type="image/webp" />
-                  <img
-                    src={`shots/${s.file}`}
-                    alt={`${s.label}：${s.note}`}
-                    loading="lazy"
-                    decoding="async"
-                    width={s.w}
-                    height={s.h}
-                    className="max-h-full max-w-full rounded-md shadow-md"
-                    onError={(e) => {
-                      e.currentTarget.closest(".shot")?.setAttribute("data-missing", "");
-                    }}
-                  />
-                </picture>
-              </button>
-              <figcaption className="min-h-[70px] flex-1 px-5 py-4">
-                <p className="text-[14.5px] font-semibold tracking-tight text-ink/85 transition-colors duration-300 group-hover:text-ink">
-                  {s.label}
-                </p>
-                <p className="mt-1 text-[12.5px] leading-relaxed text-mute-soft">{s.note}</p>
-              </figcaption>
-            </figure>
+      {/* 左右交替的全宽行：每行 = 半栏文字 + 半栏截图，行高随截图比例自适应；
+          两行两种底色（bg-panel / bg-fill）交替成 zebra 节奏 */}
+      <div className="space-y-6">
+        {shots.map((s, i) => {
+          const flip = i % 2 === 1;
+          const band = i % 2 === 0 ? "border border-line bg-panel" : "bg-fill-2";
+          return (
+            <Reveal key={s.file} y={18}>
+              <div className={`rounded-2xl ${band} p-6 sm:p-10`}>
+                <div className="grid items-center gap-6 sm:gap-10 lg:grid-cols-2">
+                  <div className={flip ? "lg:order-2" : ""}>
+                    <h3 className="text-[17px] font-semibold tracking-tight text-ink/90">
+                      {s.label}
+                    </h3>
+                    <p className="mt-2.5 max-w-[420px] text-[13.5px] leading-relaxed text-mute">
+                      {s.note}
+                    </p>
+                  </div>
+                  <div className={flip ? "lg:order-1" : ""}>
+                    <button
+                      type="button"
+                      onClick={() => setViewing(i)}
+                      aria-label={`查看大图：${s.label}`}
+                      className="shot block w-full cursor-zoom-in rounded-xl p-4 sm:p-6"
+                      data-file={`public/shots/${s.file}`}
+                    >
+                    <picture>
+                      <source
+                        srcSet={`shots/${s.file.replace(/\.png$/, ".webp")}`}
+                        type="image/webp"
+                      />
+                      <img
+                        src={`shots/${s.file}`}
+                        alt={`${s.label}：${s.note}`}
+                        loading="lazy"
+                        decoding="async"
+                        width={s.w}
+                        height={s.h}
+                        className="mx-auto max-h-[380px] w-auto max-w-full rounded-lg shadow-md"
+                        onError={(e) => {
+                          e.currentTarget.closest(".shot")?.setAttribute("data-missing", "");
+                        }}
+                      />
+                    </picture>
+                  </button>
+                </div>
+              </div>
+            </div>
           </Reveal>
-        ))}
+          );
+        })}
       </div>
 
       {viewing !== null && (
