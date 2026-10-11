@@ -161,7 +161,7 @@ export const ACTIONS: ActionDef[] = [
   },
   {
     id: "obsidian",
-    label: "存入 Obsidian",
+    label: "Obsidian",
     kind: "local",
   },
 ];

@@ -696,8 +696,17 @@ unsafe fn ax_selected_text(app_handle: &AppHandle, x: f64, y: f64) -> Option<(St
             CFRelease(sys as *mut c_void);
             return None;
         }
+        // pid 读取失败（0）= 归属不明：聚焦可能在判定后切到了自己（非激活面板
+        // 可成为 key window），此时下探会闯进自家 webview 的 AX → WebKit 主动
+        // abort。宁可放弃本轮取词
         let mut pid: c_int = 0;
         let _ = AXUIElementGetPid(app_el, &mut pid);
+        if pid == 0 {
+            debug_log("AX: 聚焦应用 pid 读取失败，放弃本轮取词");
+            CFRelease(app as *mut c_void);
+            CFRelease(sys as *mut c_void);
+            return None;
+        }
 
         // 路径1（主）：聚焦元素级 SelectedText；失败则范围回退（AXSelectedTextRange + StringForRange）
         // —— 微信 4.x 等 Qt 自绘文本视图不暴露 SelectedText，但支持范围取值
@@ -1128,6 +1137,35 @@ fn main_clear_text(app: &AppHandle) {
     });
 }
 
+/// 剪贴板图片快照（RGBA 位图）。仅在没有文本快照时调用——图片常是大位图，
+/// 避免无谓的主线程拷贝。读取失败（纯文本剪贴板等）= None。
+fn main_read_image(app: &AppHandle) -> Option<arboard::ImageData<'static>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let sent = app.run_on_main_thread(move || {
+        let img = arboard::Clipboard::new()
+            .ok()
+            .and_then(|mut b| b.get_image().ok())
+            .map(|i| arboard::ImageData {
+                width: i.width,
+                height: i.height,
+                bytes: i.bytes.into_owned().into(),
+            });
+        let _ = tx.send(img);
+    });
+    if sent.is_err() {
+        return None;
+    }
+    rx.recv_timeout(Duration::from_millis(500)).ok().flatten()
+}
+
+fn main_write_image(app: &AppHandle, img: arboard::ImageData<'static>) {
+    let _ = app.run_on_main_thread(move || {
+        if let Ok(mut b) = arboard::Clipboard::new() {
+            let _ = b.set_image(img);
+        }
+    });
+}
+
 /// Electron 编辑器家族（Monaco 系）bundle id：空选区 ⌘C 会复制光标所在行，
 /// 兼容模式对该家族只会产出合成文本，真选区经轻推后 AX 链路必然可取（见下）。
 fn bid_in_editor_family(bid: &str) -> bool {
@@ -1168,6 +1206,13 @@ pub fn force_fetch_via_copy(app: &AppHandle) -> Option<(String, i32)> {
 
     let t_copy = Instant::now();
     let snapshot = main_read_text(app);
+    // 文本快照为空时补读图片快照：QQ 贴图等场景剪贴板里只有图片——
+    // 只还原文本会把整块剪贴板清空/覆盖，图片就丢了（用户实测丢失案例）
+    let image_snapshot = if snapshot.is_none() {
+        main_read_image(app)
+    } else {
+        None
+    };
 
     unsafe { post_cmd_c() };
 
@@ -1183,11 +1228,28 @@ pub fn force_fetch_via_copy(app: &AppHandle) -> Option<(String, i32)> {
         }
     }
 
-    // 尽力还原快照（原剪贴板无文本则清空）
-    match &snapshot {
-        Some(s) => main_write_text(app, s.clone()),
-        None => main_clear_text(app),
-    };
+    // 还原决策。兼容模式是"借用"剪贴板——拿完文本应物归原主，但借用期间
+    // 第三方可能写入新内容（QQ 贴图的图片在模拟 ⌘C 之后才落板——快照阶段
+    // 读不到它，盲目还原会覆盖比快照更新的东西。用户实测三连：贴图图片丢失、
+    // 历史顺序错乱、重复条目——全是这一个竞态的不同切面）。
+    // 因此还原前重读现状，只在「取到文本且现状仍是它」时物归原主：
+    // · 快照有文本 → 还原文本；原本只有图片 → 还原图片；原本为空 → 清空
+    // · 其余一切（取词失败，或现状已变）→ 不动剪贴板，保留现状——
+    //   图片不丢、顺序不错乱、也没有同内容重写的重复条目
+    let now_text = main_read_text(app);
+    if fetched.is_some() && now_text.as_deref() == fetched.as_deref() {
+        match &snapshot {
+            Some(s) => main_write_text(app, s.clone()),
+            None => match &image_snapshot {
+                Some(img) => main_write_image(app, img.clone()),
+                None => main_clear_text(app),
+            },
+        };
+    } else {
+        debug_log(format!(
+            "⏱ 兼容模式 ⌘C：未取到文本或现状有新写入，跳过还原（保留现状）"
+        ));
+    }
 
     if fetched.is_none() {
         debug_log(format!(
@@ -1230,6 +1292,14 @@ unsafe fn scan_subtree_for_text(
     depth: usize,
     budget: &mut usize,
 ) -> Option<String> {
+    // 铁闸：绝不查询本进程自己的元素——自家 webview 的 AX 仅限主线程访问，
+    // 后台线程一碰即被 WebKit 主动 abort（崩溃报告实锤：拖动结果窗缩放把手时
+    // 聚焦切回自己，扫描下探进自家 webview → EXC_BREAKPOINT）。
+    // AXUIElementGetPid 偶发失败返回 0 时 is_own_element 会误判放行，
+    // 故对每个下探元素独立复核
+    if is_own_element(el) {
+        return None;
+    }
     if *budget == 0 {
         return None;
     }

@@ -213,7 +213,7 @@ const ACTION_LABELS: Record<string, string> = {
   tel: "复制号码",
   date: "加入日历",
   addr: "打开地图",
-  obsidian: "存入 Obsidian",
+  obsidian: "Obsidian",
 };
 
 /** Obsidian 模板出厂默认值，与 src-tauri/src/settings.rs 的 ObsidianConfig::default 保持一致
@@ -1094,6 +1094,13 @@ export default function App() {
             </div>
 
             <h2 className="sec">动作</h2>
+            {Object.values(settings.actions).every((v) => v === false) &&
+              !settings.customActions.some((c) => c.enabled) && (
+              <div className="all-off-note">
+                所有动作均已关闭：划词后浮动条将不再出现。主窗口仍可从菜单栏图标进入，
+                打开任一开关即可恢复。
+              </div>
+            )}
             <div className="card">
               {residentIds.map((k) => {
                 const c = customById(k);
@@ -1767,7 +1774,7 @@ export default function App() {
             <h1>Obsidian</h1>
             <p className="page-hint">
               把划词与识图结果按模板直写进 vault 的 markdown 文件——离线可用，无需安装
-              Obsidian 插件。配置 vault 后，胶囊与结果窗会出现「存入 Obsidian」。更改需保存后生效。
+              Obsidian 插件。配置 vault 后，胶囊与结果窗会出现「Obsidian」。更改需保存后生效。
             </p>
 
             <div className="card">
@@ -1777,7 +1784,7 @@ export default function App() {
                   <div className="row-sub">
                     {settings.obsidian.vaultPath
                       ? "已接入：写入范围仅限该目录内的相对路径。"
-                      : "选择 vault 根目录（.obsidian 所在的那层）。未选择时「存入 Obsidian」不出现。"}
+                      : "选择 vault 根目录（.obsidian 所在的那层）。未选择时「Obsidian」动作不出现。"}
                   </div>
                 </div>
                 <div className="row-ctl">

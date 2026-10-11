@@ -25,7 +25,7 @@ export interface ActionFlags {
   date: boolean;
   /** 上下文动作：选中文本含地点时出现「打开地图」 */
   addr: boolean;
-  /** 接入动作：已配置 Obsidian vault 时出现「存入 Obsidian」（笔记/任务/卡片） */
+  /** 接入动作：已配置 Obsidian vault 时出现「Obsidian」（笔记/任务/卡片） */
   obsidian: boolean;
 }
 

@@ -570,6 +570,10 @@ export default function App() {
   const winPosRef = useRef<WindowPos | null>(null);
   const barInWinRef = useRef({ x: FLOAT_PAD, y: FLOAT_PAD });
   const overflowRef = useRef<HTMLDivElement | null>(null);
+  // 全关守卫镜像（见 captured 分支注释）：监听只注册一次，闭包拿不到渲染期
+  // 状态——常驻动作存活性与动作开关的最新值经 ref 每次渲染刷新
+  const barLiveRef = useRef(true);
+  const actionsRef = useRef(actions);
   const menuPopRef = useRef<HTMLDivElement | null>(null);
   // 钉图失败的反馈（图标变红 + title 显示具体原因，直到下次重试）
   const [pinErr, setPinErr] = useState<string | null>(null);
@@ -809,6 +813,10 @@ export default function App() {
     return entries;
   })();
 
+  // 守卫镜像：每次渲染刷新（captured 监听的闭包由此读取最新值）
+  barLiveRef.current = barEntries.length > 0;
+  actionsRef.current = actions;
+
   // 动态上下文按钮：检测到实体才出现，渲染在胶囊最前（对本条选中内容而言，
   // 它比常驻动作更相关）；与常驻动作互不挤占——8 个常驻 + 1 个上下文 = 9 个可见
   const ctxEntry: BarEntry | null = (() => {
@@ -1032,6 +1040,22 @@ export default function App() {
       }
       // OCR 窗口忽略普通划词广播
       if (IS_OCR) return;
+      // 全关极端态守卫：常驻动作数为 0（复制关闭、Obsidian 未配 vault、
+      // 自定义动作全停等过滤后）且选区无同步实体（网址/邮箱/验证码/电话）、
+      // 日期/地点识别又未启用 → 无任何可显示内容，不弹（否则出现空"·"胶囊）。
+      // 判定走 ref + 现算实体（监听闭包拿不到渲染期状态）；日期/地点是异步
+      // 识别，开关开着时保守放行——宁弹空壳不漏真实的上下文动作
+      const all = extractAll(e.payload.text);
+      const acts = actionsRef.current;
+      const syncCtx =
+        (acts.link !== false && all.urls.length > 0) ||
+        (acts.email !== false && all.emails.length > 0) ||
+        (acts.code !== false && all.codes.length > 0) ||
+        (acts.tel !== false && all.tels.length > 0);
+      if (!barLiveRef.current && !syncCtx && acts.date === false && acts.addr === false) {
+        invoke("hide_floating_bar").catch(() => undefined);
+        return;
+      }
       // 普通划词：浮动条在鼠标位置弹出（x/y 来自选区）
       // 新划词 = 新胶囊：清掉上一轮残留的合成 hover 类（否则旧高亮在挂起解除后显形，
       // 表现为"没碰到任何动作却有个动作是 hover 态"）
