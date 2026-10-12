@@ -8,6 +8,15 @@ export function Nav() {
   const [solid, setSolid] = useState(false);
   const { locale, d, setLocale } = useSite();
   const next = locale === "zh" ? "en" : "zh";
+  const nextHref = locale === "zh" ? "en/" : "../";
+
+  // 软切换：真 href 供爬虫/中键/禁 JS 使用；普通点击拦截为原地换字典 +
+  // pushState（带上当前区块锚点），不刷新、滚动位置不动
+  const softSwitch = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    setLocale(next);
+    history.pushState({}, "", nextHref + window.location.hash);
+  };
 
   useEffect(() => {
     const onScroll = () => setSolid(window.scrollY > 12);
@@ -42,14 +51,14 @@ export function Nav() {
         </div>
 
         <div className="flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => setLocale(next)}
+          <a
+            href={nextHref}
+            onClick={softSwitch}
             title={locale === "zh" ? "Switch to English" : "切换到中文"}
-            className="w-12 rounded-lg px-2 py-2 text-[13px] font-medium text-mute transition-colors hover:text-ink"
+            className="w-12 rounded-lg px-2 py-2 text-center text-[13px] font-medium text-mute transition-colors hover:text-ink"
           >
             {locale === "zh" ? "EN" : "中文"}
-          </button>
+          </a>
           <a
             href={RELEASES}
             target="_blank"

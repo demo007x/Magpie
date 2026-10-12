@@ -42,45 +42,51 @@ export function Gallery() {
       }
       lead={d.gallery.lead}
     >
-      {/* 左右交替的全宽行：每行 = 半栏文字 + 半栏截图，行高随截图比例自适应；
-          两行两种底色（bg-panel / bg-fill）交替成 zebra 节奏 */}
-      <div className="space-y-6">
+      {/* 左右交替的全宽行：无底色卡，文字裸排在页面底色上；列宽按截图宽高分档
+          （宽横 5:7 / 中横 5:6 / 近方 4:7），行高随图片自然比例自适应 */}
+      <div className="space-y-16 sm:space-y-24">
         {shots.map((s, i) => {
           const flip = i % 2 === 1;
-          const band = i % 2 === 0 ? "border border-line bg-panel" : "bg-fill-2";
+          const ratio = s.w / s.h;
+          const cols =
+            ratio >= 1.8
+              ? "lg:grid-cols-[5fr_7fr]"
+              : ratio >= 1.2
+                ? "lg:grid-cols-[5fr_6fr]"
+                : "lg:grid-cols-[4fr_7fr]";
+          const maxH = ratio >= 1.2 ? "max-h-[420px]" : "max-h-[520px]";
           return (
             <Reveal key={s.file} y={18}>
-              <div className={`rounded-2xl ${band} p-6 sm:p-10`}>
-                <div className="grid items-center gap-6 sm:gap-10 lg:grid-cols-2">
-                  <div className={flip ? "lg:order-2" : ""}>
-                    <h3 className="text-[17px] font-semibold tracking-tight text-ink/90">
-                      {s.label}
-                    </h3>
-                    <p className="mt-2.5 max-w-[420px] text-[13.5px] leading-relaxed text-mute">
-                      {s.note}
-                    </p>
-                  </div>
-                  <div className={flip ? "lg:order-1" : ""}>
-                    <button
-                      type="button"
-                      onClick={() => setViewing(i)}
-                      aria-label={`查看大图：${s.label}`}
-                      className="shot block w-full cursor-zoom-in rounded-xl p-4 sm:p-6"
-                      data-file={`public/shots/${s.file}`}
-                    >
+              <div className={`grid items-center gap-8 sm:gap-12 ${cols}`}>
+                <div className={flip ? "lg:order-2" : ""}>
+                  <h3 className="text-lg font-semibold tracking-tight text-ink">
+                    {s.label}
+                  </h3>
+                  <p className="mt-3 max-w-[440px] text-[14.5px] leading-relaxed text-mute">
+                    {s.note}
+                  </p>
+                </div>
+                <div className={flip ? "lg:order-1" : ""}>
+                  <button
+                    type="button"
+                    onClick={() => setViewing(i)}
+                    aria-label={`查看大图：${s.label}`}
+                    className="shot block w-full cursor-zoom-in"
+                    data-file={`public/shots/${s.file}`}
+                  >
                     <picture>
                       <source
-                        srcSet={`shots/${s.file.replace(/\.png$/, ".webp")}`}
+                        srcSet={`/shots/${s.file.replace(/\.png$/, ".webp")}`}
                         type="image/webp"
                       />
                       <img
-                        src={`shots/${s.file}`}
+                        src={`/shots/${s.file}`}
                         alt={`${s.label}：${s.note}`}
                         loading="lazy"
                         decoding="async"
                         width={s.w}
                         height={s.h}
-                        className="mx-auto max-h-[380px] w-auto max-w-full rounded-lg shadow-md"
+                        className={`mx-auto ${maxH} w-auto max-w-full rounded-lg shadow-md`}
                         onError={(e) => {
                           e.currentTarget.closest(".shot")?.setAttribute("data-missing", "");
                         }}
@@ -89,8 +95,7 @@ export function Gallery() {
                   </button>
                 </div>
               </div>
-            </div>
-          </Reveal>
+            </Reveal>
           );
         })}
       </div>
@@ -113,11 +118,11 @@ export function Gallery() {
           </button>
           <picture onClick={(e) => e.stopPropagation()}>
             <source
-              srcSet={`shots/${shots[viewing].file.replace(/\.png$/, ".webp")}`}
+              srcSet={`/shots/${shots[viewing].file.replace(/\.png$/, ".webp")}`}
               type="image/webp"
             />
             <img
-              src={`shots/${shots[viewing].file}`}
+              src={`/shots/${shots[viewing].file}`}
               alt={`${shots[viewing].label}：${shots[viewing].note}`}
               className="max-h-[74vh] max-w-[92vw] rounded-lg"
             />

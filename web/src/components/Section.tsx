@@ -15,7 +15,7 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="mx-auto w-full max-w-6xl px-6 py-24 sm:py-28">
+    <section id={id} className="mx-auto w-full max-w-6xl px-6 py-14 sm:py-20">
       <div className="max-w-3xl">
         <Reveal>
           <p className="text-xs font-medium tracking-[0.18em] text-accent uppercase">{eyebrow}</p>
@@ -31,7 +31,7 @@ export function Section({
           </Reveal>
         )}
       </div>
-      <div className="mt-12">{children}</div>
+      <div className="mt-10">{children}</div>
     </section>
   );
 }

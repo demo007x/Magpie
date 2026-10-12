@@ -6,7 +6,7 @@
   "packageManager": "pnpm@12.4.2",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/prerender.mjs",
     "preview": "vite preview",
     "check": "tsc --noEmit"
   },

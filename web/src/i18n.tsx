@@ -4,7 +4,6 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 export type Locale = "zh" | "en";
 
 const zh = {
-  meta: { lang: "zh-CN", title: "拾趣 Magpie · 屏幕上任何文字，选中或框选就地处理" },
   nav: {
     items: [
       { id: "actions", label: "动作" },
@@ -21,13 +20,13 @@ const zh = {
   },
   hero: {
     badge: "macOS 划词 AI 工具 · 永久免费",
-    h1a: "屏幕上任何文字，",
-    h1b: "选中或框选，",
-    h1c: "就地处理",
-    lead: "一款 macOS 划词 AI 工具：拖选或双击文字即显示浮动条，图片、视频与扫描文档中的文字可框选识别。翻译、解释、总结实时出结果；复制、搜索、写入 Obsidian、预填日历等动作把结果直接落地，不锁在对话窗口里。",
+    h1a: "划词唤起 AI，",
+    h1b: "翻译",
+    h1c: "直达 Obsidian",
+    lead: "划选或双击，浮动条随即弹出：翻译、解释、总结实时呈现；复制、搜索、写入 Obsidian、预填日历，结果直接落地。图片、视频与扫描文档中的文字，框选亦可识别——处理在原地完成，无需迁入对话窗口。",
     cta1: "下载 macOS 版",
     cta2: "GitHub Releases",
-    note: "弹出约 0.1 秒 · 模型服务自选 · 识图与提取在本机完成 · 不收集使用数据",
+    note: "选中即弹出 · 模型服务自选 · 识图与提取在本机完成 · 不收集使用数据",
     stats: [
       { value: "2", label: "种取字方式", note: "划词 · 识图" },
       { value: "12", label: "个内置动作", note: "AI 动作 3 个 · 本地动作 9 个" },
@@ -88,7 +87,7 @@ const zh = {
     lead: "浮动条、识图取字、结果窗、设置页、钉图与 Obsidian 直写的 macOS 实际截图。",
     shots: [
       { file: "floating-bar.png", label: "划词浮动条", note: "选中或双击文字后就地显示；点开「翻译」可切换 AI 翻译、百度翻译与 DeepL。", w: 1119, h: 559 },
-      { file: "ocr-crop.png", label: "识图取字", note: "框选屏幕区域即可识别——视频字幕、扫描件与图片里的文字同样可取。", w: 1176, h: 585 },
+      { file: "ocr-crop.png", label: "识图取字", note: "框选屏幕区域即可识别——视频字幕、扫描件与图片里的文字同样可读。", w: 1176, h: 585 },
       { file: "translate-result.png", label: "翻译结果", note: "结果实时显示，附术语与译法说明，可复制或继续交给其他动作。", w: 778, h: 583 },
       { file: "obsidian.png", label: "存入 Obsidian", note: "在 PDF 等任意界面划选文字，直接存入 Obsidian：摘录进日记、任务带截止日期、卡片一卡一文件，按模板直写 vault。", w: 752, h: 542 },
       { file: "pinned.png", label: "钉图", note: "截图可固定在屏幕上，钉住后仍能再次识别、复制与搜索。", w: 1436, h: 620 },
@@ -210,11 +209,11 @@ const zh = {
       { q: "文字会被上传吗？", a: "识别与提取均在本机完成，屏幕内容不上传。使用 AI 动作时，所选文字发送至用户自行配置的模型服务。" },
       { q: "下载后无法打开怎么办？", a: "当前版本未完成 Apple 签名与公证，首次打开需右键选择「打开」并确认。更新或重装后需重新确认辅助功能权限。" },
       { q: "划词未显示浮动条？", a: "在设置页「权限」确认辅助功能与输入监控已开启，并检查该应用是否位于禁用应用列表。微信、Office 等界面由应用自行绘制的软件，划词可能取不到文字，可改用识图取字。" },
-      { q: "与其他划词工具的区别？", a: "一、划词之外还可识图：图片、视频与扫描文档中的文字同样可取。二、结果不锁在对话窗口：保留在独立窗口中，可复制、搜索，也可直写 Obsidian、预填日历与地图。三、模型服务自选，不绑定特定厂商。" },
+      { q: "与其他划词工具的区别？", a: "PopClip 以扩展生态见长，Easydict、Pot 聚焦划词翻译。拾趣的差异在三点：一、划词之外还可识图，图片、视频与扫描文档中的文字同样可识别；二、结果不锁在对话窗口——保留在独立窗口中，可复制、搜索，也可直写 Obsidian、预填日历与地图；三、模型服务自选，不绑定特定厂商。" },
     ],
   },
   footer: {
-    tagline: "屏幕上任何文字，选中或框选，就地处理。",
+    tagline: "划词唤起 AI，翻译直达 Obsidian。",
     github: "GitHub",
     updates: "更新记录",
     download: "下载",
@@ -225,7 +224,6 @@ const zh = {
 export type Dict = typeof zh;
 
 const en: Dict = {
-  meta: { lang: "en", title: "Magpie · Any text on your screen, selected or captured, handled in place" },
   nav: {
     items: [
       { id: "actions", label: "Actions" },
@@ -242,10 +240,10 @@ const en: Dict = {
   },
   hero: {
     badge: "AI text-selection tool for macOS · Free forever",
-    h1a: "Any text on your screen,",
-    h1b: "select or capture it,",
-    h1c: "handle it in place",
-    lead: "An AI selection tool for macOS: drag-select or double-click text to summon the floating bar, and capture text inside images, videos and scanned documents by region. Translate, explain and summarize in real time; copy, search, save to Obsidian or prefill a calendar — results land where you work instead of being locked in a chat window.",
+    h1a: "Select to summon AI —",
+    h1b: "translation lands ",
+    h1c: "straight in Obsidian",
+    lead: "Select or double-click, and the floating bar appears on the spot: translate, explain and summarize in real time; copy, search, save to Obsidian or prefill a calendar — results land right where you are. Text in images, videos and scanned documents can be captured by region as well — all handled in place, never locked in a chat window.",
     cta1: "Download for macOS",
     cta2: "GitHub Releases",
     note: "Pops in ~0.1s · bring your own model service · OCR & extraction run on-device · No usage tracking",
@@ -431,11 +429,11 @@ const en: Dict = {
       { q: "Is my text uploaded?", a: "Recognition and extraction run on your machine; screen content is never uploaded. AI actions send the selected text to the model service you configured yourself." },
       { q: "The app won't open after download?", a: "This build isn't signed and notarized by Apple yet: right-click the app and choose Open to confirm the first launch. After updates or a reinstall, permissions need re-confirming." },
       { q: "No floating bar on selection?", a: "Check Settings → Permissions for Accessibility and Input Monitoring, and make sure the app isn't in the blocklist. Apps that draw their own UI (WeChat, Office…) may not yield text — use OCR capture instead." },
-      { q: "How is this different from other selection tools?", a: "One: beyond selectable text, it reads text from images, videos and scanned documents. Two: results aren't locked in a chat — they stay in a standalone window you can copy and search, write straight to Obsidian, or turn into calendar events and map searches. Three: bring your own model service — no vendor lock-in." },
+      { q: "How is this different from other selection tools?", a: "PopClip is known for its extension ecosystem; Easydict and Pot focus on selection translation. Magpie differs in three ways: one, beyond selectable text, it reads text from images, videos and scanned documents. Two: results aren't locked in a chat — they stay in a standalone window you can copy and search, write straight to Obsidian, or turn into calendar events and map searches. Three: bring your own model service — no vendor lock-in." },
     ],
   },
   footer: {
-    tagline: "Any text on your screen, selected or captured, handled in place.",
+    tagline: "Select to summon AI — straight into Obsidian.",
     github: "GitHub",
     updates: "Changelog",
     download: "Download",
@@ -445,36 +443,58 @@ const en: Dict = {
 
 const DICTS: Record<Locale, Dict> = { zh, en };
 
+/** 每种语言的 <head> 元信息：预渲染脚本写进静态 HTML，软切换时同步到 document */
+export const META: Record<
+  Locale,
+  { lang: string; title: string; description: string; ogLocale: string }
+> = {
+  zh: {
+    lang: "zh-CN",
+    title: "拾趣 Magpie · 划词唤起 AI，翻译直达 Obsidian",
+    description:
+      "拾趣是一款 macOS 划词 AI 工具：选中或框选屏幕上的任何文字，即可翻译、解释、总结、搜索、写入笔记与提取信息；模型服务自选，识别在本机完成，功能永久免费。",
+    ogLocale: "zh_CN",
+  },
+  en: {
+    lang: "en",
+    title: "Magpie · Select to summon AI — straight into Obsidian",
+    description:
+      "Magpie is a macOS text-selection AI tool: select or capture any text on screen to translate, explain, summarize, search or save it into your notes. Bring your own model service — recognition runs on-device, free forever.",
+    ogLocale: "en_US",
+  },
+};
+
+/** 语言只由 URL 决定（/ = 中文，/en/ = 英文）：预渲染、水合与软切换共用同一判定 */
+export function localeFromPath(pathname: string): Locale {
+  return /\/en\/?$/.test(pathname) ? "en" : "zh";
+}
+
 const LocaleCtx = createContext<{
   locale: Locale;
   d: Dict;
   setLocale: (l: Locale) => void;
 }>({ locale: "zh", d: zh, setLocale: () => {} });
 
-const STORAGE_KEY = "locale";
-
-function initialLocale(): Locale {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === "zh" || saved === "en") return saved;
-  } catch {
-    /* localStorage 不可用（隐私模式等）→ 走浏览器语言 */
-  }
-  return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
-}
-
-export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocale] = useState<Locale>(initialLocale);
+export function LocaleProvider({
+  initialLocale,
+  children,
+}: {
+  initialLocale?: Locale;
+  children: ReactNode;
+}) {
+  const [locale, setLocale] = useState<Locale>(() => initialLocale ?? "zh");
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, locale);
-    } catch {
-      /* 忽略：隐私模式下记忆失败不影响当前页展示 */
-    }
-    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
-    document.title = DICTS[locale].meta.title;
+    document.documentElement.lang = META[locale].lang;
+    document.title = META[locale].title;
   }, [locale]);
+
+  // 浏览器前进/后退与按钮软切换同规则：按 URL 恢复语言
+  useEffect(() => {
+    const onPop = () => setLocale(localeFromPath(window.location.pathname));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const d = DICTS[locale];
   return (

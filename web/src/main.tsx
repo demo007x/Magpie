@@ -1,13 +1,21 @@
 import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, hydrateRoot } from "react-dom/client";
 import App from "./App";
-import { LocaleProvider } from "./i18n";
+import { LocaleProvider, localeFromPath } from "./i18n";
 import "./styles.css";
 
-createRoot(document.getElementById("root")!).render(
+const tree = (
   <StrictMode>
-    <LocaleProvider>
+    <LocaleProvider initialLocale={localeFromPath(window.location.pathname)}>
       <App />
     </LocaleProvider>
-  </StrictMode>,
+  </StrictMode>
 );
+
+// 预渲染页（构建产物含静态正文）走水合；dev 空壳走客户端渲染
+const rootEl = document.getElementById("root")!;
+if (rootEl.childNodes.length > 0) {
+  hydrateRoot(rootEl, tree);
+} else {
+  createRoot(rootEl).render(tree);
+}

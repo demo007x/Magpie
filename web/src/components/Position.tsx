@@ -8,8 +8,8 @@ const ICONS = [Layers, ListChecks, NotebookPen, ScanText];
 export function Position() {
   const { d } = useSite();
   return (
-    <section id="position" className="border-y border-line bg-elev/50">
-      <div className="mx-auto w-full max-w-6xl px-6 py-24 sm:py-28">
+    <section id="position">
+      <div className="mx-auto w-full max-w-6xl px-6 py-14 sm:py-20">
         <Reveal>
           <p className="text-xs font-medium tracking-[0.18em] text-accent-2 uppercase">{d.position.eyebrow}</p>
         </Reveal>
@@ -26,7 +26,7 @@ export function Position() {
           </p>
         </Reveal>
 
-        <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {d.position.families.map((f, i) => {
             const Icon = ICONS[i];
             return (
