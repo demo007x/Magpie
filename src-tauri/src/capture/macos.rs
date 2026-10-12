@@ -85,6 +85,9 @@ struct AxConsts {
     focused_window: CFStringRef,
     children: CFStringRef,
     parent: CFStringRef,
+    /// 元素屏幕几何（应答锚定校验用，见 anchored_to_gesture）
+    position: CFStringRef,
+    size: CFStringRef,
     trusted_prompt: CFStringRef,
     // Chromium/Electron 系应用默认不构建 AX 树，需置 true 才暴露接口
     enhanced_ui: CFStringRef,
@@ -110,6 +113,8 @@ fn ax_consts() -> &'static AxConsts {
         focused_window: ax_string("AXFocusedWindow"),
         children: ax_string("AXChildren"),
         parent: ax_string("AXParent"),
+        position: ax_string("AXPosition"),
+        size: ax_string("AXSize"),
         trusted_prompt: ax_string("AXTrustedCheckOptionPrompt"),
         enhanced_ui: ax_string("AXEnhancedUserInterface"),
         manual_accessibility: ax_string("AXManualAccessibility"),
@@ -455,10 +460,14 @@ fn tap_mask() -> u64 {
     m | (1u64 << EV_MOUSE_MOVED)
 }
 
-/// 选词判定状态机（docs/03 §3.2）：拖选 > 6px 或双击 → 防抖 → AX 查询；普通单击 → PlainClick；
+/// 选词判定状态机（docs/03 §3.2）：拖选 > 6px 或双击 → 非文本表面闸 → 防抖 →
+/// AX 查询（应答证据闸见各查询函数）；普通单击 → PlainClick；
 /// Finder 文件交互（拖动/双击，聚焦元素非文本框）在一切 AX 查询前排除
 fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: u64) {
     let mut down: Option<(f64, f64)> = None;
+    // 按下时刻的选区基线（容器级应答的差分证据，见 query_focused_element）；
+    // 每次 down 覆盖，up 消费，天然按单次手势隔离
+    let mut down_baseline: Option<(i32, String)> = None;
     let mut last_up: Option<(Instant, f64, f64)> = None;
     let mut last_emitted: Option<(String, f64, f64)> = None;
     let mut last_hover: Option<Instant> = None;
@@ -490,6 +499,8 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
             }
             EV_LEFT_DOWN => {
                 down = Some((ev.x, ev.y));
+                // 容器差分基线：静音期间不读（截图框选等模态交互期间不做任何 AX 查询）
+                down_baseline = if capture_muted() { None } else { selection_baseline() };
             }
             EV_LEFT_DRAGGED => {
                 // 拖动浮动条中：坐标转发给 worker 驱动窗口移动
@@ -530,8 +541,9 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
                     // worker 层的「自身进程」过滤在查询之后，救不了已发出的查询
                     debug_log("mouse-up：选区在自身窗口内，跳过取词");
                 } else if down.map_or(false, |(dx, dy)| drag_starts_on_control(dx, dy)) {
-                    // 拖拽起点在滚动条/滑杆/分隔条上（VSCode 滚动条等）：滚动/调参手势，非选词
-                    debug_log("mouse-up：拖拽起点是控件（滚动条/滑杆/分隔条），跳过");
+                    // 拖拽起点在非文本表面上（控件/可选中元素）：滚动、调参、拖放、
+                    // 换位等手势，非选词——整链跳过，不再付轻推+查询的成本
+                    debug_log("mouse-up：拖拽起点是非文本表面（控件/可选中元素），跳过");
                 } else if in_finder_file_context() {
                     // Finder 文件交互（拖动移动 / 双击打开）形态上与拖选/双击选词完全一致，
                     // 但放行会经兼容模式 ⌘C 把文件名误捕为划词（见该函数注释）
@@ -548,7 +560,11 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
                     let t_up = Instant::now();
                     // 防抖：等应用完成选区更新
                     std::thread::sleep(Duration::from_millis(wait_ms));
-                    if let Some((text, pid)) = unsafe { ax_selected_text(app, ev.x, ev.y) } {
+                    // 按下点供应答锚定（拖选必从选中文本内部开始；起点记录在 down）
+                    let (down_x, down_y) = down.unwrap_or((ev.x, ev.y));
+                    if let Some((text, pid)) = unsafe {
+                        ax_selected_text(app, (down_x, down_y), (ev.x, ev.y), &down_baseline)
+                    } {
                         forward_selection(
                             &tx,
                             &mut last_emitted,
@@ -650,6 +666,10 @@ fn forward_selection(
     *last_emitted = Some((text, x, y));
 }
 
+/// AX CannotComplete（-25212）：目标消息失败/对端繁忙——Chromium 树重建期的典型态，
+/// 短等重试可自愈
+const AX_ERROR_CANNOT_COMPLETE: c_int = -25212;
+
 /// AX 错误码可读名（日志用）
 fn ax_error_name(rc: i32) -> &'static str {
     match rc {
@@ -673,8 +693,15 @@ fn ax_error_name(rc: i32) -> &'static str {
     }
 }
 
-/// AX 查询选中文本（默认路径），失败时按开关走兼容模式
-unsafe fn ax_selected_text(app_handle: &AppHandle, x: f64, y: f64) -> Option<(String, i32)> {
+/// AX 查询选中文本（默认路径），失败时按开关走兼容模式。
+/// `down`/`up` 是本次拖选手势的按下/松手点（屏幕坐标），供应答锚定；
+/// `baseline` 是按下时刻的选区基线，供容器级应答的差分证据，见各闸注释
+unsafe fn ax_selected_text(
+    app_handle: &AppHandle,
+    down: (f64, f64),
+    up: (f64, f64),
+    baseline: &Option<(i32, String)>,
+) -> Option<(String, i32)> {
     let consts = ax_consts();
     let sys = AXUIElementCreateSystemWide();
     if sys.is_null() {
@@ -684,7 +711,12 @@ unsafe fn ax_selected_text(app_handle: &AppHandle, x: f64, y: f64) -> Option<(St
     let mut out = None;
 
     let mut app: CFTypeRefC = std::ptr::null();
-    let rc_app = AXUIElementCopyAttributeValue(sys, consts.focused_app, &mut app);
+    let mut rc_app = AXUIElementCopyAttributeValue(sys, consts.focused_app, &mut app);
+    if rc_app == AX_ERROR_CANNOT_COMPLETE && app.is_null() {
+        // 树重建期的过渡态，短等一次再取（同聚焦元素查询）
+        std::thread::sleep(Duration::from_millis(100));
+        rc_app = AXUIElementCopyAttributeValue(sys, consts.focused_app, &mut app);
+    }
     if rc_app == 0 && !app.is_null() {
         let app_el = app as AXUIElementRef;
         // 拿到句柄立刻校验归属：detect_loop 的闸门与真正查询之间隔着防抖 + 整条
@@ -710,9 +742,11 @@ unsafe fn ax_selected_text(app_handle: &AppHandle, x: f64, y: f64) -> Option<(St
 
         // 路径1（主）：聚焦元素级 SelectedText；失败则范围回退（AXSelectedTextRange + StringForRange）
         // —— 微信 4.x 等 Qt 自绘文本视图不暴露 SelectedText，但支持范围取值
-        let mut text = query_focused_element(app_el, consts);
+        let mut text = query_focused_element(app_el, consts, down, pid, baseline);
 
-        // 路径2：应用级 SelectedText（部分应用只在此暴露）
+        // 路径2：应用级 SelectedText（部分应用只在此暴露）。无元素可锚定、无角色
+        // 可卡（应用元素自身不是文本节点），维持原状——它服务的"只暴露应用级选区"
+        // 的应用不在本误报类（文档级遗留选区走的是聚焦元素/坐标定位/子树扫描）
         if text.is_none() {
             let (rc, t) = query_app_level(app_el, consts);
             debug_log(format!("AX: 应用级 SelectedText rc={rc} → {}", t.is_some()));
@@ -720,21 +754,39 @@ unsafe fn ax_selected_text(app_handle: &AppHandle, x: f64, y: f64) -> Option<(St
         }
 
         // 路径3：Chromium/Electron 系（Chrome/Edge/VSCode 等）默认不构建 AX 树，
-        // 置 AXEnhancedUserInterface / AXManualAccessibility 后才暴露接口。轻推 + 重试一次。
+        // 置 AXEnhancedUserInterface / AXManualAccessibility 后才暴露接口。轻推 +
+        // 有界轮询。曾经的固定 150ms 等待实测不够：webview 类内容（markdown 预览、
+        // AI 侧栏）建树可达数百毫秒且树会被惰性收摊，等不到就表现为「有时取到
+        // 有时取不到」——VSCode 家族兼容模式被禁，这条路径就是它们的主通道。
+        // 轮询命中即提前续链；上限只在整个 AX 链路本来就要落空的场合支付
         if text.is_none() {
             debug_log("AX: 常规路径无文本，尝试轻推 Chromium/Electron 辅助支持");
             let t_push = Instant::now();
             set_bool_attr(app_el, consts.enhanced_ui);
             set_bool_attr(app_el, consts.manual_accessibility);
-            std::thread::sleep(Duration::from_millis(150));
-            text = query_focused_element(app_el, consts);
+            const NUDGE_POLLS: usize = 5;
+            const NUDGE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+            for i in 0..NUDGE_POLLS {
+                std::thread::sleep(NUDGE_POLL_INTERVAL);
+                // 轻推写入本身也会被拒（实测一次手势中应用级读写全线 IllegalArgument、
+                // 稍后自愈；写入被拒则后续读取一直在撞墙）——每轮重写一次，写入
+                // 一旦落地读取随之恢复
+                if i > 0 {
+                    set_bool_attr(app_el, consts.manual_accessibility);
+                }
+                text = query_focused_element(app_el, consts, down, pid, baseline);
+                if text.is_some() {
+                    break;
+                }
+            }
             if text.is_none() {
                 let (rc, t) = query_app_level(app_el, consts);
                 debug_log(format!("AX: 轻推后应用级 rc={rc} → {}", t.is_some()));
                 text = t;
             }
             debug_log(format!(
-                "⏱ Chromium 轻推段（含 150ms 固定等待）：{}ms",
+                "⏱ Chromium 轻推段（轮询上限 {}ms）：{}ms",
+                NUDGE_POLLS * 100,
                 t_push.elapsed().as_millis()
             ));
         }
@@ -751,7 +803,7 @@ unsafe fn ax_selected_text(app_handle: &AppHandle, x: f64, y: f64) -> Option<(St
 
     // 路径⑥：坐标定位 + 父链上溯（绕开聚焦链路，鼠标位置即选区位置）
     if out.is_none() {
-        if let Some(t) = query_at_position(sys, consts, x, y) {
+        if let Some(t) = query_at_position(sys, consts, up) {
             let pid = focused_pid().unwrap_or(0);
             out = Some((t, pid));
         }
@@ -767,7 +819,7 @@ unsafe fn ax_selected_text(app_handle: &AppHandle, x: f64, y: f64) -> Option<(St
 
     // 路径⑤（最后兜底）：有界子树扫描——仅当以上全部失败，避免拖慢主路径
     if out.is_none() && !app.is_null() {
-        if let Some(t) = scan_focused_subtrees(app as AXUIElementRef, consts) {
+        if let Some(t) = scan_focused_subtrees(app as AXUIElementRef, consts, up) {
             let pid = focused_pid().unwrap_or(0);
             out = Some((t, pid));
         }
@@ -783,7 +835,14 @@ unsafe fn ax_selected_text(app_handle: &AppHandle, x: f64, y: f64) -> Option<(St
 /// 最后兜底：聚焦元素子树 → 聚焦窗口子树（有界 DFS）。
 /// 微信 4.x 的 Qt 桥常把 AXFocusedUIElement 停在输入框（rc=0 但选区为空），
 /// 真正的选区在兄弟/子孙节点上，需下探扫描。
-unsafe fn scan_focused_subtrees(app_el: AXUIElementRef, consts: &AxConsts) -> Option<String> {
+/// 扫描按"谁应答谁算数"收集，误收面最大（整个窗口子树），故应答证据闸
+/// （角色白名单 + 松手点锚定）在这里最关键——遗留选区的编辑器节点虽是
+/// AXTextArea（角色放行），但鼠标松手点不在其框架内，锚定闸拒绝
+unsafe fn scan_focused_subtrees(
+    app_el: AXUIElementRef,
+    consts: &AxConsts,
+    up: (f64, f64),
+) -> Option<String> {
     const SCAN_BUDGET: usize = 64;
     const SCAN_DEPTH: usize = 6;
 
@@ -792,7 +851,13 @@ unsafe fn scan_focused_subtrees(app_el: AXUIElementRef, consts: &AxConsts) -> Op
     if rc == 0 && !focused.is_null() {
         debug_log("AX: 扫描聚焦元素子树…");
         let mut budget = SCAN_BUDGET;
-        let hit = scan_subtree_for_text(focused as AXUIElementRef, consts, SCAN_DEPTH, &mut budget);
+        let hit = scan_subtree_for_text(
+            focused as AXUIElementRef,
+            consts,
+            SCAN_DEPTH,
+            &mut budget,
+            up,
+        );
         CFRelease(focused as *mut c_void);
         if hit.is_some() {
             return hit;
@@ -804,7 +869,7 @@ unsafe fn scan_focused_subtrees(app_el: AXUIElementRef, consts: &AxConsts) -> Op
     if rc_win == 0 && !win.is_null() {
         debug_log("AX: 扫描聚焦窗口子树…");
         let mut budget = SCAN_BUDGET;
-        let hit = scan_subtree_for_text(win as AXUIElementRef, consts, SCAN_DEPTH, &mut budget);
+        let hit = scan_subtree_for_text(win as AXUIElementRef, consts, SCAN_DEPTH, &mut budget, up);
         CFRelease(win as *mut c_void);
         if hit.is_some() {
             return hit;
@@ -888,16 +953,56 @@ fn in_finder_file_context() -> bool {
     finder && !focused_element_is_text_editor()
 }
 
-/// 控件拖拽闸门：拖拽**起点**的命中元素（含 ≤3 层祖先）是滚动条/滑杆/分隔条 →
-/// 是滚动/调参/分栏手势。任何应用的文本拖选都不会从这类控件上开始，整链跳过。
+/// 非文本表面闸门：拖拽**起点**的命中元素（含 ≤3 层祖先）属于"文本选区不可能
+/// 开始的表面"——交互控件与可选中元素（AXSelected 元素状态语义，非文本选区）——
+/// 是滚动/调参/换位/拖放手势，整链跳过。
+///
+/// 划界原则是"表面能否产生文本选区"，不是逐个手势/逐个应用打点：文本拖选只会
+/// 从文本承载表面（文本框/文本域/静态文本）开始；从按钮、标签页（AXRadioButton）、
+/// 列表树行、图标、菜单上开始的拖拽永远不会是选词。这条一般化闸门收编了整个
+/// 误报家族——拖标签弹胶囊、拖工具栏/书签、拖文件树/消息列表行、Finder 图标
+/// （原先靠 in_finder_file_context 按应用打点）——它们是同一本质的不同切面。
+///
+/// 有意不放行的成员之外一律放行：未知角色、AXGroup/AXWindow/AXScrollArea 等
+/// 泛容器（真实文本藏在里面）、AXUnknown（信息不足）。Electron 未建 AX 树时
+/// 命中元素退化为泛容器，不能因此误杀真选词；此时由查询侧应答证据闸兜底。
 ///
 /// 实证案例：VSCode 水平滚动条拖动被状态机判为拖选，Monaco 滚动条是
-/// role="presentation" 的自绘 div（不暴露为 AXScrollBar），AX 链路落空后经兼容
-/// 模式 ⌘C 误捕——VSCode 空选区 ⌘C 的行为是复制光标所在行。双击滚动条（翻页）
-/// 同理。原生滚动条/滑杆在本闸门直接拦截；Monaco 自绘滚动条由编辑器家族闸门
-/// （skip_compat_for_focused_app）兜住。
+/// role="presentation" 的自绘 div（不暴露为 AXScrollBar），原生角色闸拦不住，
+/// 由编辑器家族闸门（skip_compat_for_focused_app）兜住 ⌘C 误捕——本表是
+/// AX 暴露为真实角色时的第一道闸。
 fn drag_starts_on_control(x: f64, y: f64) -> bool {
-    const CONTROL_ROLES: [&str; 4] = ["AXScrollBar", "AXSlider", "AXValueIndicator", "AXSplitter"];
+    const CONTROL_ROLES: [&str; 29] = [
+        "AXScrollBar",
+        "AXSlider",
+        "AXValueIndicator",
+        "AXSplitter",
+        "AXButton",
+        "AXCheckBox",
+        "AXRadioButton",
+        "AXToggleButton",
+        "AXPopUpButton",
+        "AXMenuButton",
+        "AXToolbar",
+        "AXTabGroup",
+        "AXImage",
+        "AXLink",
+        "AXRow",
+        "AXTreeItem",
+        "AXListItem",
+        "AXOutline",
+        "AXTable",
+        "AXList",
+        "AXMenu",
+        "AXMenuItem",
+        "AXMenuBar",
+        "AXMenuBarItem",
+        "AXProgressIndicator",
+        "AXIncrementor",
+        "AXDisclosureTriangle",
+        "AXHandle",
+        "AXColorWell",
+    ];
     unsafe {
         let sys = AXUIElementCreateSystemWide();
         if sys.is_null() {
@@ -964,14 +1069,22 @@ fn is_own_element(el: AXUIElementRef) -> bool {
 
 /// 坐标定位回退：AXUIElementCopyElementAtPosition（top-left 原点，与 CGEvent 同系）
 /// 取光标下元素，沿 AXParent 向上找带选区文本的节点。绕开聚焦链路。
+/// 应答证据闸：只有文本承载节点可应答（见 is_text_answer_role）——泛容器
+/// （AXWebArea 等）只作上溯通路不作应答者，其文档级"选区"是应用遗留状态，
+/// 实测静止时也非空；上溯到泛容器才命中 = 鼠标点下方没有任何文本持有选区，
+/// 即本次手势没有产生选区
 unsafe fn query_at_position(
     sys: AXUIElementRef,
     consts: &AxConsts,
-    x: f64,
-    y: f64,
+    up: (f64, f64),
 ) -> Option<String> {
     let mut el: CFTypeRefC = std::ptr::null();
-    let rc = AXUIElementCopyElementAtPosition(sys, x as f32, y as f32, &mut el);
+    let mut rc = AXUIElementCopyElementAtPosition(sys, up.0 as f32, up.1 as f32, &mut el);
+    if rc == AX_ERROR_CANNOT_COMPLETE && el.is_null() {
+        // 树重建期过渡态，短等一次再取（同聚焦元素查询）
+        std::thread::sleep(Duration::from_millis(100));
+        rc = AXUIElementCopyElementAtPosition(sys, up.0 as f32, up.1 as f32, &mut el);
+    }
     if rc != 0 || el.is_null() {
         debug_log(format!(
             "AX: 坐标定位不可用 rc={rc}（{}）",
@@ -988,11 +1101,13 @@ unsafe fn query_at_position(
     }
     let mut text = None;
     for depth in 0..=5 {
-        text = copy_selected_text(cur, consts, true)
-            .or_else(|| query_text_via_range(cur, consts, true));
-        if text.is_some() {
-            debug_log(format!("AX: 坐标定位命中（向上 {depth} 层）"));
-            break;
+        if role_of(cur).map_or(false, |r| is_text_answer_role(&r)) {
+            text = copy_selected_text(cur, consts, true)
+                .or_else(|| query_text_via_range(cur, consts, true));
+            if text.is_some() {
+                debug_log(format!("AX: 坐标定位命中（向上 {depth} 层）"));
+                break;
+            }
         }
         let mut parent: CFTypeRefC = std::ptr::null();
         let rc_p = AXUIElementCopyAttributeValue(cur, consts.parent, &mut parent);
@@ -1185,9 +1300,11 @@ fn bid_in_editor_family(bid: &str) -> bool {
 /// （AXManualAccessibility）后由 AX 链路稳定取到，⌘C 兜底对它只有误报价值。
 /// 代价：用户手动关闭编辑器辅助功能支持（accessibilitySupport: "off"）时取词失效。
 fn skip_compat_for_focused_app() -> bool {
-    let skip = focused_pid()
-        .and_then(running_bundle_id)
-        .map_or(false, |bid| bid_in_editor_family(&bid));
+    // 聚焦链失败时退回 NSWorkspace 前台应用（不依赖 AX 消息）：AX 桥半死状态下
+    // focused_pid 会间歇不可读，这道闸一漏放，模拟 ⌘C 就打进编辑器家族——
+    // 守护闸的判据必须比被守护的通道更耐活
+    let pid = focused_pid().or_else(frontmost_pid);
+    let skip = pid.and_then(running_bundle_id).map_or(false, |bid| bid_in_editor_family(&bid));
     if skip {
         debug_log("兼容模式：Electron 编辑器家族（空选区 ⌘C 会复制当前行），跳过");
     }
@@ -1267,18 +1384,67 @@ pub fn force_fetch_via_copy(app: &AppHandle) -> Option<(String, i32)> {
     Some((text, pid))
 }
 
-/// 聚焦元素级取文本：SelectedText → 范围回退（轻量路径；子树扫描见 scan_focused_subtrees）
-unsafe fn query_focused_element(app_el: AXUIElementRef, consts: &AxConsts) -> Option<String> {
+/// 聚焦元素级取文本：SelectedText → 范围回退（轻量路径；子树扫描见 scan_focused_subtrees）。
+/// 应答证据闸按角色分两路：
+/// · 文本承载节点（AXTextArea 等）：**按下点锚定**——真拖选必然从选中文本内部
+///   开始（长选自动滚出的边界只影响松手端），拖标签后聚焦切到残留旧选区的编辑
+///   器时，角色闸放行它（确实是 AXTextArea），锚定闸拒绝它（手势起点在标签栏，
+///   永远不在编辑器内容区）；
+/// · 容器节点（AXGroup/AXWebArea 等）：VSCode AI 侧栏等 webview 的选区主要在
+///   容器级聚合暴露，一刀切除名会让这类划词时有时无，放行又让遗留选区复活
+///   （容器框架包含一切手势点，几何锚定对它失效）——改用**差分证据**：按下时
+///   读基线（selection_baseline），容器应答 ≠ 基线 ⇒ 选区在本次手势期间发生过
+///   变化（新手势所建）⇒ 采信；相同 ⇒ 遗留选区原样背书 ⇒ 拒绝。
+///   基线缺失（读失败/按下时聚焦在自身/静音期按下）= 拒绝。
+unsafe fn query_focused_element(
+    app_el: AXUIElementRef,
+    consts: &AxConsts,
+    down: (f64, f64),
+    pid: c_int,
+    baseline: &Option<(i32, String)>,
+) -> Option<String> {
     let mut focused: CFTypeRefC = std::ptr::null();
-    let rc_focus = AXUIElementCopyAttributeValue(app_el, consts.focused_element, &mut focused);
+    let mut rc_focus = AXUIElementCopyAttributeValue(app_el, consts.focused_element, &mut focused);
+    if rc_focus == AX_ERROR_CANNOT_COMPLETE && focused.is_null() {
+        // 树重建期（Chromium 轻推/收摊的过渡态）短等一次再取——webview 类应用的
+        // AX 树状态抖动是「有时取不到」的主要间歇源
+        std::thread::sleep(Duration::from_millis(100));
+        rc_focus = AXUIElementCopyAttributeValue(app_el, consts.focused_element, &mut focused);
+    }
     if rc_focus != 0 || focused.is_null() {
         debug_log(format!("AX: 聚焦元素不可达 rc_focus={rc_focus}"));
         return None;
     }
     let el = focused as AXUIElementRef;
-    let mut text = copy_selected_text(el, consts, false);
-    if text.is_none() {
-        text = query_text_via_range(el, consts, false);
+    let role = role_of(el);
+    let mut text = None;
+    if role.as_deref().map_or(false, is_text_answer_role) {
+        text = copy_selected_text(el, consts, false);
+        if text.is_none() {
+            text = query_text_via_range(el, consts, false);
+        }
+        if text.is_some() && !anchored_to_gesture(el, down.0, down.1) {
+            debug_log("AX: 聚焦元素应答未锚定按下点（遗留选区），拒绝");
+            text = None;
+        }
+    } else if role.is_some() {
+        // 角色可读但非文本承载 = 容器。角色查询本身失败（None）不进此分支：
+        // 未知角色的应答无从校验，一律不要
+        text = copy_selected_text(el, consts, false);
+        if text.is_none() {
+            text = query_text_via_range(el, consts, false);
+        }
+        if let Some(t) = &text {
+            let gesture_made = baseline
+                .as_ref()
+                .map_or(false, |(bpid, btext)| *bpid == pid && btext != t);
+            if gesture_made {
+                debug_log("AX: 容器应答经差分采信（选区在本次手势中已变化）");
+            } else {
+                debug_log("AX: 容器应答与按下基线一致（选区非本次手势所建），拒绝");
+                text = None;
+            }
+        }
     }
     CFRelease(focused as *mut c_void);
     text
@@ -1291,6 +1457,7 @@ unsafe fn scan_subtree_for_text(
     consts: &AxConsts,
     depth: usize,
     budget: &mut usize,
+    up: (f64, f64),
 ) -> Option<String> {
     // 铁闸：绝不查询本进程自己的元素——自家 webview 的 AX 仅限主线程访问，
     // 后台线程一碰即被 WebKit 主动 abort（崩溃报告实锤：拖动结果窗缩放把手时
@@ -1305,13 +1472,20 @@ unsafe fn scan_subtree_for_text(
     }
     *budget -= 1;
 
-    let mut text = copy_selected_text(el, consts, true);
-    if text.is_none() {
-        text = query_text_via_range(el, consts, true);
-    }
-    if text.is_some() {
-        debug_log(format!("AX: 子树扫描命中（剩余预算 {budget}）"));
-        return text;
+    // 应答证据闸：角色白名单 + 松手点锚定（详见 is_text_answer_role 注释）。
+    // 角色不过的节点仍照常递归——选区文本多藏在泛容器的子孙里（微信 Qt 桥场景）
+    if role_of(el).map_or(false, |r| is_text_answer_role(&r)) {
+        let mut text = copy_selected_text(el, consts, true);
+        if text.is_none() {
+            text = query_text_via_range(el, consts, true);
+        }
+        if text.is_some() {
+            if anchored_to_gesture(el, up.0, up.1) {
+                debug_log(format!("AX: 子树扫描命中（剩余预算 {budget}）"));
+                return text;
+            }
+            debug_log("AX: 子树扫描应答未锚定松手点（遗留选区），继续扫描");
+        }
     }
     if depth == 0 {
         return None;
@@ -1329,7 +1503,9 @@ unsafe fn scan_subtree_for_text(
             continue;
         }
         // 数组持有引用，元素无需释放；找到即提前返回（kids 由 CFRelease 释放）
-        if let Some(t) = scan_subtree_for_text(child as AXUIElementRef, consts, depth - 1, budget) {
+        if let Some(t) =
+            scan_subtree_for_text(child as AXUIElementRef, consts, depth - 1, budget, up)
+        {
             CFRelease(kids as *mut c_void);
             return Some(t);
         }
@@ -1372,7 +1548,144 @@ struct CfRange {
 /// AXValue 包装类型常量（AXValue.h：CGPoint=1 CGSize=2 CGRect=3 CFRange=4）。
 /// 类型错一个位，AXValueGetValue 就因类型不匹配静默失败——曾把 CFRange 写成 3
 /// 导致「范围回退」路径从未生效，此处值必须与 SDK 头文件一致
+const K_AX_VALUE_CG_POINT: usize = 1;
+const K_AX_VALUE_CG_SIZE: usize = 2;
 const K_AX_VALUE_CF_RANGE: usize = 4;
+
+/// 元素角色；查询失败 = None
+unsafe fn role_of(el: AXUIElementRef) -> Option<String> {
+    let mut val: CFTypeRefC = std::ptr::null();
+    let rc = AXUIElementCopyAttributeValue(el, ax_consts().role, &mut val);
+    if rc == 0 {
+        cf_type_to_string(val)
+    } else {
+        None
+    }
+}
+
+/// 应答角色白名单：文本承载路径的资格线（容器级应答不走这里，走差分通道，
+/// 见 query_focused_element 容器分支）。
+///
+/// 为什么文本路径必须卡角色：AXSelectedText 是**应用状态查询**（"现在选中了
+/// 什么"），不是**手势结果查询**（"这次操作选中了什么"）——编辑器里的遗留选区
+/// （双击选词后长期残留，Monaco 还按编辑器各自保存、切回即恢复）会让任何应答者
+/// 背书一次从未发生的选区。实测 VSCode 静止时 AXWebArea/AXGroup 即以数分钟前的
+/// 选区作答（len=16 非空）；真选区由文本叶节点应答（Chromium 给选区命中的
+/// static text 逐节点下发偏移），文本叶节点独占应答失效的应用下沉到兼容模式
+/// ⌘C 兜底，捕获能力不受损
+fn is_text_answer_role(role: &str) -> bool {
+    matches!(
+        role,
+        "AXTextArea" | "AXTextField" | "AXTextView" | "AXComboBox" | "AXStaticText"
+    )
+}
+
+#[repr(C)]
+struct CgSize {
+    w: f64,
+    h: f64,
+}
+
+/// 元素屏幕框架 (x, y, w, h)。AXPosition/AXSize 与 CGEvent 同为 top-left 原点
+/// 屏幕坐标，免转换；任一属性读取失败 = None
+unsafe fn element_frame(el: AXUIElementRef) -> Option<(f64, f64, f64, f64)> {
+    let consts = ax_consts();
+    let mut pos_val: CFTypeRefC = std::ptr::null();
+    let rc_p = AXUIElementCopyAttributeValue(el, consts.position, &mut pos_val);
+    if rc_p != 0 || pos_val.is_null() {
+        return None;
+    }
+    let mut pos = CGPoint { x: 0.0, y: 0.0 };
+    let ok_p = AXValueGetValue(pos_val, K_AX_VALUE_CG_POINT, &mut pos as *mut _ as *mut c_void);
+    CFRelease(pos_val as *mut c_void);
+    if ok_p == 0 {
+        return None;
+    }
+    let mut size_val: CFTypeRefC = std::ptr::null();
+    let rc_s = AXUIElementCopyAttributeValue(el, consts.size, &mut size_val);
+    if rc_s != 0 || size_val.is_null() {
+        return None;
+    }
+    let mut size = CgSize { w: 0.0, h: 0.0 };
+    let ok_s = AXValueGetValue(size_val, K_AX_VALUE_CG_SIZE, &mut size as *mut _ as *mut c_void);
+    CFRelease(size_val as *mut c_void);
+    if ok_s == 0 {
+        return None;
+    }
+    Some((pos.x, pos.y, size.w, size.h))
+}
+
+/// 锚定容差：吸收行距间隙、边框内衬等贴边误差——远小于"标签栏到编辑器内容区"
+/// 这类跨表面距离，不构成误放行通道
+const ANCHOR_SLACK: f64 = 8.0;
+
+fn point_in_frame(frame: (f64, f64, f64, f64), x: f64, y: f64) -> bool {
+    let (fx, fy, fw, fh) = frame;
+    x >= fx - ANCHOR_SLACK && x <= fx + fw + ANCHOR_SLACK && y >= fy - ANCHOR_SLACK && y <= fy + fh + ANCHOR_SLACK
+}
+
+/// 应答锚定：应答元素框架须含给定的手势点。真拖选的手势点落在选区所在的文本
+/// 元素内；控件拖拽（拖标签、拖工具栏）的手势点在文本元素外——聚焦编辑器里
+/// 残留的旧选区即便应答（角色闸放行它：确实是 AXTextArea）也因锚定不成立被拒。
+/// 框架读不到（个别桥实现不暴露几何）= 放行：不因辅助信息缺失拒绝主路径
+unsafe fn anchored_to_gesture(el: AXUIElementRef, x: f64, y: f64) -> bool {
+    match element_frame(el) {
+        Some(f) => point_in_frame(f, x, y),
+        None => true,
+    }
+}
+
+/// 聚焦元素的 AXSelectedText（容器级聚合应答用的轻量读取；失败 = None）
+unsafe fn focused_element_selected_text() -> Option<String> {
+    let sys = AXUIElementCreateSystemWide();
+    if sys.is_null() {
+        return None;
+    }
+    let mut el: CFTypeRefC = std::ptr::null();
+    let rc = AXUIElementCopyAttributeValue(sys, ax_consts().focused_element, &mut el);
+    let mut out = None;
+    if rc == 0 && !el.is_null() && !is_own_element(el as AXUIElementRef) {
+        let mut val: CFTypeRefC = std::ptr::null();
+        let rc_s = AXUIElementCopyAttributeValue(
+            el as AXUIElementRef,
+            ax_consts().selected_text,
+            &mut val,
+        );
+        if rc_s == 0 {
+            out = cf_type_to_string(val);
+        }
+    }
+    if !el.is_null() {
+        CFRelease(el as *mut c_void);
+    }
+    CFRelease(sys as *mut c_void);
+    out
+}
+
+/// 按下时刻的选区基线 (聚焦应用 pid, 聚焦元素 SelectedText)——容器级应答的差分
+/// 证据基准，见 query_focused_element 容器分支。读失败 / 聚焦是自身进程 = None
+/// （差分闸对无基线的容器应答一律拒绝：宁可漏一次，不给无证据的应答放行）；
+/// 空选区是合法基线 Some((pid, ""))
+fn selection_baseline() -> Option<(i32, String)> {
+    unsafe {
+        let sys = AXUIElementCreateSystemWide();
+        if sys.is_null() {
+            return None;
+        }
+        let mut app: CFTypeRefC = std::ptr::null();
+        let rc = AXUIElementCopyAttributeValue(sys, ax_consts().focused_app, &mut app);
+        let mut pid: c_int = 0;
+        if rc == 0 && !app.is_null() {
+            let _ = AXUIElementGetPid(app as AXUIElementRef, &mut pid);
+            CFRelease(app as *mut c_void);
+        }
+        CFRelease(sys as *mut c_void);
+        if pid == 0 || pid == std::process::id() as i32 {
+            return None;
+        }
+        Some((pid, focused_element_selected_text().unwrap_or_default()))
+    }
+}
 
 /// 范围回退：AXSelectedTextRange → AXStringForRange（参数化查询）。
 /// 部分自绘文本视图（如微信 4.x 的 Qt 控件）不暴露 SelectedText 但支持范围取值。

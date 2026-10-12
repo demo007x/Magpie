@@ -46,7 +46,7 @@ Rust 侧 `src-tauri/src/`：
 关键非显性设计（改代码前先懂）：
 
 - **AX 常量用 `ax_string()` 构造（CFString），勿用 dlsym / `extern static`**（`capture/macos.rs::ax_consts`）：dlsym 在部分 macOS 版本对这些符号返回 NULL（-25201 错误），`extern static` 能过 check 但链接必败（函数可用 `ApplicationServices` 伞框架链接，常量不行）。
-- **手势误判闸门必须挡在取词链之前**（`capture/macos.rs`，勿删）：兼容模式 ⌘C 会被两类手势误触发——① Finder 文件交互（`in_finder_file_context`：图标视图文件项是 `AXGroup>AXImage`，AX 链路必落空，Finder 对 ⌘C 的响应是把**选中项文件名**写进剪贴板被误捕）；② Electron 编辑器家族（`skip_compat_for_focused_app`：VSCode/Cursor 等空选区 ⌘C 会**复制光标所在行**，滚动条/文件树拖拽全中招，真选区走轻推后的 AX 链路）。另有拖拽起点控件闸门（`drag_starts_on_control`：滚动条/滑杆/分隔条上不可能开始文本拖选）。Windows 文件管理器与编辑器的同类手势在 M2 的 UIA 实现里需对等处理。
+- **手势误判闸门与应答证据闸（`capture/macos.rs`，勿删勿绕过）**：拖动标签页/滚动条/文件树/Finder 文件等手势与拖选同形，兼容模式 ⌘C 在 Finder（⌘C 写入选中文件名）与 Electron 编辑器家族（空选区 ⌘C 复制当前行）会误捕；AXSelectedText 是状态查询不是手势结果查询，编辑器遗留选区会替从未发生的手势背书。闸门已按"起点表面分类 + 应答角色/锚定/差分证据"成体系，**新增误报场景时扩展这套体系，别再按应用/手势逐个打点**；机制全图见 docs/03 A.3.3。Windows UIA 实现（M2）需对等处理。
 - **AI 传输走 Rust 哑管道而非 WebView 直连**（ADR-03）：BYOK 任意第三方端点大概率无 CORS 头；`ai.rs` 只做协议转发，prompt/动作/agent 全部在 TS 层（`src/shared/actions.ts` 动作注册表：加动作 = 注册对象，Rust 零改动）。
 - **浮动条的 dismiss 逻辑**：普通单击 → `selection://dismiss`；点击浮动条自身用 `floating::rect_contains`（Rust 侧坐标抑制）避免误关——浮动条窗口不抢焦点，点击它不会改变聚焦进程。
 - **浮动条是预建常驻隐藏窗口**（show/hide 而非创建/销毁），定位用鼠标逻辑坐标 + `monitor_bounds` 防出屏钳制（多显示器 DPI 转换都在 `floating.rs`）。
@@ -63,7 +63,9 @@ Rust 侧 `src-tauri/src/`：
 ## 约定
 
 - 决策记录（为什么不用 Electron/LangChain、为什么无剪贴板等）见 `docs/04-技术选型.md`（ADR），翻案先改 ADR。
-- 变更纪律：用户可见的行为改动 → `CHANGELOG.md` 的 Unreleased 段（Keep a Changelog 格式、英文）；项目现状描述 → README「功能」清单；贡献流程与 PR 规范见 `CONTRIBUTING.md`（面向人类贡献者，与本文件约定一致）。
+- 变更纪律：用户可见的行为改动 → `CHANGELOG.md` 的 Unreleased 段；项目现状描述 → README「功能」清单；贡献流程与 PR 规范见 `CONTRIBUTING.md`（面向人类贡献者，与本文件约定一致）。
+- CHANGELOG 条目规范（Keep a Changelog 格式、英文）：只用 `Added`（新功能）/ `Changed`（行为、文案、交互变更）/ `Fixed`（修复）三节；**每一项可以有多条**（fix 了什么、新增了什么），不写实现细节。
+- 发版清单：① Unreleased 条目归位成带日期的版本节（`## [x.y.z] - YYYY-MM-DD`）；② 版本号三处同步 `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`，`cargo check` 刷新 `Cargo.lock`。
 - 产品边界：不做程序员向功能（报错/代码解释）；AX 取词不碰剪贴板，仅兼容模式兜底时模拟 ⌘C 且自动还原快照（ADR-05）；捕获失败静默。
 - 截屏框选等模态鼠标操作期间须持 `CaptureMuteGuard` 静音捕获管线，防止误触发划词 → AX 查询 → 模态会话内 ObjC 异常。
 - API Key 目前明文存 `settings.json`（ADR-07，M2 迁 keyring），设置页已向用户明示——不要在别处引入新的密钥落盘点。

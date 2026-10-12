@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.13] - 2026-10-12
+
+### Changed
+
+- 「存入 Obsidian」action renamed to「Obsidian」.
+
+### Fixed
+
+- Dragging a tab or any control (toolbar, bookmarks, file tree, list rows) no longer pops the capsule with a leftover selection.
+- Text selection in webview panels (VSCode AI sidebar, markdown preview) is captured reliably again.
+- Dragging the result window's resize handle no longer crashes the app.
+- The ⌘C compatibility fallback no longer destroys clipboard images (e.g. paste-screenshots).
+- Turning every action off no longer pops an empty capsule.
+
 ## [0.1.12] - 2026-10-09
 
 ### Added
@@ -14,10 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The tray menu gains a GitHub repository entry.
 
 ### Fixed
-
-- **Dragging the result window's resize handle could crash the app**: the resize drag is shape-identical to a text-selection drag, and if keyboard focus was still on another app when the ownership check ran, the capture chain's accessibility scan walked into our own webview's accessibility tree — WebKit intentionally aborts when that main-thread-only API is touched from a background thread (confirmed by crash reports). Two layers now: a drag starting inside any of our own windows (capsule, result panel) never enters the selection judgment at all, and the AX chain re-verifies element ownership, hard-bailing when the owning pid cannot be read.
-
-- **Clipboard images are no longer destroyed by the compatibility fallback**: the ⌘C fallback snapshotted only text before borrowing the clipboard and restored only text after — an image-only clipboard (QQ/WeChat paste-screenshots) was wiped clean on every fallback run, whether or not a capture succeeded. The snapshot/restore now covers images: an image-only clipboard is put back after the fallback (bitmap roundtrip; your original file stays wherever it is). And the fallback now treats the clipboard as a strict borrow: it puts the previous content back only when the target app’s copied text is still the current clipboard text. Anything else — nothing was copied (a paste-screenshot landing after the simulated ⌘C), or newer content written while borrowing — leaves the clipboard untouched, so paste-screenshot images are no longer wiped, history order no longer scrambles, and identical re-writes no longer create duplicate entries. Known limit: a clipboard holding both text and an image still restores text only.
 
 - **A class of gestures no longer misfire as text selection.** Each of these ran the full capture pipeline and ended up capturing unrelated content, because the gesture is shape-identical to drag-selection and the ⌘C fallback grabbed whatever the app put on the clipboard:
 
