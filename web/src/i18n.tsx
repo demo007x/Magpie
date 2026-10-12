@@ -96,15 +96,15 @@ const zh = {
   },
   audience: {
     eyebrow: "Use cases",
-    titlePre: "主要使用者：",
-    titleAccent: "高频处理文字内容的人",
+    titlePre: "谁在用它：",
+    titleAccent: "常与文字打交道的人",
     titlePost: "",
     lead: "写作、编辑、翻译、研究与阅读场景中，查阅、核实、摘录、留存的频率最高；对已用 Obsidian、Notion 等笔记工具沉淀内容的人，收集还需要有归宿。拾趣针对该流程提供取字与处理动作，不涉及内容创作。",
     people: [
-      { who: "作者 / 编辑", scene: "引用、查证与注释：选中即可解释与复制，无需在窗口之间来回切换。" },
-      { who: "译者 / 语言学习者", scene: "提示词可按个人翻译规范设定；常用转换可保存为自定义动作；自定义搜索引擎可接入个人词条库。" },
-      { who: "研究者 / 重度阅读者", scene: "扫描版 PDF、图表与截图中的文字无法选中，框选后即可识别并执行翻译、解释或总结。" },
-      { who: "学生 / 课程视频观看者", scene: "课件截图、视频字幕与图片板书可框选识别，⌥T 识图翻译、⌥E 识图解释。" },
+      { who: "写作 / 翻译 / 语言学习", scene: "引用、查证与术语解释随手可得，无需在窗口之间来回切换；提示词可按个人翻译规范设定，常用转换保存为自定义动作。" },
+      { who: "研究 / 深度阅读 / 学生", scene: "扫描版 PDF、课件截图、视频字幕与图表中的文字无法选中，框选即可识别并翻译、解释或总结，摘录顺手写进读书笔记。" },
+      { who: "自媒体 / 信息整理", scene: "金句翻译、资料核实、素材摘录——从视频、图片与长文里抓出的文字直接成为可用稿料，不再散落在截图相册里。" },
+      { who: "以及所有日常时刻", scene: "复制验证码、翻译生词、提取截图文字、留存一句话——零散的文字小事，交给同一套动作。" },
     ],
   },
   custom: {
@@ -316,15 +316,15 @@ const en: Dict = {
   },
   audience: {
     eyebrow: "Use cases",
-    titlePre: "Built for ",
-    titleAccent: "people who process text all day",
+    titlePre: "Who uses it: ",
+    titleAccent: "anyone who works with words",
     titlePost: "",
     lead: "Writing, editing, translation, research and reading — looking things up, verifying, excerpting and keeping happen at the highest frequency; for people who already keep notes in Obsidian or Notion, collecting also needs a destination. Magpie provides capture and processing actions for exactly that flow; content creation is out of scope.",
     people: [
-      { who: "Authors & editors", scene: "Quote, verify and annotate: select to explain and copy — no jumping between windows." },
-      { who: "Translators & language learners", scene: "Set prompts to your own translation style; save frequent conversions as custom actions; custom search engines can hook into your personal glossary." },
-      { who: "Researchers & heavy readers", scene: "Text in scanned PDFs, figures and screenshots can't be selected — draw a box and it's recognized, ready to translate, explain or summarize." },
-      { who: "Students & lecture watchers", scene: "Slide screenshots, video subtitles and whiteboard photos can be captured by region; ⌥T for OCR translate, ⌥E for OCR explain." },
+      { who: "Writers / translators / language learners", scene: "Citations, fact-checking and term explanations are one selection away — no window juggling. Prompts can follow your personal translation style; frequent conversions become custom actions." },
+      { who: "Researchers / deep readers / students", scene: "Text in scanned PDFs, slides, video subtitles and figures can't be selected — draw a box to recognize it, then translate, explain or summarize, and keep excerpts into your reading notes." },
+      { who: "Creators / information keepers", scene: "Translate a quote, verify a claim, lift material from a video, image or long article — text turns into usable draft material instead of screenshots lost in your album." },
+      { who: "And all the small moments", scene: "Verification codes, unfamiliar words, text trapped in screenshots, a line worth keeping — scattered text tasks, one set of actions." },
     ],
   },
   custom: {

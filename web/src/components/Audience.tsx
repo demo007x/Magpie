@@ -1,9 +1,9 @@
-import { BookOpen, Feather, GraduationCap, NotebookPen } from "lucide-react";
+import { BookOpen, Feather, NotebookPen, Sparkles } from "lucide-react";
 import { useSite } from "../i18n";
 import { Reveal } from "./Reveal";
 import { Section } from "./Section";
 
-const ICONS = [Feather, NotebookPen, BookOpen, GraduationCap];
+const ICONS = [Feather, BookOpen, NotebookPen, Sparkles];
 
 export function Audience() {
   const { d } = useSite();
