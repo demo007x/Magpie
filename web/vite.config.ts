@@ -3,8 +3,11 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  // 根路径部署：双语言子页（/en/）下的绝对资源 URL 依赖它；改子路径需连 canonical/og 一起调
-  base: "/",
+  // 相对 base：同一份 dist 可直接发布到任意路径——GitHub Pages 项目站
+  // （…/Magpie/）、自建服务器根目录或子目录都能跑。/en/ 子页的资源前缀
+  // 由「运行时按语言计算 + 预渲染改写」解决（见 i18n 的 assetBase 与
+  // scripts/prerender.mjs），不要改回绝对 base
+  base: "./",
   plugins: [
     react(),
     tailwindcss(),

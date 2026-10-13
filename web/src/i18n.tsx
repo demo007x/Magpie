@@ -240,7 +240,7 @@ const en: Dict = {
   },
   hero: {
     badge: "AI text-selection tool for macOS · Free forever",
-    h1a: "Select to summon AI —",
+    h1a: "Select to summon AI — ",
     h1b: "translation lands ",
     h1c: "straight in Obsidian",
     lead: "Select or double-click, and the floating bar appears on the spot: translate, explain and summarize in real time; copy, search, save to Obsidian or prefill a calendar — results land right where you are. Text in images, videos and scanned documents can be captured by region as well — all handled in place, never locked in a chat window.",
@@ -473,7 +473,11 @@ const LocaleCtx = createContext<{
   locale: Locale;
   d: Dict;
   setLocale: (l: Locale) => void;
-}>({ locale: "zh", d: zh, setLocale: () => {} });
+  /** 资源前缀：站点按相对路径部署（任意挂载深度），/en/ 页比首页深一层，
+      图片/图标类相对引用需多退一级。预渲染（PROD=false）恒为 "./"，en 静态页
+      由 prerender.mjs 统一改写为 "../"——与客户端 PROD 构建的取值一致，水合不冲突 */
+  assetBase: string;
+}>({ locale: "zh", d: zh, setLocale: () => {}, assetBase: "./" });
 
 export function LocaleProvider({
   initialLocale,
@@ -483,6 +487,7 @@ export function LocaleProvider({
   children: ReactNode;
 }) {
   const [locale, setLocale] = useState<Locale>(() => initialLocale ?? "zh");
+  const assetBase = locale === "en" && import.meta.env.PROD ? "../" : "./";
 
   useEffect(() => {
     document.documentElement.lang = META[locale].lang;
@@ -498,7 +503,7 @@ export function LocaleProvider({
 
   const d = DICTS[locale];
   return (
-    <LocaleCtx.Provider value={{ locale, d, setLocale }}>
+    <LocaleCtx.Provider value={{ locale, d, setLocale, assetBase }}>
       {children}
     </LocaleCtx.Provider>
   );

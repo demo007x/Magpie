@@ -2,11 +2,10 @@ import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import { RELEASES } from "../data";
 import { useSite } from "../i18n";
-import icon from "../assets/app-icon.png";
 
 export function Nav() {
   const [solid, setSolid] = useState(false);
-  const { locale, d, setLocale } = useSite();
+  const { locale, d, setLocale, assetBase } = useSite();
   const next = locale === "zh" ? "en" : "zh";
   const nextHref = locale === "zh" ? "en/" : "../";
 
@@ -33,7 +32,7 @@ export function Nav() {
     >
       <nav className="mx-auto grid h-16 w-full max-w-6xl grid-cols-[auto_1fr_auto] items-center gap-6 px-6">
         <a href="#top" className="flex items-center gap-2.5">
-          <img src={icon} alt="" className="h-7 w-7 rounded-[7px]" />
+          <img src={`${assetBase}app-icon.png`} alt="" className="h-7 w-7 rounded-[7px]" />
           <span className="text-[15px] font-semibold tracking-tight">拾趣</span>
           <span className="text-[13px] text-mute">Magpie</span>
         </a>

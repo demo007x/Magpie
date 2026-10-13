@@ -5,7 +5,7 @@ import { Reveal } from "./Reveal";
 import { Section } from "./Section";
 
 export function Gallery() {
-  const { d } = useSite();
+  const { d, assetBase } = useSite();
   const shots = d.gallery.shots;
   // 灯箱当前打开的截图下标；null = 关闭
   const [viewing, setViewing] = useState<number | null>(null);
@@ -76,11 +76,11 @@ export function Gallery() {
                   >
                     <picture>
                       <source
-                        srcSet={`/shots/${s.file.replace(/\.png$/, ".webp")}`}
+                        srcSet={`${assetBase}shots/${s.file.replace(/\.png$/, ".webp")}`}
                         type="image/webp"
                       />
                       <img
-                        src={`/shots/${s.file}`}
+                        src={`${assetBase}shots/${s.file}`}
                         alt={`${s.label}：${s.note}`}
                         loading="lazy"
                         decoding="async"
@@ -118,11 +118,11 @@ export function Gallery() {
           </button>
           <picture onClick={(e) => e.stopPropagation()}>
             <source
-              srcSet={`/shots/${shots[viewing].file.replace(/\.png$/, ".webp")}`}
+              srcSet={`${assetBase}shots/${shots[viewing].file.replace(/\.png$/, ".webp")}`}
               type="image/webp"
             />
             <img
-              src={`/shots/${shots[viewing].file}`}
+              src={`${assetBase}shots/${shots[viewing].file}`}
               alt={`${shots[viewing].label}：${shots[viewing].note}`}
               className="max-h-[74vh] max-w-[92vw] rounded-lg"
             />

@@ -16,7 +16,9 @@ pnpm preview        # 预览构建产物
 
 ## 部署
 
-**站点按根路径部署**（`vite.config.ts` 的 `base: "/"`，双语言子页 `/en/` 的绝对资源 URL 依赖它；换子路径需连 canonical / og / sitemap 一起改）。上线前检查这些按正式域名写死的值：`index.html` 的 og:url / og:image / twitter:image 与 canonical、hreflang，`public/robots.txt`、`public/sitemap.xml`，以及下载与更新记录链接（`src/data.ts` 的 `REPO` / `RELEASES`）。发布新版本无需改代码——页面不写死版本号，具体版本以 Releases 为准。
+**相对路径部署：同一份 `dist/` 可直接发布到任意路径**——GitHub Pages 项目站（`…/Magpie/`）、自建服务器根目录或任意子目录。`/en/` 子页的资源前缀由两处协同：客户端按语言算（`i18n.tsx` 的 `assetBase`），静态 HTML 由预渲染脚本改写（`scripts/prerender.mjs`）。
+
+SEO 元信息（canonical / hreflang / og:url / og:image / sitemap）按正式域名写死为 `https://fm126.top/`；换正式域名时改 `index.html`、`scripts/prerender.mjs`、`public/robots.txt`、`public/sitemap.xml`。下载与更新记录链接指向 `https://github.com/demo007x/Magpie`（`src/data.ts` 的 `REPO` / `RELEASES`），发布新版本无需改代码——页面不写死版本号，具体版本以 Releases 为准。
 
 ## 双语言
 

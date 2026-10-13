@@ -29,7 +29,7 @@ try {
     const m = META[page.locale];
     // 替换一律走函数形式并显式拼接捕获组——返回串里的 $ 序列不会被展开，
     // 标题/描述里的 —、中文标点也天然安全
-    const html = shell
+    let html = shell
       .replace(/<html lang="[^"]*"/, (s) => s.replace(/lang="[^"]*"/, `lang="${m.lang}"`))
       .replace(/<title>[^<]*<\/title>/, () => `<title>${m.title}</title>`)
       .replace(
@@ -47,6 +47,17 @@ try {
       )
       .replace(/(<link rel="canonical" href=")[^"]*(")/, (_, p1, p2) => `${p1}${page.url}${p2}`)
       .replace('<div id="root"></div>', () => `<div id="root">${render(page.locale)}</div>`);
+
+    // /en/ 子页比首页深一层：head 里 vite 产物与 favicon 的 ./ 前缀、正文里
+    // SSR（PRERENDER 期 assetBase="./"）渲染出的 shots 前缀，统一改写为 ../——
+    // 与客户端 PROD 构建（assetBase="../"）一致，水合不冲突；站点按相对路径
+    // 部署，根域名 / 子路径（GitHub Pages /Magpie/）/ 自建服务器任意目录通用
+    if (page.locale === "en") {
+      html = html
+        .replaceAll('"./', '"../')
+        .replaceAll('src="shots/', 'src="../shots/')
+        .replaceAll('srcset="shots/', 'srcset="../shots/');
+    }
 
     const out = resolve(root, page.file);
     mkdirSync(dirname(out), { recursive: true });
