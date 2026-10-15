@@ -9,6 +9,18 @@ import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, Info, LoaderCircle } from "lucide-react";
 import "./toast.css";
 
+// 平台根类：Windows 上卡片铺满窗口（零出血，圆角交 DWM），样式见 toast.css
+// 的 html.win 规则；macOS 保持原生结构不变
+if (!/Mac/i.test(navigator.platform)) {
+  document.documentElement.classList.add("win");
+  // 物理像素对齐变量：发丝描边/圆角按物理像素取值（toast.css html.win），
+  // 跨屏拖动触发 DPI 变化时随 resize 刷新
+  const syncDpr = () =>
+    document.documentElement.style.setProperty("--dpr", String(window.devicePixelRatio || 1));
+  syncDpr();
+  window.addEventListener("resize", syncDpr);
+}
+
 type Kind = "err" | "info" | "progress";
 
 declare global {
@@ -41,6 +53,14 @@ function ToastApp() {
   // 宽高都随内容：短文案贴内容宽，长文案封顶后折行增高（上限在 Rust 侧钳制）
   useLayoutEffect(() => {
     if (!toast) return;
+    // TODO(diag): 透明圈排查几何日志，确认后删除
+    const stage = document.querySelector<HTMLElement>(".stage");
+    const pop = document.querySelector<HTMLElement>(".toast-pop");
+    const fmt = (el: HTMLElement | null) =>
+      el ? `${el.offsetWidth}x${el.offsetHeight}@(${el.offsetLeft},${el.offsetTop})` : "none";
+    invoke("ui_debug_log", {
+      msg: `diag vp=${window.innerWidth}x${window.innerHeight} dpr=${window.devicePixelRatio} htmlClass="${document.documentElement.className}" stage=${fmt(stage)} pop=${fmt(pop)} popMargin=${pop ? getComputedStyle(pop).margin : "-"} popRadius=${pop ? getComputedStyle(pop).borderRadius : "-"}`,
+    }).catch(() => undefined);
     const el = document.querySelector<HTMLElement>(".toast-pop");
     if (!el) return;
     invoke("resize_toast", {

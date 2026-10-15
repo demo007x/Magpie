@@ -1,8 +1,34 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import App from "./App";
+import PopCard from "./pops";
 import "./floating.css";
+
+// 平台根类：Windows 上窗口阴影（DWM 矩形投影）在透明窗上不渲染，
+// 悬浮感由 CSS 自绘接管（floating.css 的 html.win 规则，对齐 toast.css 先例）；
+// macOS 保持 NSWindow 原生阴影（按内容 alpha 形状画影），不加根类、样式零改动
+if (!/Mac/i.test(navigator.platform)) {
+  document.documentElement.classList.add("win");
+  // 物理像素对齐变量：发丝描边/圆角按物理像素取值（floating.css html.win），
+  // 跨屏拖动触发 DPI 变化时随 resize 刷新
+  const syncDpr = () =>
+    document.documentElement.style.setProperty("--dpr", String(window.devicePixelRatio || 1));
+  syncDpr();
+  window.addEventListener("resize", syncDpr);
+}
+
+// 窗口身份：floating = 划词胶囊；floating-panel / floating-menu = Windows 分离卡
+// 的二级浮层窗口（方案甲「一卡一窗」，哑渲染端，见 pops.tsx）；ocr / pin-* 走 App
+const WIN_LABEL = (() => {
+  try {
+    return getCurrentWebviewWindow().label;
+  } catch {
+    return "floating";
+  }
+})();
+const IS_POP = WIN_LABEL === "floating-panel" || WIN_LABEL === "floating-menu";
 
 // 悬浮窗是透明无边框窗口：渲染树一旦崩溃，窗口就变成全透明空壳，
 // 用户看到的不是报错而是"胶囊没出现"。边界把异常显示出来并写进日志，
@@ -47,8 +73,6 @@ class FloatingBoundary extends React.Component<
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <FloatingBoundary>
-      <App />
-    </FloatingBoundary>
+    <FloatingBoundary>{IS_POP ? <PopCard /> : <App />}</FloatingBoundary>
   </React.StrictMode>,
 );

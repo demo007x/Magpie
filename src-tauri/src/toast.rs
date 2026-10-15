@@ -54,8 +54,10 @@ const TOAST_TOP: f64 = 64.0;
 /// 阴影出血边距：与 toast.css 的 .stage padding 一致。窗口无原生阴影（透明窗口
 /// 原生阴影逐帧重算导致窗口动画掉帧），投影由 CSS 自绘——窗口必须比卡片大一圈，
 /// 否则 box-shadow 被窗口边界裁掉。所有窗口定位 = 卡片定位 ± TOAST_PAD；
-/// 液态玻璃材质层也按此内缩（floating.rs）
-pub const TOAST_PAD: f64 = 12.0;
+/// 液态玻璃材质层也按此内缩（floating.rs）。
+/// Windows：CSS 阴影过淡（0.16/0.1）在亮色背景上显形为「透明圈」——出血归零，
+/// 卡片铺满窗口（圆角由 DWM 注入，见 main.rs），css 侧 html.win 同步 padding 0
+pub const TOAST_PAD: f64 = if cfg!(target_os = "windows") { 0.0 } else { 12.0 };
 
 /// 滚动动画时长：与完成回调线程的等待同拍（回调只做收尾，不苛求精确对齐）
 const ANIM_MS: u64 = 500;
@@ -135,7 +137,32 @@ fn sync_set_frame(win: &WebviewWindow, x: f64, y_top: f64, w: f64, h: f64) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn sync_set_frame(win: &WebviewWindow, x: f64, y_top: f64, w: f64, h: f64) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+
+    // tao 在 Windows 上同样是异步派发（约束 4 在此平台同样成立）：
+    // show 与紧随其后的逻辑会读到旧尺寸——直接 SetWindowPos 同步落定
+    let Ok(hwnd) = win.hwnd() else {
+        return;
+    };
+    let scale = win.scale_factor().unwrap_or(1.0);
+    unsafe {
+        let _ = SetWindowPos(
+            HWND(hwnd.0),
+            None,
+            (x * scale).round() as i32,
+            (y_top * scale).round() as i32,
+            (w * scale).round() as i32,
+            (h * scale).round() as i32,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
+/// 其余平台：无 tao 异步派发问题的最小实现
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn sync_set_frame(win: &WebviewWindow, x: f64, y_top: f64, w: f64, h: f64) {
     let _ = win.set_size(tauri::LogicalSize::new(w, h));
     let _ = win.set_position(LogicalPosition::new(x, y_top));
@@ -188,10 +215,20 @@ fn animate_to(win: &WebviewWindow, x: f64, to_top: f64) {
     }
     #[cfg(not(target_os = "macos"))]
     {
+        // Windows 与其余平台：窗口瞬移到停留位。Windows 用同步落位
+        //（理由同 sync_set_frame：tao 异步派发会让终点位置/尺寸漂移）
+        #[cfg(target_os = "windows")]
+        {
+            let (w, h) = *TOAST_SIZE.lock().unwrap_or_else(|e| e.into_inner());
+            sync_set_frame(win, x, to_top, w, h);
+        }
+        #[cfg(not(target_os = "windows"))]
         let _ = win.set_position(LogicalPosition::new(x, to_top));
     }
 }
 
+/// CGEventGetLocation 返回值结构（仅 macOS 分支使用）
+#[cfg(target_os = "macos")]
 #[repr(C)]
 struct CGPoint {
     x: f64,
@@ -199,6 +236,7 @@ struct CGPoint {
 }
 
 /// 当前光标位置（全局逻辑坐标，原点 = 主屏左上角）；取不到时回退 None
+#[cfg(target_os = "macos")]
 fn cursor_location() -> Option<(f64, f64)> {
     // CoreGraphics 已随 wry/tauri 链入，无需 #[link]（与 ocr.rs 的声明方式一致）
     unsafe extern "C" {
@@ -215,6 +253,36 @@ fn cursor_location() -> Option<(f64, f64)> {
         CFRelease(event);
         Some((p.x, p.y))
     }
+}
+
+/// Windows 对位：GetCursorPos（物理像素）→ 光标所在显示器有效 DPI 换算逻辑坐标
+#[cfg(target_os = "windows")]
+fn cursor_location() -> Option<(f64, f64)> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::{MonitorFromPoint, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+    unsafe {
+        let mut pt = POINT::default();
+        if GetCursorPos(&mut pt).is_err() {
+            return None;
+        }
+        let mut dpi_x = 96u32;
+        let mut dpi_y = 96u32;
+        let monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        if !monitor.is_invalid() {
+            let _ = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
+        }
+        let scale = (dpi_x as f64 / 96.0).max(1.0);
+        Some((pt.x as f64 / scale, pt.y as f64 / scale))
+    }
+}
+
+/// 其余平台：无光标查询，调用方走主屏回退
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn cursor_location() -> Option<(f64, f64)> {
+    None
 }
 
 /// (x, y) 逻辑坐标所在显示器的逻辑矩形 `(left, top, right, bottom)`；找不到回退 None
@@ -422,8 +490,10 @@ pub fn resize_toast(window: WebviewWindow, width: f64, height: f64) {
     if window.label() != "toast" {
         return;
     }
-    // 卡片宽度上限 420 与 toast.css 的 .toast-pop max-width 对齐
-    let w = width.max(120.0).min(420.0);
+    // 卡片宽度上限 420 与 toast.css 的 .toast-pop max-width 对齐；
+    // 下限取 40：比 120 更贴近短文案（「正在识别…」）的自然宽度——
+    // 钳制值远大于内容时窗口右侧会露出一段透明带（卡片在窗口内左对齐）
+    let w = width.max(40.0).min(420.0);
     let h = height.max(32.0);
     eprintln!("[magpie:toast] resize_toast {w}x{h}");
     if let Ok(mut s) = TOAST_SIZE.lock() {

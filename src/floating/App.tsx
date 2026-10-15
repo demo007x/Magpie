@@ -31,6 +31,7 @@ import {
 import { actionPrompt, actionRegistry, isContextAction } from "../shared/actions";
 import { customIconNode } from "../shared/icons";
 import { aiChat } from "../shared/ai";
+import { translateMissingReason } from "../shared/translate";
 import {
   extractAll,
   extractCode,
@@ -38,7 +39,14 @@ import {
   extractTel,
   extractUrl,
 } from "../shared/textContext";
-import type { CustomAction, ObsidianConfig, SearchEngine, Settings } from "../shared/types";
+import type {
+  CustomAction,
+  ObsidianConfig,
+  Provider,
+  SearchEngine,
+  Settings,
+  TranslateConfig,
+} from "../shared/types";
 
 // 窗口身份（生命周期内不变 → 模块级常量，事件回调不会读到过期值）：
 // floating = 划词浮动条；ocr = 文本识别独立窗口；pin-* = 钉图窗口
@@ -51,6 +59,12 @@ const WIN_LABEL = (() => {
 })();
 const IS_OCR = WIN_LABEL === "ocr";
 const IS_PIN = WIN_LABEL.startsWith("pin-");
+// 平台分叉（与 main.tsx 的 html.win 根类同一判据）：Windows 走方案甲「一卡一窗」
+// 分离卡——二级浮层渲染在独立窗口（floating-panel / floating-menu，窗口即卡片，
+// 见 floating.rs），本窗口（胶囊）只把渲染数据 + 锚点推给 Rust（set_floating_pops）；
+// macOS 维持单窗分离卡（NSWindow 按内容轮廓画影），交互逻辑与样式零改动
+const IS_WIN_LIKE = !/Mac/i.test(navigator.platform);
+const POPS_EXTERNAL = IS_WIN_LIKE && !IS_OCR && !IS_PIN;
 
 // 上下文智能动作：由「提取信息」统一承载（多值/混合进面板），不再逐个上胶囊条
 // （id 集合见 shared/actions.ts CONTEXT_ACTION_IDS）
@@ -169,8 +183,9 @@ function renderUrl(item: string): React.ReactNode {
   );
 }
 
-// ---- 图标（lucide-react 图标库，统一 15px / 1.75 描边，随文字色） ----
-const ICONS: Record<string, React.ReactNode> = {
+// ---- 图标（lucide-react 图标库，统一 15px / 1.75 描边，随文字色）----
+// 导出给 pops.tsx（分离卡的弹层窗口是哑渲染端，图标语言必须一致）
+export const ICONS: Record<string, React.ReactNode> = {
   copy: <Copy size={14} strokeWidth={1.75} />,
   search: <Search size={14} strokeWidth={1.75} />,
   translate: <Languages size={14} strokeWidth={1.75} />,
@@ -189,7 +204,7 @@ const ICONS: Record<string, React.ReactNode> = {
 };
 // 自定义动作带 icon（lucide 名，shared/icons.tsx）时优先用之；未设置/查不到
 // 回落内置表，再回落默认 Sparkles
-const iconOf = (id: string, icon?: string) =>
+export const iconOf = (id: string, icon?: string) =>
   customIconNode(icon, 14) ?? ICONS[id] ?? ICONS.__custom;
 const CopyIcon = <Copy size={13} strokeWidth={1.75} />;
 const CheckIcon = <Check size={13} strokeWidth={2} className="ok" />;
@@ -234,8 +249,9 @@ const CACHE_TTL = 5 * 60_000;
 const CACHE_CAP = 50;
 
 // 分离卡几何常量（与 floating.rs 的 FLOAT_PAD / floating.css 的 .bar margin 一致）：
-// FLOAT_PAD = 卡片四周透明留白（卡片边缘不得压窗口边界）；CARD_GAP = 胶囊与二级卡片的缝
-const FLOAT_PAD = 8;
+// FLOAT_PAD = 卡片四周透明留白（卡片边缘不得压窗口边界）；CARD_GAP = 胶囊与二级卡片的缝。
+// Windows 一卡一窗：窗口即卡片，留白归零（出血会原样透出桌面）
+const FLOAT_PAD = IS_WIN_LIKE ? 0 : 8;
 const CARD_GAP = 3;
 
 // Rust 返回的窗口落位 / 显示器逻辑矩形（逻辑坐标）
@@ -289,7 +305,6 @@ function PinView() {
   const [zoom, setZoom] = useState(1);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
   const copiedTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -395,12 +410,8 @@ function PinView() {
   const recognize = () => {
     if (busy) return;
     setBusy(true);
-    invoke("pin_to_ocr")
-      .then(
-        () => setFailed(false),
-        () => setFailed(true), // 失败提示落在按钮 title（OCR 面板可能未弹出）
-      )
-      .finally(() => setBusy(false));
+    // 失败静默：按钮回到可点状态即可重试（提示类 UI 已按产品要求全部摘除）
+    invoke("pin_to_ocr").finally(() => setBusy(false));
   };
 
   if (!data) return null;
@@ -418,20 +429,16 @@ function PinView() {
       <div className="pin-tools">
         <button
           className="tool"
-          title={failed ? "识别失败，请重试" : "识别文字"}
+          aria-label="识别文字"
           disabled={busy}
           onClick={recognize}
         >
           <ScanSearch size={13} strokeWidth={1.75} />
         </button>
-        <button className="tool" title={copied ? "已复制" : "复制图片"} onClick={copyImage}>
+        <button className="tool" aria-label="复制图片" onClick={copyImage}>
           {copied ? CheckIcon : CopyIcon}
         </button>
-        <button
-          className="tool"
-          title="关闭 (Esc)"
-          onClick={() => invoke("close_pin").catch(() => undefined)}
-        >
+        <button className="tool" aria-label="关闭" onClick={() => invoke("close_pin").catch(() => undefined)}>
           {CloseIcon}
         </button>
       </div>
@@ -463,7 +470,6 @@ function EditableSource({
       contentEditable="plaintext-only"
       suppressContentEditableWarning
       onInput={(e) => onEdit(e.currentTarget.textContent ?? "")}
-      title="识别原文（可编辑，改后重新执行动作）"
     />
   );
 }
@@ -519,6 +525,10 @@ export default function App() {
   const [translateEnabled, setTranslateEnabled] = useState<string[]>(["ai"]);
   const [translateDefault, setTranslateDefault] = useState("ai");
   const [translateOrder, setTranslateOrder] = useState<string[]>([]);
+  // 翻译服务配置快照：使用时兜底提醒的判据（shared/translate.ts）
+  const [translateCfg, setTranslateCfg] = useState<TranslateConfig | null>(null);
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [defaultProviderId, setDefaultProviderId] = useState("");
   const [flashId, setFlashId] = useState<string | null>(null);
   const [flashMsg, setFlashMsg] = useState("");
   const [engines, setEngines] = useState<SearchEngine[]>([]);
@@ -690,6 +700,9 @@ export default function App() {
         setTranslateEnabled(s.translate?.enabled ?? ["ai"]);
         setTranslateDefault(s.translate?.default ?? "ai");
         setTranslateOrder(s.translate?.order ?? []);
+        setTranslateCfg(s.translate ?? null);
+        setProviders(s.providers ?? []);
+        setDefaultProviderId(s.defaultProviderId ?? "");
         setObsidianCfg(s.obsidian ?? null);
       })
       .catch(() => undefined);
@@ -1088,6 +1101,9 @@ export default function App() {
         return;
       }
       invoke("hide_floating_bar").catch(() => undefined);
+      // Windows 分离卡：弹层窗口已随 hide_pops 隐藏，菜单状态同步复位，
+      // 否则胶囊下次弹出时「更多」钮残留点亮态
+      if (POPS_EXTERNAL) setMenu(null);
       if (IS_OCR) invoke("hide_ocr_window").catch(() => undefined);
     }).then((un) => unlisteners.push(un));
 
@@ -1095,6 +1111,20 @@ export default function App() {
       if (listenCancelled) un();
       else unlisteners.push(un);
     });
+
+    // Windows 分离卡：弹层窗口的点击回传（动作执行统一在胶囊窗口）。
+    // 事件经 emit_to 定向到本窗口，监听必须用窗口作用域——全局 listen()
+    // 注册在 Any 上，连别的窗口的定向事件也会收到
+    if (POPS_EXTERNAL) {
+      getCurrentWebviewWindow()
+        .listen<{ kind: string; key: string; rowY: number | null }>("floating://pick", (e) =>
+          pickRef.current(e.payload),
+        )
+        .then((un) => {
+          if (listenCancelled) un();
+          else unlisteners.push(un);
+        });
+    }
 
     // 主窗口的动作开关/顺序/搜索引擎实时推送（无需保存即时生效）
     listen<{
@@ -1818,6 +1848,15 @@ export default function App() {
         flash(id, "未启用翻译服务");
         return;
       }
+      // 使用时兜底提醒（唯一一层校验）：启用了但没配密钥的服务，触发时
+      // 告知用户去哪配置——文案与判据同 shared/translate.ts，不区分平台
+      if (translateCfg) {
+        const missing = translateMissingReason(translateCfg, providers, defaultProviderId, svc);
+        if (missing) {
+          toast(missing, "err");
+          return;
+        }
+      }
       if (svc === "baidu" || svc === "deepl") {
         const trimmed = source.trim();
         const cacheKey = `${id}:${svc}:${trimmed}`;
@@ -1961,6 +2000,159 @@ export default function App() {
     });
   };
 
+  // ---- Windows 分离卡（一卡一窗）：二级浮层的渲染数据与状态同步 ----
+  // 弹层窗口（floating-panel / floating-menu）是哑渲染端：这里按当前状态组装
+  // payload，经 set_floating_pops 推给 Rust（payload 变化即重发——实体渐进补进
+  // 胶囊、设置实时推送改了收纳清单，弹层内容都须跟上）；弹层量尺寸回传
+  // pop_ready 后由 Rust 定位显示。pmenu:* 的行侧锚点只有面板窗口知道，
+  // 不经此 effect，由 floating://pick(menu-toggle) 直接下发（见 pickRef）
+  const menuItemsFor = (kind: string) =>
+    kind === "translate"
+      ? enabledTranslates.map((s) => ({
+          key: s.id,
+          label: s.label,
+          on: s.id === (usedTranslate ?? defaultTranslate?.id ?? null),
+        }))
+      : kind === "search"
+        ? enabledEngines.map((en) => ({
+            key: en.name,
+            label: en.name,
+            on: en.name === (usedEngine ?? defaultEngine?.name ?? null),
+          }))
+        : [
+            { key: "note", label: "笔记", on: true },
+            { key: "task", label: "任务", on: false },
+            { key: "card", label: "卡片", on: false },
+          ];
+  // 行 ⌄ 的判定与 macOS 收纳面板一致（动态，非 barEntries.hasMenu）：
+  // 翻译行=多个翻译服务、搜索行=多个引擎、Obsidian 行=已配置 vault
+  const panelData = (subOpenForce?: string | null) => ({
+    type: "overflow" as const,
+    subOpen:
+      subOpenForce !== undefined
+        ? subOpenForce
+        : menu && menu.startsWith("pmenu:")
+          ? menu.slice(6)
+          : null,
+    items: restEntries.map((e) => ({
+      id: e.id,
+      label: e.label,
+      icon: e.icon ?? null,
+      hasMenu:
+        (e.id === "translate" && enabledTranslates.length > 1) ||
+        (e.id === "search" && enabledEngines.length > 1) ||
+        (e.id === "obsidian" && Boolean(obsidianCfg?.vaultPath)),
+    })),
+  });
+  // 弹层同步的内容签名（id/文案/图标/⌄ 有无——任一变化才重发 payload）
+  const panelSig = restEntries
+    .map((e) => `${e.id}|${e.label}|${e.icon ?? ""}|${e.hasMenu ? 1 : 0}`)
+    .join(",");
+  const translateSig = enabledTranslates.map((s) => s.id).join(",");
+  const enginesSig = enabledEngines.map((en) => en.name).join(",");
+
+  // 同屏只开一个入口：开面板收菜单、开胶囊 ⌄ 菜单收面板（close-* 由 Rust
+  // 隐藏对应窗口并清锚点；close 与 payload 作用在不同窗口，次序无关）
+  useEffect(() => {
+    if (!POPS_EXTERNAL) return;
+    if (menu !== null && menu.startsWith("pmenu:")) return;
+    const trigX = (id: string): number | null => {
+      const el = document.querySelector<HTMLElement>(`[data-trig="${id}"]`);
+      return el ? Math.round(el.getBoundingClientRect().left) : null;
+    };
+    if (menu === null) {
+      invoke("set_floating_pops", { target: "none", data: {}, trigX: null, rowY: null }).catch(
+        () => undefined,
+      );
+      return;
+    }
+    if (menu === "overflow") {
+      invoke("set_floating_pops", {
+        target: "close-menu",
+        data: {},
+        trigX: null,
+        rowY: null,
+      }).catch(() => undefined);
+      invoke("set_floating_pops", {
+        target: "panel",
+        trigX: trigX("overflow"),
+        rowY: null,
+        data: panelData(),
+      }).catch(() => undefined);
+      return;
+    }
+    // chev:* → 窄单列菜单锚在胶囊触发钮下方
+    const kind = menu.startsWith("chev:") ? menu.slice(5) : menu;
+    invoke("set_floating_pops", {
+      target: "close-panel",
+      data: {},
+      trigX: null,
+      rowY: null,
+    }).catch(() => undefined);
+    invoke("set_floating_pops", {
+      target: "menu",
+      trigX: trigX(menu),
+      rowY: null,
+      data: { type: "menu", kind, items: menuItemsFor(kind) },
+    }).catch(() => undefined);
+    // panelData/menuItemsFor 是渲染期闭包：数据变化由上面的签名依赖表达
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menu, panelSig, translateSig, enginesSig, usedTranslate, usedEngine, defaultTranslate?.id, defaultEngine?.name]);
+
+  // 弹层窗口点击回传（floating://pick）：动作语义、选区上下文、服务选择与
+  // 反馈全在本窗口执行（弹层是哑渲染端）。监听只注册一次，经 ref 读最新渲染
+  const pickRef = useRef<(p: { kind: string; key: string; rowY: number | null }) => void>(
+    () => undefined,
+  );
+  pickRef.current = (p) => {
+    if (p.kind === "action") {
+      setMenu(null);
+      runAction(p.key);
+      return;
+    }
+    if (p.kind === "menu-toggle") {
+      const target = `pmenu:${p.key}`;
+      if (menu !== target) {
+        setMenu(target);
+        // 面板 payload 一并重发：pchev 高亮跟着 subOpen 走。
+        // subOpen 必须显式传入——此刻闭包里的 menu 还是旧状态
+        invoke("set_floating_pops", {
+          target: "menu",
+          trigX: null,
+          rowY: p.rowY,
+          data: { type: "menu", kind: p.key, items: menuItemsFor(p.key) },
+        }).catch(() => undefined);
+        invoke("set_floating_pops", {
+          target: "panel",
+          trigX: null,
+          rowY: null,
+          data: panelData(p.key),
+        }).catch(() => undefined);
+      } else {
+        // 收起 = 回到父级（面板保持展开），effect 会重发面板 payload 复位高亮
+        setMenu("overflow");
+      }
+      return;
+    }
+    if (p.kind === "pick:translate") {
+      setUsedTranslate(p.key);
+      setMenu(null);
+      runAction("translate", p.key);
+      return;
+    }
+    if (p.kind === "pick:search") {
+      setUsedEngine(p.key);
+      setMenu(null);
+      const en = enabledEngines.find((x) => x.name === p.key);
+      if (en) openEngine(en);
+      return;
+    }
+    if (p.kind === "pick:obsidian") {
+      setMenu(null);
+      runAction("obsidian", undefined, undefined, p.key);
+    }
+  };
+
   const backToBar = () => {
     runIdRef.current++;
     streamingRef.current = false;
@@ -1993,6 +2185,8 @@ export default function App() {
     if (Math.hypot(e.screenX - s.sx, e.screenY - s.sy) > 5) {
       dragActiveRef.current = true;
       suppressClickRef.current = true;
+      // 拖动即收起二级浮层（Windows 分离卡是独立窗口，不随胶囊联动移动）
+      if (POPS_EXTERNAL) setMenu(null);
       // 用按下时的全局坐标计算抓取偏移（此刻窗口尚未移动）
       invoke("begin_floating_drag", { x: s.sx, y: s.sy }).catch(() => undefined);
     }
@@ -2059,13 +2253,6 @@ export default function App() {
           <span key={e.id} className="action-slot">
             <button
               className="action"
-              title={
-                e.id === "search" && defaultEngine
-                  ? `用${defaultEngine.name}搜索`
-                  : e.id === "translate" && defaultTranslate
-                    ? `当前默认：${defaultTranslate.label}`
-                    : undefined
-              }
               onClick={guarded(() => {
                 setMenu(null); // 执行动作即收起展开中的浮层
                 e.onClick();
@@ -2080,7 +2267,7 @@ export default function App() {
                 <button
                   className="chev"
                   data-trig={`chev:${e.id}`}
-                  title={e.id === "search" ? "更多搜索引擎" : e.id === "translate" ? "更多翻译服务" : "存入目标"}
+                  aria-label={e.id === "search" ? "更多搜索引擎" : e.id === "translate" ? "更多翻译服务" : "存入目标"}
                   onClick={guarded(() =>
                     setMenu((m) =>
                       m === `chev:${e.id}`
@@ -2103,7 +2290,7 @@ export default function App() {
             <button
               className={`action more ${menu === "overflow" || menu?.startsWith("pmenu:") ? "open" : ""}`}
               data-trig="overflow"
-              title={`还有 ${restEntries.length} 个动作`}
+              aria-label={`还有 ${restEntries.length} 个动作`}
               onClick={guarded(() =>
                 setMenu((m) => (m === "overflow" || m?.startsWith("pmenu:") ? null : "overflow")),
               )}
@@ -2123,8 +2310,9 @@ export default function App() {
       )}
 
       {/* 收纳面板：单行平铺、宽度随内容（分离卡，覆盖在正文上，胶囊不动）。
-          项主体点击 = 默认服务执行；⌄ 才弹换渠道/引擎的浮出菜单 */}
-      {!IS_OCR && (menu === "overflow" || menu?.startsWith("pmenu:")) && (
+          项主体点击 = 默认服务执行；⌄ 才弹换渠道/引擎的浮出菜单。
+          Windows 分离卡：收纳面板渲染在独立窗口（floating-panel），不在此渲染 */}
+      {!IS_OCR && !POPS_EXTERNAL && (menu === "overflow" || menu?.startsWith("pmenu:")) && (
         <div className="pop overflow" ref={overflowRef}>
           {restEntries.map((e) => {
             const hasMenu =
@@ -2135,13 +2323,6 @@ export default function App() {
               <span key={e.id} className="pitem">
                 <button
                   className="action"
-                  title={
-                    e.id === "search" && defaultEngine
-                      ? `用${defaultEngine.name}搜索`
-                      : e.id === "translate" && defaultTranslate
-                        ? `当前默认：${defaultTranslate.label}`
-                        : undefined
-                  }
                   onClick={guarded(() => {
                     setMenu(null);
                     e.onClick();
@@ -2151,11 +2332,11 @@ export default function App() {
                   <span>{flashId === e.id ? flashMsg : e.label}</span>
                 </button>
                 {hasMenu && (
-                  <button
-                    className={`pchev ${menu === `pmenu:${e.id}` ? "open" : ""}`}
-                    data-trig={`pmenu:${e.id}`}
-                    title={e.id === "translate" ? "更多翻译服务" : "更多搜索引擎"}
-                    onClick={guarded(() =>
+                    <button
+                      className={`pchev ${menu === `pmenu:${e.id}` ? "open" : ""}`}
+                      data-trig={`pmenu:${e.id}`}
+                      aria-label={e.id === "translate" ? "更多翻译服务" : "更多搜索引擎"}
+                      onClick={guarded(() =>
                       setMenu((m) =>
                         // 二级收起 = 回到父级（面板保持展开），置 null 会把收纳面板一起收掉
                         m === `pmenu:${e.id}` ? "overflow" : (`pmenu:${e.id}` as "pmenu:translate" | "pmenu:search"),
@@ -2175,8 +2356,9 @@ export default function App() {
         </div>
       )}
 
-      {/* 窄单列浮出菜单：胶囊动作 ⌄ 与收纳面板项 ⌄ 共用同一形式（全局统一） */}
-      {!IS_OCR && !!menu && menu !== "overflow" && menu !== "search" && menu !== "translate" && (
+      {/* 窄单列浮出菜单：胶囊动作 ⌄ 与收纳面板项 ⌄ 共用同一形式（全局统一）。
+          Windows 分离卡：渲染在独立窗口（floating-menu），不在此渲染 */}
+      {!IS_OCR && !POPS_EXTERNAL && !!menu && menu !== "overflow" && menu !== "search" && menu !== "translate" && (
         (() => {
           const kind = menu.split(":")[1] as "translate" | "search" | "obsidian";
           // 存入 Obsidian 的目标菜单：主按钮 = 存笔记（默认项打点）。
@@ -2241,14 +2423,14 @@ export default function App() {
                   if (copiedAllTimerRef.current) window.clearTimeout(copiedAllTimerRef.current);
                   copiedAllTimerRef.current = window.setTimeout(() => setCopiedAll(false), 1200);
                 })}
-                title="复制全部"
+                aria-label="复制全部"
               >
                 {copiedAll ? CheckIcon : CopyIcon}
               </button>
               <button
                 className="tool"
                 onClick={guarded(() => (IS_OCR ? closeResultWindow() : backToBar()))}
-                title="收起"
+                aria-label="收起"
               >
                 {CloseIcon}
               </button>
@@ -2264,7 +2446,7 @@ export default function App() {
                 </div>
                 {phase.groups[g.id].map((item, i) => (
                   <div className="extract-item" key={`${item}-${i}`}>
-                    <span className="extract-text" title={g.id === "link" ? item : undefined}>
+                    <span className="extract-text">
                       {g.id === "link" ? renderUrl(item) : item}
                     </span>
                     <span className="extract-acts">
@@ -2361,7 +2543,7 @@ export default function App() {
                   : "识图取字"
                 : (byId(phase.actionId ?? "")?.label ?? "结果")}
               {(phase.streaming || doneFlash) && (
-                <span className={`dot ${doneFlash ? "done" : ""}`} title={phase.streaming ? "生成中" : "已完成"} />
+                <span className={`dot ${doneFlash ? "done" : ""}`} />
               )}
             </span>
             <span className="panel-tools">
@@ -2379,13 +2561,7 @@ export default function App() {
                         (e) => setPinErr(String(e)),
                       );
                     })}
-                    title={
-                      pinErr
-                        ? `钉图失败：${pinErr}（点击重试）`
-                        : pinOk
-                          ? "已钉图"
-                          : "钉图：把本次截图钉在识别面板上方"
-                    }
+                    aria-label="钉图"
                   >
                   {pinOk ? CheckIcon : <ImagePlus size={13} strokeWidth={1.75} />}
                 </button>
@@ -2398,11 +2574,7 @@ export default function App() {
                       setOcrPinnedState(next);
                       invoke("set_ocr_pinned", { pinned: next }).catch(() => undefined);
                     })}
-                    title={
-                      ocrPinned
-                        ? "取消钉住（点空白/Esc 即收起，以后新结果都不钉）"
-                        : "钉住面板（点空白/Esc 不收起，以后新结果都保持钉住）"
-                    }
+                    aria-label="钉住面板"
                   >
                   {ocrPinned ? <PinOff size={13} strokeWidth={1.75} /> : <Pin size={13} strokeWidth={1.75} />}
                 </button>
@@ -2422,14 +2594,14 @@ export default function App() {
                     window.clearTimeout(copiedOcrTimerRef.current);
                   copiedOcrTimerRef.current = window.setTimeout(() => setCopiedOcr(false), 1200);
                 })}
-                title={phase.output ? "复制结果" : "复制识别文本"}
+                aria-label="复制"
               >
                 {copiedOcr ? CheckIcon : CopyIcon}
               </button>
               <button
                 className="tool"
                 onClick={guarded(closeResultWindow)}
-                title="收起"
+                aria-label="收起"
               >
                 {CloseIcon}
               </button>
@@ -2461,7 +2633,7 @@ export default function App() {
                   onClick={guarded(() =>
                     setPhase((p) => (p.kind === "ocr" ? { ...p, expanded: !p.expanded } : p)),
                   )}
-                  title={phase.expanded ? "收起原文" : "展开原文"}
+                  aria-label="展开或收起原文"
                 >
                   <ChevronDown
                     size={13}
@@ -2540,7 +2712,7 @@ export default function App() {
                         : enabledEngines.length > 1) && (
                       <button
                         className="chev"
-                        title={
+                        aria-label={
                           a.id === "translate"
                             ? "更多翻译服务"
                             : a.id === "obsidian"
@@ -2567,7 +2739,7 @@ export default function App() {
                 <button
                   className="jump-down"
                   onClick={guarded(ocrJumpToBottom)}
-                  title="回到底部"
+                  aria-label="回到底部"
                 >
                   <ChevronDown size={13} strokeWidth={2} />
                 </button>

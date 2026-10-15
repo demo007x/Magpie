@@ -1,6 +1,6 @@
 [package]
 name = "magpie"
-version = "0.1.13"
+version = "0.1.14"
 description = "拾趣 Magpie · 划词即理解的 AI 阅读伴侣"
 edition = "2021"
 rust-version = "1.80"
@@ -19,12 +19,30 @@ serde_json = "1"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 futures-util = "0.3"
 base64 = "0.22"
-# 钉图复制到剪贴板：PNG 解码为 RGBA（只开 png 特性控制编译体积）
-image = { version = "0.25", default-features = false, features = ["png"] }
-core-foundation = "0.10"
+# 钉图复制到剪贴板 + Windows OCR 预处理：解码/缩放/编码
+# （macOS Vision 直接吃文件路径；Windows 侧统一转 PNG 喂 BitmapDecoder）
+image = { version = "0.25", default-features = false, features = [
+  "png",
+  "jpeg",
+  "gif",
+  "bmp",
+  "tiff",
+  "webp",
+] }
 md-5 = "0.10"
 arboard = "3"
 rfd = "0.15"
+
+# 非 macOS 日期实体：本地规则层（正则 + 本地时区日历运算）。
+# macOS 走 NSDataDetector，零日期依赖；两端同一 DateHit 契约
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+regex = "1"
+
+# macOS 专属 FFI：objc2 系与 CF 桥接（使用点全部 cfg(target_os = "macos") 门控，
+# 非 macOS 构建不编译这些 crate——误用面与编译体积双降）
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
 objc2 = "0.6"
 block2 = "0.6"
 objc2-app-kit = { version = "0.3", features = [
@@ -47,6 +65,33 @@ objc2-vision = { version = "0.3", features = [
   "VNObservation",
   "VNRequestHandler",
 ] }
+
+# Windows 专属：划词捕获（WH_MOUSE_LL + UIA）、OCR 截屏（GDI BitBlt）、
+# Windows.Media.Ocr 识别、不抢焦点/圆角等窗口细节
+[target.'cfg(target_os = "windows")'.dependencies]
+# WinRT 异步对象（IAsyncOperation/CompletedHandler）0.62 起在 windows-future
+windows-future = "0.3"
+windows = { version = "0.62", features = [
+  "Foundation",
+  "Foundation_Collections",
+  "Globalization",
+  "Graphics_Imaging",
+  "Media_Ocr",
+  "Storage_Streams",
+  "Win32_Foundation",
+  "Win32_Graphics_Dwm",
+  "Win32_Graphics_Gdi",
+  "Win32_System_Com",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Threading",
+  "Win32_System_WinRT",
+  "Win32_UI_Accessibility",
+  "Win32_UI_Controls",
+  "Win32_UI_HiDpi",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }
+uiautomation = "0.25.1"
 
 # 本地补丁：修复 wry 上游 #1752 —— WebKit 偶发 nil URL 导致
 # url_scheme_handler unwrap panic（extern "C" 不可 unwind，进程 abort）

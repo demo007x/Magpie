@@ -5,13 +5,22 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
-  server: { port: 5173, strictPort: true },
+  server: {
+    port: 5173,
+    strictPort: true,
+    // 监视排除 Rust 构建产物：cargo 链接期间 magpie.exe 被锁，
+    // chokidar watch 到 EBUSY 直接崩掉整个 dev 进程（Windows 实测）
+    watch: {
+      ignored: ["**/src-tauri/target/**", "**/dist/**"],
+    },
+  },
   build: {
     rollupOptions: {
       input: {
         main: "index.html",
         floating: "floating.html",
         toast: "toast.html",
+        snap: "snap.html",
       },
     },
   },

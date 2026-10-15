@@ -39,6 +39,7 @@ pub use macos::start;
 #[cfg(target_os = "macos")]
 use macos::{
     ax_service_probe as platform_ax_service_probe,
+    capture_available as platform_capture_available,
     is_accessibility_granted,
     listen_event_access as platform_listen_event_access,
     open_accessibility_settings as open_platform_settings,
@@ -48,16 +49,36 @@ use macos::{
     screen_capture_access as platform_screen_capture_access,
 };
 
-#[cfg(not(target_os = "macos"))]
-mod other;
-#[cfg(not(target_os = "macos"))]
-pub use other::start;
-#[cfg(not(target_os = "macos"))]
-use other::{
+// Windows 后端：WH_MOUSE_LL 低级钩子 + UI Automation 选区查询（docs/03 §A.7）
+#[cfg(target_os = "windows")]
+mod windows;
+#[cfg(target_os = "windows")]
+pub use windows::start;
+#[cfg(target_os = "windows")]
+use windows::{
     ax_service_probe as platform_ax_service_probe,
+    capture_available as platform_capture_available,
     is_accessibility_granted,
     listen_event_access as platform_listen_event_access,
     open_accessibility_settings as open_platform_settings,
+    prompt_accessibility as prompt_platform_accessibility,
+    screen_capture_access as platform_screen_capture_access,
+};
+
+// 其余平台占位（Linux 等，无划词能力）
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+mod other;
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub use other::start;
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+use other::{
+    ax_service_probe as platform_ax_service_probe,
+    capture_available as platform_capture_available,
+    is_accessibility_granted,
+    listen_event_access as platform_listen_event_access,
+    open_accessibility_settings as open_platform_settings,
+    prompt_accessibility as prompt_platform_accessibility,
+    screen_capture_access as platform_screen_capture_access,
 };
 
 use serde::Serialize;
@@ -118,6 +139,9 @@ pub struct CaptureStatus {
     pub listen_event_access: bool,
     /// 屏幕录制权限（OCR 截图取词需要）
     pub screen_capture_access: bool,
+    /// 划词捕获在本平台是否真实可用：前端据此显隐「划词/黑名单」导航
+    ///（无能力的菜单不显示，winVmac Windows 适配约定）
+    pub capture_available: bool,
     pub platform: String,
 }
 
@@ -129,6 +153,7 @@ pub fn capture_status(app: AppHandle) -> CaptureStatus {
         ax_service_ok: platform_ax_service_probe(),
         listen_event_access: platform_listen_event_access(),
         screen_capture_access: platform_screen_capture_access(),
+        capture_available: platform_capture_available(),
         platform: std::env::consts::OS.to_string(),
     };
     let _ = app.emit("capture://permission", json!({ "granted": granted }));

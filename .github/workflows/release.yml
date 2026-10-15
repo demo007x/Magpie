@@ -1,7 +1,8 @@
 name: Release
 
-# 推送 v* 标签 → 自动构建 Universal 2 包并创建 Release；
-# 也可在 Actions 页手动触发（产物在 Artifacts 下载）。
+# 推送 v* 标签 → 自动构建 macOS Universal 2 与 Windows x64 安装包并创建
+# 同一个 Release（两个任务并行跑，tauri-action 对已存在的 Release 直接追加
+# 产物）；也可在 Actions 页手动触发（产物在 Artifacts 下载）。
 on:
   push:
     tags:
@@ -83,4 +84,73 @@ jobs:
           name: magpie-macos-universal
           path: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  release-windows:
+    permissions:
+      contents: write # tauri-action 创建/挂载 Release 需要
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      # 不写死版本：由 package.json 的 packageManager 字段决定，与本地开发环境一致
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装 Rust（stable）
+        uses: dtolnay/rust-toolchain@stable
+
+      # 单包工程在 src-tauri（根目录无 Cargo.toml），显式指向以命中缓存
+      - name: Rust 编译缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      # 从 CHANGELOG.md 提取当前版本的段落作为 Release Note（与 macOS 任务
+      # 同源同格式；windows runner 默认 shell 是 pwsh，heredoc 语法须显式 bash）
+      - name: 提取 Release Note
+        id: relnotes
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          {
+            echo "body<<RELEASE_BODY_EOF"
+            python -c "import os,re; tag=os.environ['GITHUB_REF_NAME'].lstrip('v'); t=open('CHANGELOG.md',encoding='utf-8').read(); m=re.search(r'## \['+re.escape(tag)+r'\][^\n]*\n(.*?)(?=\n## \[|\Z)',t,re.S); print(m.group(1).strip() if m else '拾趣 Magpie '+tag)"
+            echo "RELEASE_BODY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # 无需 macOS 任务的 ocr_helper 预合并步骤：Windows 单架构，cargo 一次
+      # 构建主程序与 src/bin/ocr_helper.exe，tauri 打包器会一并装入 NSIS/MSI。
+      # wry 上游补丁以 vendor/ 目录随仓库走（[patch.crates-io] 指向它），CI 直接可用
+      - name: 构建（Windows x64）
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # 标签推送时挂载到 macOS 任务创建的同一个 Release
+          #（未传 args = 构建当前宿主目标 x86_64-pc-windows-msvc）
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('拾趣 Magpie {0}', github.ref_name) || '' }}
+          releaseBody: ${{ steps.relnotes.outputs.body || '' }}
+          releaseDraft: false
+          prerelease: false
+
+      - name: 上传构建产物（手动触发时）
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: magpie-windows-x64
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: error

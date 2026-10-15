@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.1.14] - 2026-10-15
+
+### Added
+
+- Windows floating bar adopts the one-card-per-window layout: the capsule, the overflow panel and the submenus are each a native top-level card with its own DWM shadow and rounded corners (Win11), with real gaps between cards. Clicks in the gaps fall through to the app underneath instead of being swallowed by an invisible zone.
+- Per-provider thinking-mode toggle (off by default) in model services. The thinking parameter of each vendor (DeepSeek, Zhipu, Doubao, Qwen/DashScope, SiliconFlow, OpenAI, xAI, OpenRouter) is injected based on the service URL; unknown endpoints are left untouched so they keep working unchanged.
+
+### Changed
+
+- Removed hover tooltips across the floating bar, its panels and the result window: the native tooltips flashed distractingly during quick actions. Icon-only buttons keep accessible labels (aria-label) instead.
+- Fresh installs no longer preset app-blacklist entries (1Password / Passwords); the blacklist starts empty on every platform.
+- Using a translate service whose credentials are not configured yet now shows a clear hint about what to set up (default model for AI translation, APPID and key for Baidu, key for DeepL) instead of surfacing the upstream API error.
+
 ## [0.1.13] - 2026-10-12
 
 ### Changed

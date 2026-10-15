@@ -34,20 +34,37 @@ fn set_launch_at_login(app: AppHandle, enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// 快捷键的菜单栏显示形式："Alt+S" → "⌥S"，"CmdOrCtrl+Shift+O" → "⌘⇧O"
+/// 快捷键的托盘菜单显示形式：macOS "Alt+S" → "⌥S"；Windows 保留 "Alt+S" 原文
+/// （与前端 App.tsx displayShortcut 的 IS_MAC 分叉同一套映射，两处需同步）
 fn shortcut_display(s: &str) -> String {
-    s.trim()
+    let is_mac = cfg!(target_os = "macos");
+    let parts: Vec<String> = s
+        .trim()
         .split('+')
         .map(str::trim)
         .filter(|p| !p.is_empty())
         .map(|p| match p.to_ascii_lowercase().as_str() {
-            "cmdorctrl" | "cmd" | "command" | "ctrl" | "control" => "⌘".to_string(),
-            "alt" | "option" | "opt" => "⌥".to_string(),
-            "shift" => "⇧".to_string(),
-            "super" | "meta" => "⊞".to_string(),
+            "cmdorctrl" | "cmd" | "command" | "ctrl" | "control" => {
+                if is_mac { "⌘".into() } else { "Ctrl".into() }
+            }
+            "alt" | "option" | "opt" => {
+                if is_mac { "⌥".into() } else { "Alt".into() }
+            }
+            "shift" => {
+                if is_mac { "⇧".into() } else { "Shift".into() }
+            }
+            "super" | "meta" => {
+                if is_mac { "⌘".into() } else { "Win".into() }
+            }
             other => other.to_uppercase(),
         })
-        .collect()
+        .collect();
+    // macOS 符号连写（⌘⇧O）；Windows 用 + 连接（Ctrl+Shift+O）
+    if is_mac {
+        parts.concat()
+    } else {
+        parts.join("+")
+    }
 }
 
 /// 托盘右键菜单（快捷键变更后重建，让识图类各项旁始终显示当前设定的键）。
@@ -129,6 +146,10 @@ fn start_ocr_flow(app: tauri::AppHandle, action: Option<&'static str>) {
             s.translate.enabled.first().cloned().unwrap_or_default()
         }
     });
+    // Windows：无系统级框选命令，流程由遮罩窗事件驱动（选区回调续跑识别）
+    #[cfg(target_os = "windows")]
+    ocr::start_region_capture_windows(&app, action, service);
+    #[cfg(not(target_os = "windows"))]
     tauri::async_runtime::spawn(async move {
         let image = match tauri::async_runtime::spawn_blocking(ocr::capture_region_to_file).await
         {
@@ -386,6 +407,9 @@ fn is_safe_url(url: &str) -> bool {
 
 fn main() {
     tauri::Builder::default()
+        // 状态必须先于窗口创建就位：Windows 上 webview 加载极快，ocr/floating
+        // 窗口一就绪就会 invoke 命令（实测早于 setup 尾部的 manage → panic）
+        .manage(floating::FloatingState::default())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -418,6 +442,10 @@ fn main() {
             settings::init(&handle);
             // 结果面板「钉住」偏好：沿用用户最后一次点钉的选择（默认钉住）
             floating::init_result_pin(&handle);
+            // Windows 分离卡（方案甲一卡一窗）：先建二级浮层窗口，
+            // 后面的窗口属性循环才能覆盖到它们
+            #[cfg(target_os = "windows")]
+            floating::init_pop_windows(&handle);
 
             // 自启状态同步：LaunchAgent 是 OS 侧事实，settings 只是镜像——
             // 应用启动时若两者漂移（系统清理了 plist 等），按 settings 静默拉齐
@@ -467,16 +495,37 @@ fn main() {
             // dev 保底：托盘缺席时主窗口是唯一入口（见 dev_show_main_window 注释）
             dev_show_main_window(&handle);
 
-            // 弹出层窗口原生圆角（CSS 圆角压在透明窗口边界必出毛刺，见 floating.rs）
-            for label in ["floating", "ocr", "toast"] {
+            // 弹出层窗口原生圆角（CSS 圆角压在透明窗口边界必出毛刺，见 floating.rs）；
+            // Windows 一并去掉带阴影窗口自带的 1px 系统强调色边框（Win11，
+            // DWMWA_BORDER_COLOR = NONE，见 floating.rs）。弹层标签在 macOS 不存在，
+            // get_webview_window 返回 None 自动跳过
+            for label in ["floating", "ocr", "toast", "floating-panel", "floating-menu"] {
                 if let Some(w) = app.get_webview_window(label) {
                     floating::apply_native_corner_radius(&w, 12.0);
                 }
             }
 
+            // Windows：方案甲「一卡一窗」——每张卡是一扇零出血窗口，窗口矩形 =
+            // 卡片矩形。阴影不走 tao 的无边框阴影：它以 WM_NCCALCSIZE 内缩
+            // 客户区一圈不可见非客户带换阴影（Win11 顶部约 2 物理像素），窗口
+            // 矩形 ≠ 卡片矩形，阴影沿外圈画、带子透出桌面成毛边——改在
+            // 「客户区 = 满窗」前提下自请 DWM 边框（apply_frame_shadow），
+            // 阴影/圆角沿卡片画。不可聚焦（WS_EX_NOACTIVATE，对位 macOS
+            // orderFrontRegardless）：划词弹出浮动条不抢焦点，目标应用保持
+            // 选区高亮。点击/滚轮不受影响；排除 snap（遮罩要收 Esc 键盘）
+            // 与 pin（Esc 关闭需键盘）
+            #[cfg(target_os = "windows")]
+            for label in ["floating", "floating-panel", "floating-menu", "ocr", "toast"] {
+                if let Some(w) = app.get_webview_window(label) {
+                    let _ = w.set_shadow(false);
+                    floating::apply_frame_shadow(&w);
+                    let _ = w.set_focusable(false);
+                }
+            }
+
             // 非激活窗口的 hover：悬浮条/结果窗不抢焦点（非 key），默认收不到
             // mouseMoved 事件——不开启则 CSS :hover 在首次点击前不生效
-            for label in ["floating", "ocr"] {
+            for label in ["floating", "ocr", "floating-panel", "floating-menu"] {
                 if let Some(w) = app.get_webview_window(label) {
                     floating::apply_hover_tracking(&w);
                 }
@@ -491,8 +540,6 @@ fn main() {
             let debounce_ms = settings::current(&handle).debounce_ms;
             capture::start(&handle, tx, debounce_ms);
             capture::spawn_worker(handle.clone(), rx);
-
-            app.manage(floating::FloatingState::default());
 
             // 状态栏常驻图标：左键进主页面；右键菜单含「识图取字」当前快捷键提示
             let menu = build_tray_menu(&handle)?;
@@ -596,7 +643,12 @@ fn main() {
             floating::persist_result_window_state,
             floating::screen_rect_at,
             floating::floating_window_pos,
+            floating::set_floating_pops,
+            floating::pop_ready,
+            floating::floating_pick,
             floating::move_ocr,
+            ocr::ocr_region_selected,
+            ocr::ocr_region_cancel,
             pin::pin_get_data,
             pin::pin_window_ready,
             toast::notify,

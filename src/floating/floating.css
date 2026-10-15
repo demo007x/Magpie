@@ -1222,3 +1222,27 @@ body,
 .retry:hover {
   background: var(--press);
 }
+
+/* ---- Windows 悬浮层（html.win 根类，见 main.tsx）----
+   方案甲「一卡一窗」（与 floating.rs 分离卡注释同源）：胶囊 / 收纳面板 /
+   窄单列菜单各是一扇零出血窗口（floating / floating-panel / floating-menu），
+   窗口矩形 = 卡片矩形——DWM 矩形阴影恰好贴合卡片。此前「整窗一卡」时
+   窗口比卡片大，出血与卡间缝原样透出桌面成「透明圈」，即透明圈反复出现
+   的根因；分离卡后卡间缝是真实桌面，点击穿透、由钩子按缝外点击 dismiss。
+   圆角对齐 DWM 物理半径（系统约 8 物理像素）：CSS 弧若大于 DWM 弧，角部
+   会出现「CSS 半透明弧 vs 系统裁切弧」的双层抗锯齿毛刺，收到 ≤DWM 后可见
+   角恒由系统合成器裁出；发丝描边取 1 物理像素——0.5px 在分数缩放（1.25/1.5）
+   下被抗锯齿稀释成糊线（--dpr 由 main.tsx 注入，跨屏 DPI 变化随 resize 刷新）。
+   macOS 无 .win 根类，以下规则不生效，分离卡
+   （8px 出血 + 原生阴影按内容轮廓画影）样式零改动。 */
+html.win .stage {
+  background: transparent;
+}
+
+html.win .bar,
+html.win .panel,
+html.win .pop {
+  margin: 0;
+  border-radius: calc(8px / var(--dpr, 1));
+  box-shadow: inset 0 0 0 calc(1px / var(--dpr, 1)) var(--edge);
+}

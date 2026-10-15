@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>拾趣 · 提示</title>
+    <script>
+      // Windows 零出血样式根类（toast.css 的 html.win 规则依赖它）。
+      // 内联在 head 同步执行：首帧前挂上，不依赖模块加载时序
+      if (!/Mac/i.test(navigator.platform)) {
+        document.documentElement.classList.add("win");
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

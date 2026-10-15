@@ -6,14 +6,20 @@
 //! 解析失败回退 bundle 名称（如 WeChat.app，走进程路径 contains 兜底）。用户取消 = None。
 //! 必须在主线程调用（Tauri 同步命令默认在主线程执行）。
 
+#[cfg(target_os = "macos")]
 use std::ffi::{CStr, CString};
+#[cfg(target_os = "macos")]
 use std::os::raw::{c_char, c_void};
+#[cfg(target_os = "macos")]
 use std::path::Path;
 
-// 显式链接 AppKit（NSBundle/NSRunningApplication）与 UniformTypeIdentifiers
+// 显式链接 AppKit（NSBundle/NSRunningApplication）与 UniformTypeIdentifiers。
+// 以下 ObjC FFI 辅助仅 macOS 使用（Windows 走 rfd 文件对话框 + exe 名）
+#[cfg(target_os = "macos")]
 #[link(name = "AppKit", kind = "framework")]
 extern "C" {}
 
+#[cfg(target_os = "macos")]
 #[allow(clashing_extern_declarations)]
 extern "C" {
     fn objc_getClass(name: *const c_char) -> *mut c_void;
@@ -28,16 +34,19 @@ extern "C" {
     fn msg_send_utf8(receiver: *mut c_void, sel: *mut c_void) -> *const c_char;
 }
 
+#[cfg(target_os = "macos")]
 fn class(name: &str) -> *mut c_void {
     let c = CString::new(name).unwrap();
     unsafe { objc_getClass(c.as_ptr()) }
 }
 
+#[cfg(target_os = "macos")]
 fn sel(name: &str) -> *mut c_void {
     let c = CString::new(name).unwrap();
     unsafe { sel_registerName(c.as_ptr()) }
 }
 
+#[cfg(target_os = "macos")]
 fn ns_string(s: &str) -> *mut c_void {
     unsafe {
         msg_send_id_char(
@@ -48,6 +57,7 @@ fn ns_string(s: &str) -> *mut c_void {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn ns_to_string(obj: *mut c_void) -> String {
     if obj.is_null() {
         return String::new();
@@ -65,7 +75,16 @@ fn ns_to_string(obj: *mut c_void) -> String {
 pub fn pick_app_bundle() -> Option<String> {
     #[cfg(target_os = "macos")]
     return pick_impl();
-    #[cfg(not(target_os = "macos"))]
+    // Windows：应用标识 = 可执行文件名（如 notepad.exe）。is_blacklisted 按
+    // 进程路径小写子串匹配，文件名在应用移动/重装后仍命中，等价 macOS 端
+    // bundle id 的稳定性；UIA 侧拿不到 bundle id，exe 名即最稳标识
+    #[cfg(target_os = "windows")]
+    return rfd::FileDialog::new()
+        .set_title("选择要加入黑名单的应用")
+        .add_filter("应用程序", &["exe", "lnk"])
+        .pick_file()
+        .and_then(|path| path.file_name().map(|s| s.to_string_lossy().into_owned()));
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     None
 }
 
@@ -104,18 +123,13 @@ fn pick_impl() -> Option<String> {
 }
 
 /// 系统目录选择面板：供 Obsidian vault 路径选择。用户取消 = None。
-/// 必须在主线程调用（Tauri 同步命令默认在主线程执行）。
+/// rfd pick_folder 三平台一致；必须在主线程调用（Tauri 同步命令默认在主线程执行）。
 #[tauri::command]
 pub fn pick_vault_dir() -> Option<String> {
-    #[cfg(target_os = "macos")]
-    {
-        let path = rfd::FileDialog::new()
-            .set_title("选择 Obsidian Vault 目录")
-            .pick_folder()?;
-        return Some(path.to_string_lossy().into_owned());
-    }
-    #[cfg(not(target_os = "macos"))]
-    None
+    let path = rfd::FileDialog::new()
+        .set_title("选择 Obsidian Vault 目录")
+        .pick_folder()?;
+    Some(path.to_string_lossy().into_owned())
 }
 
 /// 系统文件选择面板：选一张图片供「访达选图取字」识别。用户取消 = None。

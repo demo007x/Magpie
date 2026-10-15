@@ -55,6 +55,20 @@ body,
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
 }
 
+/* Windows 出场淡入：窗口级滚入动画是 macOS NSAnimationContext 的能力，
+   Windows 侧窗口瞬显，内容淡入做柔和过渡（对齐 floating.css html.win 思路：
+   平台差异收在 CSS，逻辑零分支） */
+@keyframes toast-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .toast-pop {
   display: flex;
   align-items: center;
@@ -166,4 +180,28 @@ body,
   -webkit-line-clamp: 2;
   overflow: hidden;
   overflow-wrap: anywhere;
+}
+
+/* Windows（html.win 根类）：卡片铺满窗口、零出血——CSS 阴影过淡在亮色
+   背景上显形为「透明圈」（同结果窗 .panel 的处理）；悬浮感由原生 DWM
+   阴影承担（main.rs 对 toast 开启 set_shadow：零出血下窗口矩形即卡片，
+   矩形阴影恰好贴合，见 floating.rs 分离卡注释），圆角由 DWM 窗口圆角完成。
+   圆角/描边按物理像素取值（--dpr 由 main.tsx 注入）：0.5px 描边在分数缩放
+   （1.25/1.5）下被抗锯齿稀释成糊线，CSS 圆弧大于 DWM 裁切弧会出双层抗锯齿
+   毛刺——机制与 floating.css html.win 同源。
+   macOS 无 .win 根类，stage 出血 + CSS 阴影结构保持不变 */
+html.win .stage {
+  padding: 0;
+  /* 窗口宽度被下限钳制而大于卡片时（短文案如「正在识别…」），卡片保持
+     水平居中——否则卡片左对齐、右侧露出一段透明带 */
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+html.win .toast-pop {
+  border-radius: calc(8px / var(--dpr, 1));
+  border-width: calc(1px / var(--dpr, 1));
+  box-shadow: inset 0 0 0 calc(1px / var(--dpr, 1)) var(--line);
+  animation: toast-fade-in 0.22s ease-out;
 }

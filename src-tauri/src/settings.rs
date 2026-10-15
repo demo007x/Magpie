@@ -16,6 +16,10 @@ pub struct Provider {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
+    /// 思考模式：开启 = 注入厂商思考开关参数（更准更慢）；关闭 = 注入关闭参数
+    /// （仅已知厂商，见 ai.rs::thinking_patch）；未知厂商不传任何参数（保持厂商默认）
+    #[serde(default)]
+    pub thinking: bool,
 }
 
 impl Default for Provider {
@@ -26,6 +30,7 @@ impl Default for Provider {
             base_url: "https://api.deepseek.com".into(),
             api_key: String::new(),
             model: "deepseek-chat".into(),
+            thinking: false,
         }
     }
 }
@@ -316,7 +321,7 @@ impl Default for Settings {
             ocr_explain_shortcut: default_ocr_explain_shortcut(),
             ocr_summarize_shortcut: default_ocr_summarize_shortcut(),
             file_ocr_shortcut: default_file_ocr_shortcut(),
-            app_blacklist: vec!["1Password".into(), "Passwords".into()],
+            app_blacklist: Vec::new(),
             debounce_ms: 200,
             obsidian: ObsidianConfig::default(),
             result_window_pos: None,

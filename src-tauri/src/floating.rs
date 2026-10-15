@@ -45,6 +45,82 @@ pub(crate) fn show_without_activation(win: &WebviewWindow) -> Result<(), String>
     Ok(())
 }
 
+/// 原生圆角裁切：macOS 走 NSWindow contentView 图层（12px 精确圆角）；
+/// Windows 走 DWM 窗口圆角属性（Win11 22H2+，系统固定约 8px——radius 参数
+/// 在 Windows 不生效，视觉略小但远好于 CSS 圆角压透明边界的毛刺）；
+/// Win10 对该属性返回错误 → 自动维持 CSS 圆角回退，行为不变
+#[cfg(target_os = "windows")]
+pub fn apply_native_corner_radius(win: &WebviewWindow, _radius: f64) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWM_WINDOW_CORNER_PREFERENCE,
+        DWMWCP_ROUND,
+    };
+
+    if let Ok(hwnd) = win.hwnd() {
+        // tauri 的 HWND 来自其自身 windows crate 版本，跨版本按裸指针重建
+        let hwnd = HWND(hwnd.0);
+        unsafe {
+            let pref = DWM_WINDOW_CORNER_PREFERENCE(DWMWCP_ROUND.0);
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &pref as *const _ as *const std::ffi::c_void,
+                std::mem::size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
+            );
+            // Win11 21H2+：DWMWA_BORDER_COLOR = DWMWA_COLOR_NONE 去掉带阴影的
+            // 无边框窗口自带的 1px 系统强调色边框（阴影保留）。属性值按 SDK
+            // 头文件原值书写（部分 windows crate 版本未导出这两个常量；
+            // COLOR_NONE = 0xFFFFFFFE，属性枚举是 i32，按位同值即 -2）。
+            // Win10 无此属性，调用失败即忽略（CSS 圆角兜底不受影响）
+            const DWMWA_BORDER_COLOR: i32 = 34;
+            const DWMWA_COLOR_NONE: i32 = -2; // 0xFFFFFFFE
+            let none = DWMWA_COLOR_NONE;
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                windows::Win32::Graphics::Dwm::DWMWINDOWATTRIBUTE(DWMWA_BORDER_COLOR),
+                &none as *const _ as *const std::ffi::c_void,
+                std::mem::size_of::<i32>() as u32,
+            );
+        }
+    }
+}
+
+/// 悬浮卡的 DWM 阴影：不能用 tao 的无边框阴影（set_shadow(true)）——它靠
+/// WM_NCCALCSIZE 把客户区从窗口矩形内缩一圈不可见非客户带换阴影（Win11
+/// 顶部 round(dpi/96)≈2 物理像素，tao calculate_insets_for_dpi），窗口矩形
+/// ≠ 卡片矩形：阴影沿外圈画、带子透出桌面，卡片上缘显形为毛边。
+/// 这里在「客户区 = 满窗」（卡片零出血贴边）的前提下，用经典配方自请
+/// DWM 边框（DwmExtendFrameIntoClientArea 1px）恢复阴影与圆角：边框线颜色
+/// 已由 BORDER_COLOR=NONE 收掉，1px 玻璃边被卡片不透明像素盖住（仅 CSS
+/// 圆角外的透明角露出，该处本就被 DWM 圆角裁掉）。前提：set_shadow(false)
+/// 先行（否则 MARKER_UNDECORATED_SHADOW 仍会让 WM_NCCALCSIZE 内缩客户区）
+#[cfg(target_os = "windows")]
+pub fn apply_frame_shadow(win: &WebviewWindow) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
+    use windows::Win32::UI::Controls::MARGINS;
+
+    if let Ok(hwnd) = win.hwnd() {
+        let hwnd = HWND(hwnd.0);
+        unsafe {
+            let _ = DwmExtendFrameIntoClientArea(
+                hwnd,
+                &MARGINS {
+                    cxLeftWidth: 1,
+                    cxRightWidth: 1,
+                    cyTopHeight: 1,
+                    cyBottomHeight: 1,
+                },
+            );
+        }
+    }
+}
+
+/// 其余平台无原生圆角能力，CSS 圆角兜底
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub fn apply_native_corner_radius(_win: &WebviewWindow, _radius: f64) {}
+
 /// 原生圆角裁切：给 NSWindow contentView 的图层设 cornerRadius + masksToBounds。
 /// 透明窗口上 CSS 圆角压在窗口边界，WebKit 透明合成层不做边缘抗锯齿，必然出毛刺；
 /// 原生图层裁切由系统合成器完成，圆弧与原生 App 同级平滑。（社区共识方案）
@@ -77,9 +153,249 @@ pub const DEFAULT_W: f64 = 328.0;
 pub const DEFAULT_H: f64 = 54.0;
 
 /// 分离卡四周透明留白（窗口边缘到卡片边缘）。卡片圆角/描边必须落在窗口
-/// 内部（CSS 圆角压窗口边界会出毛刺），留白同时为将来 CSS 阴影预留空间。
+/// 内部（CSS 圆角压窗口边界会出毛刺）。
+/// macOS：留白 8px，窗口阴影按内容 alpha 轮廓画，留白区被投影衬住。
+/// Windows：方案甲「一卡一窗」——窗口矩形 = 卡片矩形，留白归零
+/// （任何出血都会原样透出桌面成「透明圈」，见 docs/03 §B.1.1）。
 /// 与 src/floating/App.tsx 的 FLOAT_PAD 保持一致
-pub const FLOAT_PAD: f64 = 8.0;
+pub const FLOAT_PAD: f64 = if cfg!(target_os = "windows") { 0.0 } else { 8.0 };
+
+/// 卡间缝：胶囊卡与二级卡片之间的空隙（逻辑坐标）。
+/// 与 src/floating/App.tsx 的 CARD_GAP 保持一致
+pub const CARD_GAP: f64 = 3.0;
+
+// ---- Windows 分离卡二级浮层（方案甲：一卡一窗）----
+// macOS 的分离卡靠「同窗多卡 + NSWindow 按 alpha 轮廓画影」成立；Windows 的
+// DWM 阴影跟窗口矩形走，任何出血/卡间缝都会原样透出桌面。对等结构改为：
+// 每张卡就是一扇零出血窗口（floating = 胶囊、floating-panel = 收纳面板、
+// floating-menu = 窄单列菜单），DWM 矩形阴影恰好就是卡片阴影，卡间缝是
+// 真实桌面——点击穿透到下层应用，钩子按缝外点击正常 dismiss，无死区。
+// 弹层窗口是哑渲染端：内容数据与锚点由胶囊窗口经 set_floating_pops 推来，
+// 量得尺寸后经 pop_ready 回传，Rust 负责定位/翻转/钳制/显隐（胶囊像素不动）。
+
+/// 二级浮层卡片的落位（逻辑矩形）。存在即可见——hide_pops 会清空
+#[derive(Debug, Clone, Copy)]
+pub struct PopRect {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+/// 弹层运行时状态：各卡落位 + 下次定位锚点。
+/// 锚点 None = 沿用上次值（payload 重发刷新内容时不得把面板拽回默认位）
+#[derive(Debug, Default)]
+struct PopsState {
+    panel: Option<PopRect>,
+    menu: Option<PopRect>,
+    panel_trig_x: Option<f64>,
+    menu_trig_x: Option<f64>,
+    menu_row_y: Option<f64>,
+}
+
+static POPS: Mutex<PopsState> = Mutex::new(PopsState {
+    panel: None,
+    menu: None,
+    panel_trig_x: None,
+    menu_trig_x: None,
+    menu_row_y: None,
+});
+
+/// 创建二级浮层窗口（预建常驻隐藏，配置与 floating 一致；仅 Windows 存在，
+/// macOS 不建——分离卡由单窗原生阴影承担，不多养两份 WKWebView）
+#[cfg(target_os = "windows")]
+pub fn init_pop_windows(app: &AppHandle) {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    for label in ["floating-panel", "floating-menu"] {
+        if app.get_webview_window(label).is_some() {
+            continue;
+        }
+        let built = WebviewWindowBuilder::new(app, label, WebviewUrl::App("floating.html".into()))
+            .title("Magpie")
+            .decorations(false)
+            .transparent(true)
+            .visible(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .shadow(true)
+            .focused(false)
+            .inner_size(220.0, 120.0)
+            .build();
+        if let Err(e) = built {
+            debug_log(format!("floating: 创建 {label} 失败 {e}"));
+        }
+    }
+}
+
+/// 收起全部二级浮层窗口并清空状态（无窗口/未创建时静默，跨平台可调）
+pub fn hide_pops(app: &AppHandle) {
+    if let Ok(mut s) = POPS.lock() {
+        *s = PopsState::default();
+    }
+    for label in ["floating-panel", "floating-menu"] {
+        if let Some(w) = app.get_webview_window(label) {
+            let _ = w.hide();
+        }
+    }
+}
+
+/// 二级浮层窗口是否至少有一个可见（卡片存在即可见，见 PopRect 注释）
+pub fn pops_visible(app: &AppHandle) -> bool {
+    let _ = app;
+    let s = POPS.lock().unwrap_or_else(|e| e.into_inner());
+    s.panel.is_some() || s.menu.is_some()
+}
+
+/// 点是否落在任一可见二级浮层卡内（含 pad 边距）
+fn pop_rect_contains(x: f64, y: f64, pad: f64) -> bool {
+    let s = POPS.lock().unwrap_or_else(|e| e.into_inner());
+    [s.panel, s.menu].iter().any(|r| {
+        r.map_or(false, |r| {
+            x >= r.x - pad && x <= r.x + r.w + pad && y >= r.y - pad && y <= r.y + r.h + pad
+        })
+    })
+}
+
+/// Windows 分离卡：胶囊窗口推送二级浮层的渲染数据与锚点。
+/// target："panel"（收纳面板）| "menu"（窄单列菜单）| "close-panel" / "close-menu"
+/// （单收一张卡——同屏只开一个入口，胶囊 ⌄ 与面板 ⌄ 互斥）| "none"（全收起）；
+/// trig_x = 触发钮在胶囊内的 x（chev:* 菜单锚点）；row_y = 行在面板内的 y
+/// （pmenu 行侧菜单锚点）。data 由胶囊按当前状态组装（弹层是哑渲染端）。
+/// 锚点传 None 表示沿用上次值（内容刷新不得移动已定位的面板）
+#[tauri::command]
+pub fn set_floating_pops(
+    app: AppHandle,
+    target: String,
+    data: serde_json::Value,
+    trig_x: Option<f64>,
+    row_y: Option<f64>,
+) {
+    match target.as_str() {
+        "panel" => {
+            if let Ok(mut s) = POPS.lock() {
+                if trig_x.is_some() {
+                    s.panel_trig_x = trig_x;
+                }
+            }
+            let _ = app.emit_to("floating-panel", "floating://pop", json!({ "open": true, "data": data }));
+        }
+        "menu" => {
+            if let Ok(mut s) = POPS.lock() {
+                if trig_x.is_some() {
+                    s.menu_trig_x = trig_x;
+                }
+                if row_y.is_some() {
+                    s.menu_row_y = row_y;
+                }
+            }
+            let _ = app.emit_to("floating-menu", "floating://pop", json!({ "open": true, "data": data }));
+        }
+        "close-panel" => {
+            if let Ok(mut s) = POPS.lock() {
+                s.panel = None;
+                s.panel_trig_x = None;
+            }
+            if let Some(w) = app.get_webview_window("floating-panel") {
+                let _ = w.hide();
+            }
+        }
+        "close-menu" => {
+            if let Ok(mut s) = POPS.lock() {
+                s.menu = None;
+                s.menu_trig_x = None;
+                s.menu_row_y = None;
+            }
+            if let Some(w) = app.get_webview_window("floating-menu") {
+                let _ = w.hide();
+            }
+        }
+        _ => hide_pops(&app),
+    }
+}
+
+/// 弹层窗口渲染并量得卡片尺寸后回调：按锚点定位（翻转 + 防出屏钳制）后显示。
+/// 定位基准 = 胶囊卡矩形（窗口即卡片，Windows 零出血）与已落位的面板矩形
+#[tauri::command]
+pub fn pop_ready(window: WebviewWindow, width: f64, height: f64) {
+    let label = window.label().to_string();
+    if label != "floating-panel" && label != "floating-menu" {
+        return;
+    }
+    let app = window.app_handle();
+    let (cx, cy, cw, ch, visible) = {
+        let r = *app.state::<FloatingState>().lock().unwrap();
+        (r.x, r.y, r.w, r.h, r.visible)
+    };
+    if !visible {
+        return;
+    }
+    let Some(fwin) = app.get_webview_window("floating") else {
+        return;
+    };
+    let w = width.max(60.0);
+    let h = height.max(28.0);
+    let (m_l, m_t, m_r, m_b) = monitor_rect(&fwin, cx, cy);
+    let clamp_x = |x: f64| x.clamp(m_l + 8.0, (m_r - 8.0 - w).max(m_l + 8.0));
+    let clamp_y = |y: f64| y.clamp(m_t + 8.0, (m_b - 8.0 - h).max(m_t + 8.0));
+
+    let (nx, ny) = {
+        let mut s = POPS.lock().unwrap_or_else(|e| e.into_inner());
+        if label == "floating-panel" {
+            // 锚在胶囊内触发钮 x 左缘；贴屏幕右缘翻转为右对齐胶囊；
+            // 胶囊下方放不下翻转到上方（与 macOS 分离卡翻转语义一致）
+            let mut x = cx + s.panel_trig_x.unwrap_or(0.0);
+            if x + w > m_r - 8.0 {
+                x = cx + cw - w;
+            }
+            let mut y = cy + ch + CARD_GAP;
+            if y + h > m_b - 8.0 {
+                y = cy - CARD_GAP - h;
+            }
+            let (sx, sy) = snap_pos(&fwin, clamp_x(x), clamp_y(y));
+            s.panel = Some(PopRect { x: sx, y: sy, w, h });
+            (sx, sy)
+        } else {
+            // 菜单两种锚点：row_y 存在 = 面板行侧弹出（NSMenu 心智，贴屏幕右缘
+            // 翻回面板左缘）；否则 = 胶囊触发钮下方（chev:*，翻转同面板）
+            let (x, y) = match (s.menu_row_y, s.panel) {
+                (Some(row_y), Some(p)) => {
+                    let mut x = p.x + p.w + CARD_GAP;
+                    if x + w > m_r - 8.0 {
+                        x = p.x - w - CARD_GAP;
+                    }
+                    (x, p.y + row_y)
+                }
+                _ => {
+                    let mut x = cx + s.menu_trig_x.unwrap_or(0.0);
+                    if x + w > m_r - 8.0 {
+                        x = cx + cw - w;
+                    }
+                    (x, cy + ch + CARD_GAP)
+                }
+            };
+            let (sx, sy) = snap_pos(&fwin, clamp_x(x), clamp_y(y));
+            s.menu = Some(PopRect { x: sx, y: sy, w, h });
+            (sx, sy)
+        }
+    };
+    let _ = window.set_size(LogicalSize::new(w, h));
+    let _ = window.set_position(LogicalPosition::new(nx, ny));
+    let _ = show_without_activation(&window);
+    // 置顶带内提到最上：菜单必须盖过面板（show 的相对次序不保证）
+    let _ = window.set_always_on_top(true);
+}
+
+/// 二级浮层窗口的点击回传：转发给胶囊窗口执行。动作语义、选区上下文、
+/// 服务选择与反馈全部活在胶囊窗口——浮层是哑渲染端，不做任何业务
+#[tauri::command]
+pub fn floating_pick(app: AppHandle, kind: String, key: String, row_y: Option<f64>) {
+    let _ = app.emit_to(
+        "floating",
+        "floating://pick",
+        json!({ "kind": kind, "key": key, "rowY": row_y }),
+    );
+}
 
 // ---- 拖拽状态（detect 线程经事件转发驱动，见 capture/macos.rs） ----
 static DRAG_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -138,9 +454,13 @@ fn apply_result_window_size(win: &WebviewWindow) {
     let h = (uh + grow).clamp(RESULT_MIN_H, RESULT_MAX_H + RESULT_MENU_MAX);
     let _ = win.set_size(LogicalSize::new(w, h));
     #[cfg(debug_assertions)]
-    debug_log(&format!(
-        "[menu-grow] rust: user={uw}x{uh} grow={grow} -> set_size {w}x{h}"
-    ));
+    {
+        let phys = win.inner_size().map(|s| format!("{}x{}", s.width, s.height));
+        let scale = win.scale_factor().unwrap_or(0.0);
+        debug_log(format!(
+            "[menu-grow] rust: user={uw}x{uh} grow={grow} -> set_size {w}x{h} phys={phys:?} scale={scale}"
+        ));
+    }
     // 菜单生长后底部越出屏幕则整体上移，保证生长部分可见
     if let (Ok(pos), Ok(Some(m))) = (win.outer_position(), win.current_monitor()) {
         let m_pos = m.position();
@@ -556,14 +876,19 @@ fn window(app: &AppHandle) -> Result<WebviewWindow, String> {
 /// 各显示/隐藏路径经由 update_hover_feed 维护（唯一写入口，没有独立 setter）
 static HOVER_FEED: AtomicBool = AtomicBool::new(false);
 
+/// hover 合成数据源开关：悬浮胶囊**或结果窗**任一可见时开启，tap 回调据此放行
+/// MouseMoved（单独用 AtomicBool 而非读窗口状态——tap 回调线程拿不到 AppHandle）。
+/// 各显示/隐藏路径经由 update_hover_feed 维护（唯一写入口，没有独立 setter）。
+/// 仅 macOS 后端消费（Windows 的 hover 由捕获后端直接转发 MouseMove）
+#[cfg(target_os = "macos")]
 pub fn hover_feed_active() -> bool {
     HOVER_FEED.load(Ordering::Relaxed)
 }
 
-/// 任一 hover 目标窗口（悬浮胶囊 / 结果窗）可见即开 feed；两个都不可见则关。
-/// 每个显示/隐藏路径的收尾处调用
+/// 任一 hover 目标窗口（悬浮胶囊 / 结果窗 / 二级浮层）可见即开 feed；
+/// 全部不可见则关。每个显示/隐藏路径的收尾处调用
 pub fn update_hover_feed(app: &AppHandle) {
-    let on = is_visible(app) || ocr_visible(app);
+    let on = is_visible(app) || ocr_visible(app) || pops_visible(app);
     HOVER_FEED.store(on, Ordering::Relaxed);
 }
 
@@ -599,8 +924,9 @@ pub fn is_visible(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-/// 点是否落在浮动条矩形内（含 pad 边距）——用于抑制"点击浮动条本身"触发的 dismiss
-pub fn rect_contains(app: &AppHandle, x: f64, y: f64, pad: f64) -> bool {
+/// 点是否落在胶囊卡矩形内（含 pad 边距，不含二级浮层）——
+/// 拖拽起点判定用：按住二级浮层卡拖动不是搬移胶囊
+pub fn capsule_rect_contains(app: &AppHandle, x: f64, y: f64, pad: f64) -> bool {
     app.try_state::<FloatingState>().map_or(false, |s| {
         let r = *s.lock().unwrap();
         r.visible
@@ -609,6 +935,14 @@ pub fn rect_contains(app: &AppHandle, x: f64, y: f64, pad: f64) -> bool {
             && y >= r.y - pad
             && y <= r.y + r.h + pad
     })
+}
+
+/// 点是否落在任一可见卡（胶囊或二级浮层）内（含 pad 边距）——
+/// 用于抑制"点击卡片本身"触发的 dismiss。pad 让卡间缝也不触发：
+/// 瞄准二级时鼠标掠过缝内的误点不该把整条收掉（缝内点击会同时落到
+/// 下层应用，但收起胶囊比误穿透更伤）
+pub fn rect_contains(app: &AppHandle, x: f64, y: f64, pad: f64) -> bool {
+    capsule_rect_contains(app, x, y, pad) || pop_rect_contains(x, y, pad)
 }
 
 /// (x, y)（逻辑坐标，窗口左上角）落位：钳制在窗口中心所在显示器内。
@@ -782,6 +1116,8 @@ fn snap_pos(win: &WebviewWindow, x: f64, y: f64) -> (f64, f64) {
 /// 唤醒窗口才生效。而胶囊配置了 acceptFirstMouse（首点即触发动作），
 /// "点之前帮你瞄准"的 hover 意义全在点击之前，故必须打开
 pub fn apply_hover_tracking(win: &WebviewWindow) {
+    #[cfg(not(target_os = "macos"))]
+    let _ = win; // Windows 不抢焦点窗口天然收 WM_MOUSEMOVE，无需处理
     #[cfg(target_os = "macos")]
     unsafe {
         use objc2::runtime::AnyObject;
@@ -827,6 +1163,8 @@ pub fn show_floating_bar(
     height: Option<f64>,
 ) -> Result<WindowPos, String> {
     let win = window(&app)?;
+    // 新选区 = 新胶囊：展开中的二级浮层一并收起（Windows 分离卡；macOS 单窗自然重置）
+    hide_pops(&app);
     let w = width.unwrap_or(DEFAULT_W).max(120.0);
     // 下限只需兜底极小值：窗口高度必须贴合表面，否则表面下缘落在窗口
     // 内部、原生圆角裁不到，胶囊下角会变直角
@@ -901,6 +1239,9 @@ pub fn resize_floating(
 #[tauri::command]
 pub fn begin_floating_drag(app: AppHandle, x: f64, y: f64) -> Result<(), String> {
     let win = window(&app)?;
+    // 拖动胶囊即收起二级浮层（Windows 分离卡是独立窗口，不随胶囊联动移动；
+    // macOS 单窗结构浮层随窗走，此调用为静默空操作）
+    hide_pops(&app);
     let scale = win.scale_factor().map_err(|e| e.to_string())?;
     let pos = win.outer_position().map_err(|e| e.to_string())?;
     let grab = (x - pos.x as f64 / scale, y - pos.y as f64 / scale);
@@ -958,6 +1299,8 @@ pub fn end_drag(app: &AppHandle) {
 pub fn hide_floating_bar(app: AppHandle) -> Result<(), String> {
     let win = window(&app)?;
     win.hide().map_err(|e| e.to_string())?;
+    // 胶囊隐藏时二级浮层必收（Windows 分离卡；dismiss 后前端随后同步菜单状态）
+    hide_pops(&app);
     update_hover_feed(&app);
     app.state::<FloatingState>().lock().unwrap().visible = false;
     Ok(())

@@ -313,6 +313,11 @@ pub fn open_accessibility_settings() {
         .spawn();
 }
 
+/// 能力位：macOS 捕获后端真实可用
+pub fn capture_available() -> bool {
+    true
+}
+
 /// AX 服务实测：system-wide 聚焦应用查询是否放行。
 /// 区分「AXIsProcessTrusted=true（TCC 信任）」与「AX 服务实际可用」——
 /// 权限数据库缓存异常/未签名二进制代持授权时，两者可能割裂。

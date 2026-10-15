@@ -5,6 +5,9 @@ export interface Provider {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** 思考模式：仅对支持的厂商生效（DeepSeek/智谱按服务地址自动识别注入
+   *  thinking.type 参数）；未知厂商不传参、保持厂商默认行为。默认关闭 */
+  thinking?: boolean;
 }
 
 export interface ActionFlags {

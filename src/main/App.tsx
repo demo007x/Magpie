@@ -126,12 +126,26 @@ const MOD_SYMBOLS: Record<string, string> = {
   Ctrl: "⌃",
   Shift: "⇧",
 };
+// Windows 显示名：修饰键规范化为平台惯用名（存储保持 Tauri 跨平台格式不变），
+// 与 Rust 侧 shortcut_display（托盘菜单）同一套映射，两处需同步
+const MOD_NAMES_WIN: Record<string, string> = {
+  CmdOrCtrl: "Ctrl",
+  Cmd: "Ctrl",
+  Meta: "Ctrl",
+  Super: "Ctrl",
+  Control: "Ctrl",
+  Ctrl: "Ctrl",
+  Option: "Alt",
+  Alt: "Alt",
+  Shift: "Shift",
+};
 function displayShortcut(v: string): string {
   if (!v) return "";
   return v
     .split("+")
-    .map((p) => (IS_MAC ? (MOD_SYMBOLS[p] ?? p) : p))
-    .join("");
+    .map((p) => (IS_MAC ? (MOD_SYMBOLS[p] ?? p) : (MOD_NAMES_WIN[p] ?? p)))
+    // macOS 符号连写（⌥S）；Windows 用 + 连接（Alt+S）
+    .join(IS_MAC ? "" : "+");
 }
 
 // 快捷键录制框：点击聚焦后捕获用户按下的组合键，规范化为 Tauri Shortcut 格式。
@@ -307,9 +321,14 @@ export default function App() {
   const [page, setPage] = useState<Page>("model");
   // 应用版本：运行时读取 tauri.conf.json 的权威值（不再手写，避免与配置漂移）
   const [appVersion, setAppVersion] = useState("");
+  // 划词捕获能力位：后端真实可用才显示「划词/黑名单」导航（Windows 后端落地自动出现）
+  const [captureReady, setCaptureReady] = useState(false);
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => undefined);
+    invoke<{ captureAvailable: boolean }>("capture_status")
+      .then((s) => setCaptureReady(s.captureAvailable))
+      .catch(() => undefined);
   }, []);
 
   // 版本更新检测：查 GitHub Releases（无自建服务器）
@@ -471,7 +490,9 @@ export default function App() {
     patch({ providers: settings.providers.map((x) => (x.id === id ? { ...x, ...p } : x)) });
   };
 
-  // 翻译服务多选开关；默认项被关闭时顺延到首个启用项
+  // 翻译服务多选开关；默认项被关闭时顺延到首个启用项。
+  // 配置完备性不在设置页拦截——统一在浮动条「使用时」兜底提醒
+  //（shared/translate.ts，触发时用户才知道去哪配），此处保持直开直关
   const toggleTranslate = (id: string, on: boolean) => {
     if (!settings) return;
     const cur = settings.translate;
@@ -496,10 +517,14 @@ export default function App() {
 
   // 动作顺序：已配置顺序 + 注册表中新增动作（追加末尾）
   const orderedActionIds = settings ? allActionIds(settings) : [];
-  // 常驻动作（含用户自定义）与上下文动作分两张卡：后者只在选中内容含实体时出现，
+  // resident 动作（含自定义）与上下文动作分两张卡：后者只在选中内容含实体时出现，
   // 且同时最多上一个胶囊，四者之间排序对浮动条没有意义——混在常驻列表里反而误导"可排"
   const residentIds = orderedActionIds.filter((id) => !CONTEXT_ACTION_IDS.has(id));
-  const contextIds = orderedActionIds.filter((id) => CONTEXT_ACTION_IDS.has(id));
+  // 打开地图依赖地名识别（macOS NLTagger，Windows 无系统级等价物）——
+  // Windows 上不显示该开关（无能力不显示），地点 chip 运行时本就不会出现
+  const contextIds = orderedActionIds.filter(
+    (id) => CONTEXT_ACTION_IDS.has(id) && (IS_MAC || id !== "addr"),
+  );
 
   // 翻译服务展示顺序：已配置顺序 + 注册表新增（追加末尾）
   const translateRows = settings
@@ -849,29 +874,33 @@ export default function App() {
           {(
             [
               // 导航用最短名词，风格统一：不带「设置/服务/引擎」等可由
-              // 「这是设置 App」推断的后缀；品牌名（Obsidian）保留原文
-              ["capture", "划词"],
-              ["shortcuts", "快捷键"],
-              ["model", "模型"],
-              ["prompts", "提示词"],
-              ["translate", "翻译"],
-              ["search", "搜索"],
-              ["obsidian", "Obsidian"],
-              ["blocklist", "黑名单"],
-              ["general", "通用"],
-              ["perms", "权限"],
-              ["about", "关于"],
-            ] as Array<[Page, string]>
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              className={`nav-item ${page === id ? "active" : ""}`}
-              onClick={() => setPage(id)}
-            >
-              <span className="nav-ic">{NAV_ICONS[id]}</span>
-              {label}
-            </button>
-          ))}
+              // 「这是设置 App」推断的后缀；品牌名（Obsidian）保留原文。
+              // 平台能力门控：本平台没有的能力不显示（winVmac Windows 约定）——
+              // 划词/黑名单随 capture_status.captureAvailable 自动显隐
+              ["capture", "划词", captureReady],
+              ["shortcuts", "快捷键", true],
+              ["model", "模型", true],
+              ["prompts", "提示词", true],
+              ["translate", "翻译", true],
+              ["search", "搜索", true],
+              ["obsidian", "Obsidian", true],
+              ["blocklist", "黑名单", captureReady],
+              ["general", "通用", true],
+              ["perms", "权限", IS_MAC],
+              ["about", "关于", true],
+            ] as Array<[Page, string, boolean]>
+          )
+            .filter(([, , show]) => show)
+            .map(([id, label]) => (
+              <button
+                key={id}
+                className={`nav-item ${page === id ? "active" : ""}`}
+                onClick={() => setPage(id)}
+              >
+                <span className="nav-ic">{NAV_ICONS[id]}</span>
+                {label}
+              </button>
+            ))}
         </nav>
       </aside>
 
@@ -923,6 +952,20 @@ export default function App() {
                             placeholder="sk-…"
                             onChange={(e) => patchProvider(p.id, { apiKey: e.target.value })}
                           />
+                        </label>
+                      </div>
+                      <div className="row-between" style={{ marginTop: 10 }}>
+                        <div>
+                          <div className="row-title">思考模式</div>
+                          <div className="row-sub">开启后回答更准但更慢，关闭更快。</div>
+                        </div>
+                        <label className="switch">
+                          <input
+                            type="checkbox"
+                            checked={!!p.thinking}
+                            onChange={(e) => patchProvider(p.id, { thinking: e.target.checked })}
+                          />
+                          <span className="knob" />
                         </label>
                       </div>
                       <div className="card-foot">
@@ -1061,7 +1104,8 @@ export default function App() {
             <p className="page-hint">
               设定浮动条显示哪些动作及其排列顺序：拖动把手调序，开关停用某项。开关与顺序即时反映到浮动条；新增动作及其名称、提示词需保存后生效。
               <br />
-              「提取信息」仅在所选文字含网址 / 邮箱 / 电话 / 验证码时出现。
+              「提取信息」仅在所选文字含网址 / 邮箱 / 电话 / 验证码 / 日期
+              {IS_MAC ? " / 地点" : ""}时出现。
             </p>
 
             <h2 className="sec">胶囊</h2>
@@ -2110,6 +2154,9 @@ export default function App() {
               </div>
             </div>
 
+            {/* 程序坞为 macOS 概念：Windows 无程序坞，整节隐藏（能力门控） */}
+            {IS_MAC && (
+            <>
             <h2 className="sec">程序坞</h2>
             <div className="card">
               <div className="row-between">
@@ -2135,6 +2182,8 @@ export default function App() {
                 </label>
               </div>
             </div>
+            </>
+            )}
 
             <h2 className="sec">结果窗口</h2>
             <div className="card">

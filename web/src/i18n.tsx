@@ -19,12 +19,12 @@ const zh = {
     langBtn: "EN",
   },
   hero: {
-    badge: "macOS 划词 AI 工具 · 永久免费",
+    badge: "macOS / Windows 划词 AI 工具 · 永久免费",
     h1a: "划词唤起 AI，",
     h1b: "翻译",
     h1c: "直达 Obsidian",
     lead: "划选或双击，浮动条随即弹出：翻译、解释、总结实时呈现；复制、搜索、写入 Obsidian、预填日历，结果直接落地。图片、视频与扫描文档中的文字，框选亦可识别——处理在原地完成，无需迁入对话窗口。",
-    cta1: "下载 macOS 版",
+    cta1: "下载拾趣",
     cta2: "GitHub Releases",
     note: "选中即弹出 · 模型服务自选 · 识图与提取在本机完成 · 不收集使用数据",
     stats: [
@@ -163,32 +163,52 @@ const zh = {
     titleAccent: "安装",
     titlePost: "",
     lead: "永久免费，无需账号。翻译、解释、总结需接入自己的模型服务后使用。",
-    card: {
-      os: "macOS",
-      name: "拾趣 for macOS",
-      sub: "通用 .dmg · Apple Silicon 与 Intel 均可运行",
-      cta: "从 GitHub Releases 下载",
-      repo: "项目主页与更新记录",
-      note: "版本号与更新说明见 GitHub Releases。",
-      warn: "Windows 版本正在开发中。",
-    },
-    stepsTitle: "安装步骤",
-    steps: [
-      { t: "下载", d: "在 GitHub Releases 获取 macOS 通用版（.dmg），打开后将拾趣拖入「应用程序」。" },
+    cards: [
       {
-        t: "首次打开（未公证应用）",
-        d: "双击可能被 macOS 拦截，三种方式任选其一：\n① 右键点击应用 → 选择「打开」\n② 系统设置 → 隐私与安全性 → 点击「仍要打开」\n③ 终端执行下方命令",
-        code: "xattr -cr /Applications/Magpie.app",
+        os: "macOS",
+        name: "拾趣 for macOS",
+        sub: "通用 .dmg · Apple Silicon 与 Intel 均可运行",
+        cta: "从 GitHub Releases 下载",
+        note: "版本号与更新说明见 GitHub Releases。",
       },
       {
-        t: "补签应用（重要，跳过会导致权限不生效）",
-        d: "当前构建为临时签名，直接授权会出现「系统设置里已勾选、应用仍提示未授权」。终端执行：",
-        code: "codesign --force --deep --sign - /Applications/Magpie.app",
+        os: "Windows",
+        name: "拾趣 for Windows",
+        sub: "x64 安装包 · Windows 10 与 Windows 11",
+        cta: "从 GitHub Releases 下载",
+        note: "版本号与更新说明见 GitHub Releases。",
+      },
+    ],
+    repo: "项目主页与更新记录",
+    stepsTitle: "安装步骤",
+    steps: [
+      {
+        label: "macOS",
+        items: [
+          { t: "下载", d: "在 GitHub Releases 获取 macOS 通用版（.dmg），打开后将拾趣拖入「应用程序」。" },
+          {
+            t: "首次打开（未公证应用）",
+            d: "双击可能被 macOS 拦截，三种方式任选其一：\n① 右键点击应用 → 选择「打开」\n② 系统设置 → 隐私与安全性 → 点击「仍要打开」\n③ 终端执行下方命令",
+            code: "xattr -cr /Applications/Magpie.app",
+          },
+          {
+            t: "补签应用（重要，跳过会导致权限不生效）",
+            d: "当前构建为临时签名，直接授权会出现「系统设置里已勾选、应用仍提示未授权」。终端执行：",
+            code: "codesign --force --deep --sign - /Applications/Magpie.app",
+          },
+        ],
+      },
+      {
+        label: "Windows",
+        items: [
+          { t: "下载", d: "在 GitHub Releases 获取 Windows 安装包（Magpie_x64-setup.exe），双击安装。" },
+          { t: "首次运行（未签名应用）", d: "安装与首次运行可能被 SmartScreen 拦截：点击「更多信息」→「仍要运行」。" },
+        ],
       },
     ],
     perm: {
       title: "授予权限（最后一步，逐项设置）",
-      lead: "退出应用后逐项操作：系统设置 → 隐私与安全性 → 对应面板 → 「＋」添加 /Applications/Magpie.app → 打开开关。此前授权过的，先「−」删除旧条目再重新添加。每张卡片上的「打开面板」链接可直接跳到对应设置（限 macOS）。",
+      lead: "退出应用后逐项操作：系统设置 → 隐私与安全性 → 对应面板 → 「＋」添加 /Applications/Magpie.app → 打开开关。此前授权过的，先「−」删除旧条目再重新添加。每张卡片上的「打开面板」链接可直接跳到对应设置（限 macOS）。Windows 版无需授权系统权限。",
       items: [
         { name: "辅助功能", why: "读取所选文字，供翻译、解释、总结使用", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" },
         { name: "输入监控", why: "监听选区动作，选完文字即弹出浮动条", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_InputMonitoring" },
@@ -196,7 +216,7 @@ const zh = {
       ],
       open: "打开面板",
     },
-    note: "应用为临时签名：每次更新或重装后需重新执行补签命令并重新确认权限，之后长期有效。",
+    note: "macOS 应用为临时签名：每次更新或重装后需重新执行补签命令并重新确认权限，之后长期有效。",
   },
   faq: {
     eyebrow: "FAQ",
@@ -204,7 +224,7 @@ const zh = {
     lead: "如有其他问题，可在 GitHub 仓库提交 issue。",
     more: "查看版本更新记录 →",
     items: [
-      { q: "支持哪些系统？", a: "支持 macOS，Apple Silicon 与 Intel 通用。Windows 版本正在开发中。" },
+      { q: "支持哪些系统？", a: "支持 macOS（Apple Silicon 与 Intel 通用）与 Windows 10/11（x64）。Windows 版无需授权系统权限；以管理员身份运行的应用无法取词。" },
       { q: "必须准备 API key 吗？", a: "不需要。复制、搜索、打开链接、写邮件、提取信息、识图与钉图无需配置即可使用。仅翻译、解释、总结需要接入模型服务。" },
       { q: "文字会被上传吗？", a: "识别与提取均在本机完成，屏幕内容不上传。使用 AI 动作时，所选文字发送至用户自行配置的模型服务。" },
       { q: "下载后无法打开怎么办？", a: "当前版本未完成 Apple 签名与公证，首次打开需右键选择「打开」并确认。更新或重装后需重新确认辅助功能权限。" },
@@ -239,12 +259,12 @@ const en: Dict = {
     langBtn: "中文",
   },
   hero: {
-    badge: "AI text-selection tool for macOS · Free forever",
+    badge: "AI text-selection tool for macOS & Windows · Free forever",
     h1a: "Select to summon AI — ",
     h1b: "translation lands ",
     h1c: "straight in Obsidian",
     lead: "Select or double-click, and the floating bar appears on the spot: translate, explain and summarize in real time; copy, search, save to Obsidian or prefill a calendar — results land right where you are. Text in images, videos and scanned documents can be captured by region as well — all handled in place, never locked in a chat window.",
-    cta1: "Download for macOS",
+    cta1: "Download Magpie",
     cta2: "GitHub Releases",
     note: "Pops in ~0.1s · bring your own model service · OCR & extraction run on-device · No usage tracking",
     stats: [
@@ -383,32 +403,52 @@ const en: Dict = {
     titleAccent: "Download & install",
     titlePost: "",
     lead: "Free forever, no account. Translate, explain and summarize need your own model service connected.",
-    card: {
-      os: "macOS",
-      name: "Magpie for macOS",
-      sub: "Universal .dmg · runs on Apple Silicon and Intel",
-      cta: "Download from GitHub Releases",
-      repo: "Project home & changelog",
-      note: "Version numbers and release notes on GitHub Releases.",
-      warn: "A Windows build is in development.",
-    },
-    stepsTitle: "Installation steps",
-    steps: [
-      { t: "Download", d: "Get the universal .dmg from GitHub Releases, open it and drag Magpie into Applications." },
+    cards: [
       {
-        t: "First launch (unsigned build)",
-        d: "A double-click may be blocked by Gatekeeper — any one of these works:\n① Right-click the app → choose Open\n② System Settings → Privacy & Security → Open Anyway\n③ Or run the command below in Terminal",
-        code: "xattr -cr /Applications/Magpie.app",
+        os: "macOS",
+        name: "Magpie for macOS",
+        sub: "Universal .dmg · runs on Apple Silicon and Intel",
+        cta: "Download from GitHub Releases",
+        note: "Version numbers and release notes on GitHub Releases.",
       },
       {
-        t: "Re-sign the app (required, or permissions won't stick)",
-        d: "The build is ad-hoc signed — granting permissions directly shows as granted in System Settings but never takes effect in the app. Run in Terminal:",
-        code: "codesign --force --deep --sign - /Applications/Magpie.app",
+        os: "Windows",
+        name: "Magpie for Windows",
+        sub: "x64 installer · Windows 10 and Windows 11",
+        cta: "Download from GitHub Releases",
+        note: "Version numbers and release notes on GitHub Releases.",
+      },
+    ],
+    repo: "Project home & changelog",
+    stepsTitle: "Installation steps",
+    steps: [
+      {
+        label: "macOS",
+        items: [
+          { t: "Download", d: "Get the universal .dmg from GitHub Releases, open it and drag Magpie into Applications." },
+          {
+            t: "First launch (unsigned build)",
+            d: "A double-click may be blocked by Gatekeeper — any one of these works:\n① Right-click the app → choose Open\n② System Settings → Privacy & Security → Open Anyway\n③ Or run the command below in Terminal",
+            code: "xattr -cr /Applications/Magpie.app",
+          },
+          {
+            t: "Re-sign the app (required, or permissions won't stick)",
+            d: "The build is ad-hoc signed — granting permissions directly shows as granted in System Settings but never takes effect in the app. Run in Terminal:",
+            code: "codesign --force --deep --sign - /Applications/Magpie.app",
+          },
+        ],
+      },
+      {
+        label: "Windows",
+        items: [
+          { t: "Download", d: "Get the Windows installer (Magpie_x64-setup.exe) from GitHub Releases and run it." },
+          { t: "First run (unsigned app)", d: "SmartScreen may block the install or the first launch: click More info → Run anyway." },
+        ],
       },
     ],
     perm: {
       title: "Grant permissions (final step, one by one)",
-      lead: "Quit the app first, then for each item: System Settings → Privacy & Security → the matching pane → \"+\" to add /Applications/Magpie.app → toggle on. If you granted before re-signing, remove the old entries first. Each card's Open-pane link jumps straight to the matching settings pane (macOS only).",
+      lead: "Quit the app first, then for each item: System Settings → Privacy & Security → the matching pane → \"+\" to add /Applications/Magpie.app → toggle on. If you granted before re-signing, remove the old entries first. Each card's Open-pane link jumps straight to the matching settings pane (macOS only). The Windows build needs no system-permission grants.",
       items: [
         { name: "Accessibility", why: "Read the selected text for translate, explain and summarize", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" },
         { name: "Input Monitoring", why: "Watch for selection gestures so the floating bar pops up", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_InputMonitoring" },
@@ -416,7 +456,7 @@ const en: Dict = {
       ],
       open: "Open pane",
     },
-    note: "The build is ad-hoc signed: after every update or reinstall, run the re-sign command and re-confirm permissions once — they then stay valid.",
+    note: "The macOS build is ad-hoc signed: after every update or reinstall, run the re-sign command and re-confirm permissions once — they then stay valid.",
   },
   faq: {
     eyebrow: "FAQ",
@@ -424,7 +464,7 @@ const en: Dict = {
     lead: "For anything else, open an issue on the GitHub repository.",
     more: "View release notes →",
     items: [
-      { q: "Which systems are supported?", a: "macOS, universal for Apple Silicon and Intel. A Windows build is in development." },
+      { q: "Which systems are supported?", a: "macOS (universal for Apple Silicon and Intel) and Windows 10/11 (x64). The Windows build needs no system-permission grants; apps running as administrator can't be captured." },
       { q: "Do I need an API key?", a: "No. Copy, search, open link, compose email, info extraction, OCR and pinning work with zero configuration. Only translate, explain and summarize need a model service." },
       { q: "Is my text uploaded?", a: "Recognition and extraction run on your machine; screen content is never uploaded. AI actions send the selected text to the model service you configured yourself." },
       { q: "The app won't open after download?", a: "This build isn't signed and notarized by Apple yet: right-click the app and choose Open to confirm the first launch. After updates or a reinstall, permissions need re-confirming." },
@@ -452,14 +492,14 @@ export const META: Record<
     lang: "zh-CN",
     title: "拾趣 Magpie · 划词唤起 AI，翻译直达 Obsidian",
     description:
-      "拾趣是一款 macOS 划词 AI 工具：选中或框选屏幕上的任何文字，即可翻译、解释、总结、搜索、写入笔记与提取信息；模型服务自选，识别在本机完成，功能永久免费。",
+      "拾趣是一款 macOS / Windows 划词 AI 工具：选中或框选屏幕上的任何文字，即可翻译、解释、总结、搜索、写入笔记与提取信息；模型服务自选，识别在本机完成，功能永久免费。",
     ogLocale: "zh_CN",
   },
   en: {
     lang: "en",
     title: "Magpie · Select to summon AI — straight into Obsidian",
     description:
-      "Magpie is a macOS text-selection AI tool: select or capture any text on screen to translate, explain, summarize, search or save it into your notes. Bring your own model service — recognition runs on-device, free forever.",
+      "Magpie is a macOS & Windows text-selection AI tool: select or capture any text on screen to translate, explain, summarize, search or save it into your notes. Bring your own model service — recognition runs on-device, free forever.",
     ogLocale: "en_US",
   },
 };
