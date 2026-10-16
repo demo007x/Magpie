@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use tauri::{AppHandle, Emitter};
+use tauri::Emitter;
 
 #[cfg(target_os = "macos")]
 use crate::capture::CaptureMuteGuard;
@@ -414,7 +414,11 @@ pub fn start_region_capture_windows(
     });
 }
 
+// 非 Windows 编译期的接线空桩：macOS 走 capture_region_to_file，此函数在
+// macOS 下无调用方（dead_code 警告属预期）——保留以稳定跨平台分发签名，
+// Windows 侧接线（main.rs 的识图流程按 cfg 分发）在 M2 接入
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 pub fn start_region_capture_windows(
     _app: &tauri::AppHandle,
     _action: Option<&'static str>,

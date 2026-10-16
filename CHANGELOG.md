@@ -11,8 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Windows release**: Magpie now publishes Windows x64 installers (NSIS setup.exe and MSI) — Windows 10+ (x64). Selection capture runs on UI Automation (WH_MOUSE_LL hook): no system-permission prompts, no clipboard use; apps running as administrator are excluded by the UIPI boundary. OCR capture is a snap-overlay flow with on-device Windows.Media.Ocr — the same helper-subprocess isolation as macOS, so a recognition crash never takes the app down.
 - Windows floating bar adopts the one-card-per-window layout: the capsule, the overflow panel and the submenus are each a native top-level card with its own DWM shadow and rounded corners (Win11), with real gaps between cards. Clicks in the gaps fall through to the app underneath instead of being swallowed by an invisible zone.
 - Per-provider thinking-mode toggle (off by default) in model services. The thinking parameter of each vendor (DeepSeek, Zhipu, Doubao, Qwen/DashScope, SiliconFlow, OpenAI, xAI, OpenRouter) is injected based on the service URL; unknown endpoints are left untouched so they keep working unchanged.
+- **Update notifications are clickable**: the new-version toast now opens the release's download page in your browser when clicked, then dismisses itself. Link toasts stay for 8 seconds (twice the usual) so there's time to reach for them; hover lifts the card and tints it with the accent color as a click affordance.
 
 ### Changed
 

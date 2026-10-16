@@ -147,7 +147,9 @@ body,
   gap: 2px;
   padding: 2px;
   background: var(--surf);
-  border-radius: 12px;
+  /* 圆角 8px = 内部按钮悬停底 6px + 容器 padding 2px（同心圆角原则）。
+     曾用 12px：在 ~31px 高的矮工具条上占比 39%，读作准药丸形 */
+  border-radius: 8px;
   /* 悬浮感由 NSWindow 原生 shadow 承担（shadow:true，macOS 按内容 alpha 形状画影子，
      自动贴合圆角与亮暗主题）；本文件只保留 inset 发丝描边做边缘定义 */
   box-shadow: inset 0 0 0 0.5px var(--edge); /* 发丝 = 0.5px：Retina @2x 上恰好 1 物理像素，与系统分隔线同规格；1px 会渲染成 2 物理像素显粗 */
@@ -213,7 +215,7 @@ body,
   z-index: 10;
   display: flex;
   background: var(--surf);
-  border-radius: 12px;
+  border-radius: 8px; /* 与胶囊同档（同心圆角，见 .bar）；二者视觉相连，圆角必须同步 */
   box-shadow: inset 0 0 0 0.5px var(--edge); /* 发丝 = 0.5px：Retina @2x 上恰好 1 物理像素，与系统分隔线同规格；1px 会渲染成 2 物理像素显粗 */
   padding: 2px;
   white-space: nowrap;
