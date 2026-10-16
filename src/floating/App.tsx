@@ -3,9 +3,17 @@ import type { MouseEvent as ReactMouseEvent } from "react";import { invoke } fro
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "../shared/toast";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+
+// AI 输出里的图片不自动加载：远程图片会在渲染时向第三方服务器发起请求
+//（跟踪像素类的外联，与"不收集使用数据"的产品承诺冲突），死链还会显示破图。
+// 转为可点链接交给外部浏览器（点击走 external-links 拦截器 → open_url），
+// 默认零外联、想看的人自己点。urlTransform 默认值会先剥掉 javascript: 等协议
+const mdComponents: Components = {
+  img: ({ src, alt }) => (src ? <a href={src}>{alt || src}</a> : null),
+};
 import {
   AlignLeft,
   CalendarDays,
@@ -2111,7 +2119,10 @@ export default function App() {
       return;
     }
     if (p.kind === "menu-toggle") {
-      const target = `pmenu:${p.key}`;
+      const target = `pmenu:${p.key}` as
+        | "pmenu:translate"
+        | "pmenu:search"
+        | "pmenu:obsidian";
       if (menu !== target) {
         setMenu(target);
         // 面板 payload 一并重发：pchev 高亮跟着 subOpen 走。
@@ -2649,7 +2660,7 @@ export default function App() {
                 <div className="ocr-result md">
                 {phase.output ? (
                   <>
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>
                       {(phase.actionId === "translate"
                         ? splitTranslate(phase.output).main
                         : phase.output) + (phase.streaming ? " ▍" : "")}
@@ -2658,7 +2669,7 @@ export default function App() {
                       splitTranslate(phase.output).notes &&
                       !phase.streaming && (
                         <div className="notes md">
-                          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>
                             {splitTranslate(phase.output).notes}
                           </ReactMarkdown>
                         </div>

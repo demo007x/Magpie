@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fresh installs no longer preset app-blacklist entries (1Password / Passwords); the blacklist starts empty on every platform.
 - Using a translate service whose credentials are not configured yet now shows a clear hint about what to set up (default model for AI translation, APPID and key for Baidu, key for DeepL) instead of surfacing the upstream API error.
 
+### Fixed
+
+- Clicking links in the result window (e.g. URLs inside a translated text) now opens them in the system browser instead of navigating the result window away to the third-party page.
+
 ## [0.1.13] - 2026-10-12
 
 ### Changed

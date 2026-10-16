@@ -4,7 +4,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import App from "./App";
 import PopCard from "./pops";
+import { interceptExternalLinks } from "../shared/external-links";
 import "./floating.css";
+
+// 应用内链接一律外部打开（结果窗译文里的 URL 等），webview 永不自行导航
+interceptExternalLinks();
 
 // 平台根类：Windows 上窗口阴影（DWM 矩形投影）在透明窗上不渲染，
 // 悬浮感由 CSS 自绘接管（floating.css 的 html.win 规则，对齐 toast.css 先例）；
