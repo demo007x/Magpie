@@ -37,7 +37,9 @@ export function Hero() {
           <Reveal delay={0.18}>
             <div className="mt-9 flex flex-wrap items-center gap-3">
               <a
-                href="#download"
+                href={RELEASES}
+                target="_blank"
+                rel="noreferrer"
                 className="flex items-center gap-2 rounded-xl bg-ink px-5 py-3 text-[15px] font-medium text-bg transition-opacity hover:opacity-85"
               >
                 <Download size={16} strokeWidth={2.2} />

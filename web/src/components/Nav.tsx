@@ -67,7 +67,9 @@ export function Nav() {
             {d.nav.updates}
           </a>
           <a
-            href="#download"
+            href={RELEASES}
+            target="_blank"
+            rel="noreferrer"
             className="flex min-w-[112px] items-center justify-center gap-1.5 rounded-lg bg-ink px-3.5 py-2 text-[13px] font-medium text-bg transition-opacity hover:opacity-85"
           >
             <Download size={14} strokeWidth={2} />

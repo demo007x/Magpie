@@ -6,6 +6,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use tauri::Emitter;
+// Windows 识图流程（下方 cfg(windows) 函数）使用裸 AppHandle；
+// macOS 编译路径无此使用，按平台门控导入避免 unused 警告
+#[cfg(target_os = "windows")]
+use tauri::AppHandle;
 
 #[cfg(target_os = "macos")]
 use crate::capture::CaptureMuteGuard;
