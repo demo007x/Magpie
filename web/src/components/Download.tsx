@@ -19,27 +19,6 @@ export function Download() {
       }
       lead={d.download.lead}
     >
-import { Download as DownloadIcon, ExternalLink } from "lucide-react";
-import { RELEASES, REPO } from "../data";
-import { useSite } from "../i18n";
-import { Reveal } from "./Reveal";
-import { Section } from "./Section";
-
-export function Download() {
-  const { d } = useSite();
-  return (
-    <Section
-      id="download"
-      eyebrow={d.download.eyebrow}
-      title={
-        <>
-          {d.download.titlePre}
-          <span className="text-accent">{d.download.titleAccent}</span>
-          {d.download.titlePost}
-        </>
-      }
-      lead={d.download.lead}
-    >
       {/* 双平台下载卡：结构与文案同构（os / name / sub / cta / note），
           新增平台 = 字典里加一项 */}
       <div className="grid gap-4 lg:grid-cols-2">
