@@ -24,6 +24,8 @@
 
 ## 简介
 
+> **注意区分**：[Magpie](https://github.com/Blinue/Magpie)（Blinue）是一款 Windows 游戏窗口放大工具，与本项目无关。本项目的 Magpie（拾趣）是一款划词 AI 工具——选中或框选屏幕上的文字，就地处理。
+
 **拾趣 (Magpie)** 是鼠标触发的第一文本源入口枢纽。在 macOS / Windows 的任何应用里选中文字或框选屏幕，浮动条即时提供翻译、解释、总结等动作，全程流式输出。区别于纯划词工具，拾趣以「划词 + 识图」双管线覆盖一切可见文字——零成本捕获（macOS 无障碍 API 优先、Windows UI Automation，兼容模式兜底且自动还原剪贴板）+ 带上下文理解；模型 BYOK 不锁定，下游接入用户自选的专业应用，**接入而非自建**。
 
 **官网**：[demo007x.github.io/Magpie](https://demo007x.github.io/Magpie/) — 产品介绍与功能截图

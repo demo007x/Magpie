@@ -20,11 +20,28 @@ export function Hero() {
           </Reveal>
 
           <Reveal delay={0.06}>
-            <h1 className="mt-6 text-[2.6rem] leading-[1.1] font-semibold tracking-tight text-balance sm:text-[3.4rem]">
-              {d.hero.h1a}
+            <h1 className="mt-6 text-[2.6rem] leading-[1.15] font-semibold tracking-tight text-balance sm:text-[3.4rem]">
+              <span className="anno-line">
+                {d.hero.h1a}
+                <svg viewBox="0 0 320 14" preserveAspectRatio="none" aria-hidden="true">
+                  <path
+                    d="M3 9 C 60 13, 120 3, 180 7 S 280 11, 317 5"
+                    fill="none"
+                    style={{ stroke: "var(--color-accent-2)" }}
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                    opacity="0.85"
+                  />
+                </svg>
+              </span>
               <br />
               {d.hero.h1b}
-              <span className="text-accent">{d.hero.h1c}</span>
+              <br />
+              {/* 第二行错位缩进：右侧留白被利用，两行形成阶梯节奏 */}
+              <span className="ml-[0.85em]">
+                <span className="text-accent">{d.hero.h1c}</span>
+                {d.hero.h1d}
+              </span>
             </h1>
           </Reveal>
 

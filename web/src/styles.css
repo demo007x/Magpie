@@ -88,6 +88,29 @@ body {
   background: var(--color-accent-fill);
 }
 
+/* 首屏标题的手写标注行：能力枚举做小字引子（ink 85%，比 mute 亮、比主行白退半档），
+   琥珀色手绘线（accent-2，马克笔质感）在下方圈注——与身份行的 accent 蓝
+   形成主次双色；线的粗细/起伏在 SVG path 里调。分隔符用「·」（站内枚举惯例） */
+.anno-line {
+  position: relative;
+  display: inline-block;
+  font-size: clamp(1.15rem, 2.6vw, 1.5rem);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  color: color-mix(in srgb, var(--color-ink) 85%, transparent);
+  padding: 0 0.15em 0.3em;
+  vertical-align: top;
+}
+
+.anno-line svg {
+  position: absolute;
+  left: 0.1em;
+  bottom: -0.2em;
+  width: 99%;
+  height: 0.34em;
+}
+
 /* 锚点跳转时给固定导航让出高度 */
 section[id] {
   scroll-margin-top: 84px;
