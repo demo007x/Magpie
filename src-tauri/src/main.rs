@@ -442,6 +442,16 @@ fn main() {
             settings::init(&handle);
             // 结果面板「钉住」偏好：沿用用户最后一次点钉的选择（默认钉住）
             floating::init_result_pin(&handle);
+            app.manage(OcrShortcuts(std::sync::Mutex::new(Vec::new())));
+            // 配置窗口统一延后到全部共享状态就位后创建（各窗口 create:false）：
+            // Windows 上 WebView2 加载极快，IPC 派发可以早于 setup 完成——
+            // 窗口若由 build() 预建，主窗口首发的 get_settings 会撞上尚未
+            // manage 的设置状态而失败，前端又把失败吞掉，表现为设置页永远
+            // 停在「正在载入」。窗口创建即开始加载页面，放在此处保证任何
+            // 早期 invoke 都命中完整状态。
+            for cfg in &app.config().app.windows {
+                tauri::WebviewWindowBuilder::from_config(app, cfg)?.build()?;
+            }
             // Windows 分离卡（方案甲一卡一窗）：先建二级浮层窗口，
             // 后面的窗口属性循环才能覆盖到它们
             #[cfg(target_os = "windows")]
@@ -488,7 +498,6 @@ fn main() {
             }
 
             // 识图类全局快捷键（设置页可配，保存即时生效）：识别 + 可选自动执行动作
-            app.manage(OcrShortcuts(std::sync::Mutex::new(Vec::new())));
             apply_ocr_shortcuts(&handle);
             // 中文识别模型预热（macOS 26+ 按需资源，见 ocr.rs）：后台静默，一次即缓存
             ocr::warmup();
