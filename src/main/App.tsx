@@ -402,7 +402,23 @@ export default function App() {
   // 截图/识别失败等全局提示改由独立 toast 窗口展示（主窗口隐藏时也可见）
 
   useEffect(() => {
-    invoke<Settings>("get_settings").then(setSettings).catch(() => undefined);
+    // 极早发出的 invoke 可能撞上 Rust 侧状态未就位（Windows webview 加载快于
+    // setup，实测发生过）：失败退避重试而不是吞掉——吞掉 = 永远停在载入页
+    let stop = false;
+    const load = (delay: number) => {
+      window.setTimeout(() => {
+        if (stop) return;
+        invoke<Settings>("get_settings")
+          .then((s) => {
+            if (!stop) setSettings(s);
+          })
+          .catch(() => load(delay === 0 ? 250 : Math.min(delay * 2, 2000)));
+      }, delay);
+    };
+    load(0);
+    return () => {
+      stop = true;
+    };
   }, []);
 
   // 状态栏菜单「功能设置」→ 打开主窗口并跳到对应页

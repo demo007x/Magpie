@@ -20,7 +20,8 @@
         "width": 880,
         "height": 620,
         "minWidth": 780,
-        "minHeight": 520
+        "minHeight": 520,
+        "create": false
       },
       {
         "label": "floating",
@@ -35,7 +36,8 @@
         "resizable": false,
         "shadow": true,
         "focus": false,
-        "acceptFirstMouse": true
+        "acceptFirstMouse": true,
+        "create": false
       },
       {
         "label": "ocr",
@@ -50,7 +52,8 @@
         "resizable": false,
         "shadow": true,
         "focus": false,
-        "acceptFirstMouse": true
+        "acceptFirstMouse": true,
+        "create": false
       },
       {
         "label": "toast",
@@ -63,7 +66,8 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "shadow": false,
-        "focus": false
+        "focus": false,
+        "create": false
       }
     ],
     "security": {

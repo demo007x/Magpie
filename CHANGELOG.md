@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows: the main window no longer stays on "Loading…" forever. App windows are now created only after all shared state is ready, so very early settings requests (WebView2 can serve pages faster than the backend finishes startup) can no longer fail; the settings page also retries a failed load instead of swallowing it.
+
 ## [0.1.14] - 2026-10-15
 
 ### Added
