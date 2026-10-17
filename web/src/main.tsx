@@ -6,7 +6,7 @@ import "./styles.css";
 
 const tree = (
   <StrictMode>
-    <LocaleProvider initialLocale={localeFromPath(window.location.pathname)}>
+    <LocaleProvider initialLocale={localeFromPath(window.location.pathname)} page="home">
       <App />
     </LocaleProvider>
   </StrictMode>

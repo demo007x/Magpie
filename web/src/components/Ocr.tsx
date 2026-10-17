@@ -1,4 +1,4 @@
-import { Command, Crop, MousePointerClick, Pin } from "lucide-react";
+import { ArrowRight, Command, Crop, MousePointerClick, Pin } from "lucide-react";
 import { useSite } from "../i18n";
 import { Reveal } from "./Reveal";
 import { Section } from "./Section";
@@ -6,7 +6,7 @@ import { Section } from "./Section";
 const RULE_ICONS = [MousePointerClick, Crop, Pin, Command];
 
 export function Ocr() {
-  const { d } = useSite();
+  const { d, root } = useSite();
   return (
     <Section
       id="ocr"
@@ -20,7 +20,18 @@ export function Ocr() {
       }
       lead={d.ocr.lead}
     >
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* 说明引导：标题文案后顺势指向专题页的识图章 */}
+      <Reveal>
+        <a
+          href={`${root}translate/#capture`}
+          className="inline-flex items-center gap-1.5 text-[13px] text-mute transition-colors hover:text-ink"
+        >
+          {d.ocr.guide}
+          <ArrowRight size={13} strokeWidth={2} />
+        </a>
+      </Reveal>
+
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {d.ocr.steps.map((s, i) => (
           <Reveal key={s.title} delay={i * 0.07} y={18}>
             <div className="h-full rounded-2xl border border-line bg-panel lift p-6">

@@ -23,9 +23,10 @@ SEO 元信息（canonical / hreflang / og:url / og:image / sitemap）按正式�
 ## 双语言
 
 - **URL 即语言**：`/` = 中文（`lang="zh-CN"`），`/en/` = 英文。语言不再是 localStorage/浏览器语言推断——URL 是唯一事实来源，直接访问哪个路径就渲染哪种语言。
-- **预渲染**：`pnpm build` 末尾跑 `scripts/prerender.mjs`，用 `renderToStaticMarkup` 把两份字典各渲染成含完整正文的静态 HTML（爬虫、禁 JS、社交卡片直接读全文），客户端 `hydrateRoot` 接管交互。往页面加内容时**不需要**为预渲染做任何事；只有新加「渲染期就读浏览器状态」的代码才会破坏它（水合会不一致），保持渲染纯由 props/URL 决定即可。
+- **页面**：首页与专题页两套，各两语言——`/` 与 `/translate/`（中文）、`/en/` 与 `/en/translate/`（英文）。专题页入口 `translate.html`，组件与文案自成一体（`src/topic/`，文案在 `src/topic/content.tsx`）；资源都在站点根，页面每深一层资源前缀多退一级（`i18n.tsx` 的 `assetBase`/`root` 按语言 + 目录深度计算，预渲染改写与之对齐）。
+- **预渲染**：`pnpm build` 末尾跑 `scripts/prerender.mjs`，用 `renderToStaticMarkup` 把四个页面各渲染成含完整正文的静态 HTML（爬虫、禁 JS、社交卡片直接读全文），客户端 `hydrateRoot` 接管交互。往页面加内容时**不需要**为预渲染做任何事；只有新加「渲染期就读浏览器状态」的代码才会破坏它（水合会不一致），保持渲染纯由 props/URL 决定即可。
 - **语言按钮 = 真 URL + 软切换**（`Nav.tsx`）：`<a href>` 始终指向对方语言的真地址（爬虫/中键/禁 JS 可达），普通左键点击被拦截为原地换字典 + `pushState`（带当前区块锚点），不刷新、滚动位置不丢；前进/后退由 popstate 按路径恢复语言。
-- 新增文案改 `src/i18n.tsx` 的 zh / en 两份字典；页面级 `<head>` 元信息（lang/title/description/ogLocale）在同文件 `META` 里，供预渲染与运行时共用。
+- 新增文案改 `src/i18n.tsx`（首页）或 `src/topic/content.tsx`（专题页）的 zh / en 两份字典；页面级 `<head>` 元信息（lang/title/description/ogLocale）在 `src/i18n.tsx` 的 `META[page][locale]` 里，供预渲染与运行时共用。
 
 ## 配色与主题
 
@@ -47,7 +48,7 @@ SEO 元信息（canonical / hreflang / og:url / og:image / sitemap）按正式�
 
 **语域是客观产品说明**：陈述句、无人称、不写修辞（口号式排比、比喻、感叹号一律不用）、不写实现机制（子进程/管线/AX/协议兼容等）。术语按用户视角翻译，站点里浮层统一叫「浮动条」（app 内也叫胶囊）。
 
-动效基于 `motion`：`Reveal` 是通用的滚动渐入（`viewport={{ once: true }}`），首屏的胶囊演示是独立状态机，两者都读 `useReducedMotion()`，在系统「减弱动态效果」下直接呈现终态。
+动效基于 `motion`：`Reveal` 是通用的滚动渐入（`viewport={{ once: true }}`）。首屏的胶囊演示与专题页的五个场景演示（综述 FlowDemo + 划词/识图/收集/存入各一个 mock 演示，均自包含单个组件、循环状态机驱动）相互独立，全部读 `useReducedMotion()`，在系统「减弱动态效果」下直接呈现终态。专题页不用真机截图，演示一律以 mock 卡实现（`.mock-paper` 是其中唯一的固定浅色面）。
 
 ## 界面截图
 

@@ -5,9 +5,10 @@ import { useSite } from "../i18n";
 
 export function Nav() {
   const [solid, setSolid] = useState(false);
-  const { locale, d, setLocale, assetBase } = useSite();
+  const { locale, d, setLocale, assetBase, root } = useSite();
   const next = locale === "zh" ? "en" : "zh";
-  const nextHref = locale === "zh" ? "en/" : "../";
+  // 对方语言同一页面的地址：首页 zh → "en/"，en → "../"；专题页再拼 "translate/"
+  const nextHref = locale === "zh" ? `${root}en/` : root;
 
   // 软切换：真 href 供爬虫/中键/禁 JS 使用；普通点击拦截为原地换字典 +
   // pushState（带上当前区块锚点），不刷新、滚动位置不动

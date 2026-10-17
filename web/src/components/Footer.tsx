@@ -2,7 +2,7 @@ import { REPO, RELEASES } from "../data";
 import { useSite } from "../i18n";
 
 export function Footer() {
-  const { d, assetBase } = useSite();
+  const { d, assetBase, page, root } = useSite();
   return (
     <footer className="border-t border-line">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10 sm:flex-row sm:items-center sm:justify-between">
@@ -21,6 +21,11 @@ export function Footer() {
           <a href={RELEASES} target="_blank" rel="noreferrer" className="transition-colors hover:text-ink">
             {d.footer.updates}
           </a>
+          {page === "home" && (
+            <a href={`${root}translate/`} className="transition-colors hover:text-ink">
+              {d.footer.topic}
+            </a>
+          )}
           <a href="#download" className="transition-colors hover:text-ink">
             {d.footer.download}
           </a>

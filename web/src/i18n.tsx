@@ -40,23 +40,42 @@ const zh = {
     titlePre: "内置 ",
     titleAccent: "12 个动作",
     titlePost: "，分为 AI 与本地两类",
-    lead: "翻译、解释、总结由所选模型服务完成；复制、搜索、打开链接、写邮件、提取信息与存入 Obsidian 在本机完成。浮动条默认显示 4 个动作，其余收入展开面板；可用动作随选中内容类型变化，选中网址时提供「打开链接」，选中邮箱时提供「写邮件」。",
-    items: [
-      { name: "翻译", desc: "自动判断翻译方向，结果实时显示。支持 AI 翻译、百度翻译、DeepL 三种服务，可设定默认服务。" },
+    lead: "浮动条默认显示 4 个动作，其余收入展开面板；可用动作随选中内容类型变化，选中网址时提供「打开链接」，选中邮箱时提供「写邮件」。",
+    aiLabel: "AI 动作",
+    aiCount: "3 个",
+    aiNote: "由你配置的模型服务完成",
+    localLabel: "本地动作",
+    localCount: "9 个",
+    localNote: "在本机完成，无需任何配置",
+    aiItems: [
+      { name: "翻译", desc: "自动判断翻译方向，结果实时显示。支持 AI 翻译、百度翻译、DeepL，可设定默认服务。" },
       { name: "解释", desc: "对术语、概念、典故与长句给出说明，无需另开对话窗口。" },
       { name: "总结", desc: "将段落或整篇内容归纳为要点，结果保留在独立窗口中。" },
+    ],
+    localItems: [
       { name: "复制 / 搜索", desc: "本机完成的常规动作，无需配置，不消耗模型额度。" },
       { name: "提取信息", desc: "自动识别选区中的网址、邮箱、验证码与电话号码。仅一种信息时直接提供对应动作，多种信息时集中显示。" },
       { name: "打开链接 / 写邮件", desc: "选中网址可直接打开，选中邮箱可直接撰写邮件，电话号码一键复制。" },
-      { name: "加入日历 / 打开地图", desc: "选中含日期、时间或地点的文字，一键预填日历事件或在地图中打开——信息直接落地，不停留在窗口里。" },
-      { name: "存入 Obsidian", desc: "选中文本按模板直写进 vault：摘录追加进当日日记，任务行写入待办（自动识别选区里的截止日期），知识卡一卡一文件。全程本地文件写入，无需安装插件。" },
+      { name: "加入日历 / 打开地图", desc: "选中含日期、时间或地点的文字，一键预填日历事件或在地图中打开。" },
+      { name: "存入 Obsidian", desc: "选中文本按模板直写进 vault：摘录追加进当日日记，任务行写入待办（自动识别截止日期），知识卡一卡一文件。全程本地文件写入，无需安装插件。" },
     ],
+    moreItem: { name: "更多能力开发中", desc: "存至 Notion / 备忘录等笔记应用，生词本、稍后读等同类接入。" },
+    topicLink: "深入了解划词翻译",
+    customBand: {
+      label: "AI 可定制",
+      items: [
+        { name: "提示词逐条可改", desc: "翻译、解释、总结的提示词都能改，所见即所发。" },
+        { name: "自定义动作", desc: "常用指令存成动作，与内置动作统一排序，最多 10 个。" },
+        { name: "模型服务自选", desc: "地址、模型与密钥自行配置，可保存多套随时换。" },
+      ],
+    },
   },
   ocr: {
     eyebrow: "Screen Capture",
     titlePre: "无法选中的文字，",
     titleAccent: "框选即可识别",
     titlePost: "",
+    guide: "查看识图翻译的完整说明",
     lead: "划词仅适用于可选中的文本。图片、视频字幕、扫描文档与应用界面中的文字，可通过框选在本机识别，识别结果使用同一组动作处理。",
     steps: [
       { title: "框选", desc: "通过快捷键或菜单栏选择「识图取字」，拖动框选屏幕区域。" },
@@ -238,6 +257,7 @@ const zh = {
     github: "GitHub",
     updates: "更新记录",
     download: "下载",
+    topic: "划词翻译",
     copyright: "拾趣 Magpie",
   },
 };
@@ -281,23 +301,42 @@ const en: Dict = {
     titlePre: "",
     titleAccent: "12 built-in actions",
     titlePost: ", in AI and local families",
-    lead: "Translate, explain and summarize run through your configured model service; copy, search, open link, compose email, information extraction and Save to Obsidian run locally on your machine. The bar shows 4 actions by default with the rest folded into an expand panel; available actions adapt to the selection — a URL offers Open Link, an email offers Compose Email.",
-    items: [
+    lead: "The floating bar shows 4 actions by default with the rest folded into an expand panel; available actions adapt to the selection — a URL offers Open Link, an email offers Compose Email.",
+    aiLabel: "AI actions",
+    aiCount: "3",
+    aiNote: "Done by the model service you configure",
+    localLabel: "Local actions",
+    localCount: "9",
+    localNote: "Done on your machine — no configuration needed",
+    aiItems: [
       { name: "Translate", desc: "Picks the translation direction automatically and shows results in real time. Works with AI translation, Baidu Translate and DeepL; a default service can be set." },
       { name: "Explain", desc: "Explains terms, concepts, allusions and long sentences — no need to open a separate chat window." },
       { name: "Summarize", desc: "Turns a paragraph or a whole page into key points, kept in a standalone window." },
+    ],
+    localItems: [
       { name: "Copy / Search", desc: "Everyday actions handled on your machine — no configuration, no model quota." },
       { name: "Extract info", desc: "Detects URLs, emails, verification codes and phone numbers in the selection. A single hit gets a direct action; multiple hits open a grouped panel." },
       { name: "Open link / Compose email", desc: "Select a URL to open it, select an email address to compose, copy phone numbers with one click." },
-      { name: "Add to Calendar / Open in Maps", desc: "Select text containing a date, time or place — prefill a calendar event or open it in Maps with one click. Information lands where it belongs instead of staying in a window." },
+      { name: "Add to Calendar / Open in Maps", desc: "Select text containing a date, time or place — prefill a calendar event or open it in Maps with one click." },
       { name: "Save to Obsidian", desc: "Writes the selection straight into your vault from templates: excerpts append to the daily note, task lines go to your to-dos (due dates detected in the selection), and cards are one file each. Entirely local file writes — no plugin needed." },
     ],
+    moreItem: { name: "More in development", desc: "Save to Notion / Apple Notes and more, plus vocabulary and read-later hand-offs." },
+    topicLink: "A deep dive into select & translate",
+    customBand: {
+      label: "Customizable",
+      items: [
+        { name: "Per-action prompts", desc: "Edit the prompts behind Translate, Explain and Summarize — what you see is what gets sent." },
+        { name: "Custom actions", desc: "Turn frequent commands into actions, sorted alongside the built-ins — up to 10." },
+        { name: "Your model service", desc: "Address, model and key are yours to set; save several and swap freely." },
+      ],
+    },
   },
   ocr: {
     eyebrow: "Screen Capture",
     titlePre: "Text you can't select? ",
     titleAccent: "Draw a box — it reads",
     titlePost: "",
+    guide: "Read the full capture & translate guide",
     lead: "Selection only works on selectable text. Text inside images, video subtitles, scanned documents and app interfaces can be captured by region and recognized on-device, then processed with the same set of actions.",
     steps: [
       { title: "Capture", desc: "Pick OCR from the hotkey or the menu bar, then drag a region on screen." },
@@ -479,62 +518,107 @@ const en: Dict = {
     github: "GitHub",
     updates: "Changelog",
     download: "Download",
+    topic: "Select & Translate guide",
     copyright: "Magpie",
   },
 };
 
 const DICTS: Record<Locale, Dict> = { zh, en };
 
-/** 每种语言的 <head> 元信息：预渲染脚本写进静态 HTML，软切换时同步到 document */
-export const META: Record<
-  Locale,
-  { lang: string; title: string; description: string; ogLocale: string }
-> = {
-  zh: {
-    lang: "zh-CN",
-    title: "拾趣 Magpie · 划词唤起 AI，翻译直达 Obsidian",
-    description:
-      "拾趣是一款 macOS / Windows 划词 AI 工具：选中或框选屏幕上的任何文字，即可翻译、解释、总结、搜索、写入笔记与提取信息；模型服务自选，识别在本机完成，功能永久免费。",
-    ogLocale: "zh_CN",
+/** 站点页面：首页与功能专题页（/translate/），各自有 zh / en 两个语言变体 */
+export type PageKey = "home" | "translate";
+
+export interface PageMeta {
+  lang: string;
+  title: string;
+  description: string;
+  ogLocale: string;
+}
+
+/** 每页每种语言的 <head> 元信息：预渲染脚本写进静态 HTML，软切换时同步到 document */
+export const META: Record<PageKey, Record<Locale, PageMeta>> = {
+  home: {
+    zh: {
+      lang: "zh-CN",
+      title: "拾趣 Magpie · 划词唤起 AI，翻译直达 Obsidian",
+      description:
+        "拾趣是一款 macOS / Windows 划词 AI 工具：选中或框选屏幕上的任何文字，即可翻译、解释、总结、搜索、写入笔记与提取信息；模型服务自选，识别在本机完成，功能永久免费。",
+      ogLocale: "zh_CN",
+    },
+    en: {
+      lang: "en",
+      title: "Magpie · Select to summon AI — straight into Obsidian",
+      description:
+        "Magpie is a macOS & Windows text-selection AI tool: select or capture any text on screen to translate, explain, summarize, search or save it into your notes. Bring your own model service — recognition runs on-device, free forever.",
+      ogLocale: "en_US",
+    },
   },
-  en: {
-    lang: "en",
-    title: "Magpie · Select to summon AI — straight into Obsidian",
-    description:
-      "Magpie is a macOS & Windows text-selection AI tool: select or capture any text on screen to translate, explain, summarize, search or save it into your notes. Bring your own model service — recognition runs on-device, free forever.",
-    ogLocale: "en_US",
+  translate: {
+    zh: {
+      lang: "zh-CN",
+      title: "划词翻译：选中即译，阅读不打断 · 拾趣 Magpie",
+      description:
+        "拾趣划词翻译专题：划选文字即时翻译，选不了的 PDF、图片与视频字幕按 ⌥T 框选识别；碎片信息随手收集，译文与摘录一键存入 Obsidian。方向自动判断，AI 翻译、百度翻译、DeepL 可切换，识别在本机完成，永久免费。",
+      ogLocale: "zh_CN",
+    },
+    en: {
+      lang: "en",
+      title: "Select & Translate: translate without leaving your reading · Magpie",
+      description:
+        "Magpie's select & translate guide: translate any selected text on the spot; capture what can't be selected — PDFs, images, video subtitles — with ⌥T; gather fragments and save everything straight into Obsidian. Automatic direction, AI / Baidu / DeepL services, on-device recognition, free forever.",
+      ogLocale: "en_US",
+    },
   },
 };
 
-/** 语言只由 URL 决定（/ = 中文，/en/ = 英文）：预渲染、水合与软切换共用同一判定 */
+/** 语言只由 URL 决定（含 en 路径段即为英文，如 /en/ 与 /en/translate/）：
+    预渲染、水合与软切换共用同一判定 */
 export function localeFromPath(pathname: string): Locale {
-  return /\/en\/?$/.test(pathname) ? "en" : "zh";
+  return /(^|\/)en(\/|$)/.test(pathname) ? "en" : "zh";
 }
 
 const LocaleCtx = createContext<{
   locale: Locale;
   d: Dict;
   setLocale: (l: Locale) => void;
-  /** 资源前缀：站点按相对路径部署（任意挂载深度），/en/ 页比首页深一层，
-      图片/图标类相对引用需多退一级。预渲染（PROD=false）恒为 "./"，en 静态页
-      由 prerender.mjs 统一改写为 "../"——与客户端 PROD 构建的取值一致，水合不冲突 */
+  /** 资源前缀：站点按相对路径部署（任意挂载深度），资源都在站点根，
+      页面每深一层多退一级（/translate/ 一层、/en/ 一层、/en/translate/ 两层）。
+      预渲染（PROD=false）恒为 "./"，深页由 prerender.mjs 统一改写——与客户端
+      PROD 构建的取值一致，水合不冲突 */
   assetBase: string;
-}>({ locale: "zh", d: zh, setLocale: () => {}, assetBase: "./" });
+  /** 当前页面（决定 META 与页脚链接） */
+  page: PageKey;
+  /** 从当前页目录回到站点根的相对前缀：zh 首页 ""、zh 专题页 "../"、
+      en 首页 "../"、en 专题页 "../../"。页面间互链与语言切换都用它拼 */
+  root: string;
+}>({ locale: "zh", d: zh, setLocale: () => {}, assetBase: "./", page: "home", root: "" });
 
 export function LocaleProvider({
   initialLocale,
+  page = "home",
+  depth = 0,
   children,
 }: {
   initialLocale?: Locale;
+  page?: PageKey;
+  /** 当前页相对站点根的目录深度：首页 0、/translate/ 1 */
+  depth?: number;
   children: ReactNode;
 }) {
   const [locale, setLocale] = useState<Locale>(() => initialLocale ?? "zh");
-  const assetBase = locale === "en" && import.meta.env.PROD ? "../" : "./";
+  // 资源（dist/assets、public 下的 shots/app-icon）都在站点根：页面目录每深
+  // 一层就多退一级（/translate/ 一层、/en/translate/ 两层）。预渲染
+  // （PROD=false）恒为 "./"，深页由 prerender.mjs 统一改写——与客户端 PROD
+  // 构建的取值一致，水合不冲突
+  const up = "../".repeat(depth + (locale === "en" ? 1 : 0));
+  const assetBase = import.meta.env.PROD ? up || "./" : "./";
+  const root = up;
 
   useEffect(() => {
-    document.documentElement.lang = META[locale].lang;
-    document.title = META[locale].title;
-  }, [locale]);
+    const m = META[page][locale];
+    document.documentElement.lang = m.lang;
+    document.title = m.title;
+  }, [locale, page]);
 
   // 浏览器前进/后退与按钮软切换同规则：按 URL 恢复语言
   useEffect(() => {
@@ -545,7 +629,7 @@ export function LocaleProvider({
 
   const d = DICTS[locale];
   return (
-    <LocaleCtx.Provider value={{ locale, d, setLocale, assetBase }}>
+    <LocaleCtx.Provider value={{ locale, d, setLocale, assetBase, page, root }}>
       {children}
     </LocaleCtx.Provider>
   );
