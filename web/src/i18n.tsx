@@ -19,7 +19,7 @@ const zh = {
     langBtn: "EN",
   },
   hero: {
-    badge: "macOS / Windows 划词 AI 工具 · 永久免费",
+    badge: "拾趣 Magpie · macOS / Windows 划词 AI 工具 · 永久免费",
     h1a: "文本提取 · 内容翻译 · 信息整理",
     h1b: "沉浸式自定义",
     h1c: "AI 划词",
@@ -280,7 +280,7 @@ const en: Dict = {
     langBtn: "中文",
   },
   hero: {
-    badge: "AI text-selection tool for macOS & Windows · Free forever",
+    badge: "Magpie · AI text-selection tool for macOS & Windows · Free forever",
     h1a: "Text extraction, content translation, and organization",
     h1b: "an immersive, customizable ",
     h1c: "AI selection",
