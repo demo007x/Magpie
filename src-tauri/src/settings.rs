@@ -456,6 +456,14 @@ pub fn apply_appearance(app: &AppHandle) {
     for (_, win) in app.webview_windows() {
         let _ = win.set_theme(native);
     }
+    // Windows 弹层的 WebView2 不透明底色随主题换（拖拽放大白闪的修复，
+    // 仅 Win11+；见 floating::apply_webview_background）
+    #[cfg(target_os = "windows")]
+    for label in ["floating", "ocr", "toast", "floating-panel", "floating-menu"] {
+        if let Some(win) = app.get_webview_window(label) {
+            crate::floating::apply_webview_background(&win, &theme);
+        }
+    }
     let _ = app.emit("theme://appearance", theme);
 }
 

@@ -117,6 +117,56 @@ pub fn apply_frame_shadow(win: &WebviewWindow) {
     }
 }
 
+/// WebView2 不透明背景：透明弹层的 DefaultBackgroundColor 被 wry 在创建分支
+/// 写死为全透明，窗口层也没有 WM_ERASEBKGND 画刷——拖拽放大结果窗时，新露出
+/// 的区域在渲染帧跟上前直接透出桌面，经 DWM 合成呈「透明白闪」。给弹层设
+/// 不透明的卡片底色（与 floating.css/toast.css 的 --surf 同值）后，未绘制
+/// 区域按底色出现，闪动不可见。代价：页面透明像素（CSS 圆角外四角）变成
+/// 底色实心——Win11 22H2+ 由 DWM 原生圆角裁切兜住；Win10 无此能力，探测
+/// 失败即跳过（维持旧行为：闪但角圆）。底色随主题：appearance 传
+/// "light"/"dark" 用指定值，传 "auto" 按窗口当前生效主题取值
+/// （「跟随系统」下系统主题切换由 ThemeChanged 事件再次驱动到这里）
+#[cfg(target_os = "windows")]
+pub fn apply_webview_background(win: &WebviewWindow, appearance: &str) {
+    use tauri::utils::config::Color;
+    use tauri::Theme;
+
+    if !native_corner_rounding_active(win) {
+        return;
+    }
+    let theme = match appearance {
+        "light" => Some(Theme::Light),
+        "dark" => Some(Theme::Dark),
+        _ => win.theme().ok(),
+    }
+    .unwrap_or(Theme::Dark);
+    let (r, g, b) = if theme == Theme::Light { (255, 255, 255) } else { (40, 40, 40) };
+    let _ = win.set_background_color(Some(Color(r, g, b, 255)));
+}
+
+/// 探测 DWM 原生圆角是否可用（Win11 22H2+）：重设 ROUND 属性并检查结果，
+/// 与 apply_native_corner_radius 的设置幂等；Win10 对该属性返回错误
+#[cfg(target_os = "windows")]
+fn native_corner_rounding_active(win: &WebviewWindow) -> bool {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWM_WINDOW_CORNER_PREFERENCE, DWMWA_WINDOW_CORNER_PREFERENCE,
+        DWMWCP_ROUND,
+    };
+
+    win.hwnd().map_or(false, |hwnd| unsafe {
+        let hwnd = HWND(hwnd.0);
+        let pref = DWM_WINDOW_CORNER_PREFERENCE(DWMWCP_ROUND.0);
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &pref as *const _ as *const std::ffi::c_void,
+            std::mem::size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
+        )
+        .is_ok()
+    })
+}
+
 /// 其余平台无原生圆角能力，CSS 圆角兜底
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn apply_native_corner_radius(_win: &WebviewWindow, _radius: f64) {}
