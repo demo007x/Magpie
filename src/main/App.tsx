@@ -1323,7 +1323,10 @@ export default function App() {
                   <button
                     className="btn sm"
                     disabled={settings.capsuleShowCount <= 2}
-                    onClick={() => patch({ capsuleShowCount: settings.capsuleShowCount - 1 })}
+                    onClick={() => {
+                      patch({ capsuleShowCount: settings.capsuleShowCount - 1 });
+                      saveNow();
+                    }}
                   >
                     −
                   </button>
@@ -1333,7 +1336,10 @@ export default function App() {
                   <button
                     className="btn sm"
                     disabled={settings.capsuleShowCount >= 8}
-                    onClick={() => patch({ capsuleShowCount: settings.capsuleShowCount + 1 })}
+                    onClick={() => {
+                      patch({ capsuleShowCount: settings.capsuleShowCount + 1 });
+                      saveNow();
+                    }}
                   >
                     +
                   </button>
@@ -1464,9 +1470,10 @@ export default function App() {
                         checked={
                           settings.actions[k as keyof typeof settings.actions] ?? false
                         }
-                        onChange={(e) =>
-                          patch({ actions: { ...settings.actions, [k]: e.target.checked } })
-                        }
+                        onChange={(e) => {
+                          patch({ actions: { ...settings.actions, [k]: e.target.checked } });
+                          saveNow();
+                        }}
                       />
                       <span className="knob" />
                     </label>

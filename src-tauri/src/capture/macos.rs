@@ -46,6 +46,7 @@ extern "C" {
     // 无障碍 API 函数（经 ApplicationServices 伞框架解析）。
     // 注意：kAX* 属性常量不在 SDK tbd 导出表中，须运行时 dlsym（见 ax_consts）。
     fn AXUIElementCreateSystemWide() -> AXUIElementRef;
+    fn AXUIElementCreateApplication(pid: c_int) -> AXUIElementRef;
     fn AXUIElementCopyAttributeValue(
         el: AXUIElementRef,
         attr: CFStringRef,
@@ -673,26 +674,32 @@ fn forward_selection(
 
 /// AX CannotComplete（-25212）：目标消息失败/对端繁忙——Chromium 树重建期的典型态，
 /// 短等重试可自愈
-const AX_ERROR_CANNOT_COMPLETE: c_int = -25212;
+// 错误码对照本机 SDK AXError.h（2026-10 核准）——旧值 -25212 实为 NoValue，
+// 真正的 CannotComplete 是 -25204，此前三处「树重建期短等重试」从未命中过
+const AX_ERROR_CANNOT_COMPLETE: c_int = -25204;
+/// 应用 AX 未开启（VSCode accessibilitySupport=off 时即此值），见编辑器家族指引
+const AX_ERROR_API_DISABLED: c_int = -25211;
 
 /// AX 错误码可读名（日志用）
 fn ax_error_name(rc: i32) -> &'static str {
+    // 对照本机 SDK AXError.h 逐条核准（2026-10）——旧表整体错位，曾把 APIDisabled
+    // 标成 NotImplemented，误导过 VSCode 取词失败的定位（-25211 实为应用 AX 未开启）
     match rc {
         0 => "Success",
         -25200 => "Failure",
-        -25201 => "BadAttribute",
-        -25202 => "InvalidElement",
-        -25203 => "InvalidParameter",
-        -25204 => "InvalidFocusedUIElement",
-        -25205 => "IllegalArgument",
-        -25206 => "NoValue",
-        -25207 => "DoingAction",
-        -25208 => "AttributeUnsupported",
-        -25209 => "ActionUnsupported",
-        -25210 => "NotificationUnsupported",
-        -25211 => "NotImplemented",
-        -25212 => "NotificationAlreadyRegistered",
-        -25213 => "CannotComplete(消息失败/目标繁忙)",
+        -25201 => "IllegalArgument",
+        -25202 => "InvalidUIElement",
+        -25203 => "InvalidUIElementObserver",
+        -25204 => "CannotComplete",
+        -25205 => "AttributeUnsupported",
+        -25206 => "ActionUnsupported",
+        -25207 => "NotificationUnsupported",
+        -25208 => "NotImplemented",
+        -25209 => "NotificationAlreadyRegistered",
+        -25210 => "NotificationNotRegistered",
+        -25211 => "APIDisabled(应用AX未开启)",
+        -25212 => "NoValue",
+        -25213 => "ParameterizedAttributeUnsupported",
         -25214 => "NotEnoughPrecision",
         _ => "Unknown",
     }
@@ -722,7 +729,19 @@ unsafe fn ax_selected_text(
         std::thread::sleep(Duration::from_millis(100));
         rc_app = AXUIElementCopyAttributeValue(sys, consts.focused_app, &mut app);
     }
-    if rc_app == 0 && !app.is_null() {
+    if app.is_null() {
+        // AX 桥半死时 focused_app 间歇不可读（实测 -25211 且短等重试无效）：按前台
+        // 应用 pid 直建应用元素，不经过 focused_app 这条链。VSCode 家族的兼容模式
+        // 已被编辑器家族闸禁用，这里的轻推是它们唯一的取词通道——聚焦查询失败
+        // 不能让整段主链跳过
+        if let Some(fpid) = frontmost_pid() {
+            app = AXUIElementCreateApplication(fpid);
+            if !app.is_null() {
+                debug_log("AX: 聚焦应用查询失败，退回前台应用 pid 直建");
+            }
+        }
+    }
+    if !app.is_null() {
         let app_el = app as AXUIElementRef;
         // 拿到句柄立刻校验归属：detect_loop 的闸门与真正查询之间隔着防抖 + 整条
         // 查询链（兼容模式可达 749ms），期间焦点可能切回自己（用户点了胶囊等），
@@ -752,10 +771,24 @@ unsafe fn ax_selected_text(
         // 路径2：应用级 SelectedText（部分应用只在此暴露）。无元素可锚定、无角色
         // 可卡（应用元素自身不是文本节点），维持原状——它服务的"只暴露应用级选区"
         // 的应用不在本误报类（文档级遗留选区走的是聚焦元素/坐标定位/子树扫描）
+        let mut rc_app_level: c_int = -1;
         if text.is_none() {
             let (rc, t) = query_app_level(app_el, consts);
             debug_log(format!("AX: 应用级 SelectedText rc={rc} → {}", t.is_some()));
+            rc_app_level = rc;
             text = t;
+        }
+
+        // 编辑器家族 + AX 未开启（-25211 APIDisabled）：轻推 = 强制对方进 SR 模式，
+        // 不轻推，一次性指引开启后走快通道；兼容模式本就被编辑器家族闸拦住，
+        // 这里快速失败，不再空转 500ms 轮询
+        if text.is_none() && rc_app_level == AX_ERROR_API_DISABLED {
+            let family = running_bundle_id(pid).map_or(false, |b| bid_in_editor_family(&b));
+            if family {
+                debug_log("AX: 编辑器家族 AX 未开启（APIDisabled），跳过轻推并指引");
+                show_editor_ax_guidance(app_handle);
+                return out;
+            }
         }
 
         // 路径3：Chromium/Electron 系（Chrome/Edge/VSCode 等）默认不构建 AX 树，
@@ -1314,6 +1347,21 @@ fn skip_compat_for_focused_app() -> bool {
         debug_log("兼容模式：Electron 编辑器家族（空选区 ⌘C 会复制当前行），跳过");
     }
     skip
+}
+
+/// 编辑器家族 AX 未开启（-25211 APIDisabled）的一次性指引：对本家族轻推 =
+/// 强制对方进 Screen Reader Optimized 模式，代价不可接受——不轻推，指引用户
+/// 自行开启（开启后走 AX 快通道，秒出且零误报）。每次启动至多提示一次
+fn show_editor_ax_guidance(app: &AppHandle) {
+    static SHOWN: AtomicBool = AtomicBool::new(false);
+    if SHOWN.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    crate::toast::show_toast_sticky(
+        app,
+        "VS Code 需开启辅助功能支持才能划词：在 VS Code 设置中把 accessibilitySupport 设为 on（VS Code 将进入读屏优化模式）",
+        "info",
+    );
 }
 
 /// 兼容模式取词：快照剪贴板 → 模拟 ⌘C → 轮询变化 → 取词 → 还原快照。
