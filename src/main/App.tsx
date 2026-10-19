@@ -35,6 +35,18 @@ import {
   type AiActionId,
 } from "../shared/actions";
 import { aiChat } from "../shared/ai";
+import {
+  formEntryOf,
+  PRESET_PROVIDERS,
+  presetByBaseUrl,
+  type ProviderPreset,
+} from "../shared/providerPresets";
+import {
+  TRANSLATE_SERVICES,
+  translateMissingReason,
+  translateService,
+  type TranslateService,
+} from "../shared/translate";
 import markIcon from "./assets/mark.svg";
 import type { CustomAction, Provider, SearchEngine, Settings } from "../shared/types";
 
@@ -210,9 +222,10 @@ function ShortcutRecorder({
 const NEW_PROVIDER = (): Provider => ({
   id: `p${Date.now()}`,
   name: "自定义服务",
-  baseUrl: "https://api.deepseek.com",
+  baseUrl: "",
   apiKey: "",
-  model: "deepseek-chat",
+  model: "",
+  form: "chat",
 });
 
 const ACTION_LABELS: Record<string, string> = {
@@ -271,13 +284,6 @@ const ENGINE_PRESETS: Array<[string, string]> = [
   ["Google", "https://www.google.com/search?q={q}"],
   ["必应", "https://www.bing.com/search?q={q}"],
   ["GitHub", "https://github.com/search?q={q}"],
-];
-
-// 翻译服务注册表（id 与浮动条/后端约定）
-const TRANSLATE_SERVICES: Array<[string, string, string]> = [
-  ["ai", "AI 翻译", "由大模型翻译，措辞灵活，适合学习与精读等重质量场景。"],
-  ["baidu", "百度翻译", "响应快，有每月免费额度，适合快速理解大意与日常查词；密钥需注册后在百度翻译控制台获取。"],
-  ["deepl", "DeepL", "译文自然，适合正式文档等重质量场景；密钥需注册后在 DeepL 控制台获取。"],
 ];
 
 /// Rust 侧 update::UpdateInfo 的镜像（status 见 src-tauri/src/update.rs）
@@ -493,6 +499,21 @@ export default function App() {
 
   const save = () => {
     if (!settings) return;
+    // 保存闸：启用中的服务必填凭据未填不许落盘（提示即注册表推导的同一句文案，
+    // 并当场展开该行）；停用的服务不拦——它不进菜单，用时另有兜底提醒
+    for (const id of settings.translate.enabled) {
+      const missing = translateMissingReason(
+        settings.translate,
+        settings.providers,
+        settings.defaultProviderId,
+        id,
+      );
+      if (missing) {
+        toast(missing, "err");
+        setSvcOpen((m) => ({ ...m, [id]: true }));
+        return;
+      }
+    }
     invoke("save_settings", { settings })
       .then(() => {
         setSaved(true);
@@ -506,22 +527,88 @@ export default function App() {
     patch({ providers: settings.providers.map((x) => (x.id === id ? { ...x, ...p } : x)) });
   };
 
-  // 翻译服务多选开关；默认项被关闭时顺延到首个启用项。
-  // 配置完备性不在设置页拦截——统一在浮动条「使用时」兜底提醒
-  //（shared/translate.ts，触发时用户才知道去哪配），此处保持直开直关
-  const toggleTranslate = (id: string, on: boolean) => {
+  // 添加模型服务：预设（预填名称/地址/形态/候选模型，只差密钥）或自定义（手填全项）。
+  // 不置灰已添加预设——同一家开两个号是合理需求
+  const addProvider = (preset: ProviderPreset) => {
+    if (!settings) return;
+    const p: Provider = {
+      id: `p${Date.now()}`,
+      name: preset.label,
+      baseUrl: preset.forms[0].baseUrl,
+      apiKey: "",
+      model: "",
+      form: preset.forms[0].form,
+    };
+    patch({
+      providers: [...settings.providers, p],
+      defaultProviderId: settings.providers.length === 0 ? p.id : settings.defaultProviderId,
+    });
+    setProviderOpen(p.id); // 新卡自动展开，直接进入编辑
+    setProvPickerOpen(false);
+  };
+
+  const addCustomProvider = () => {
+    if (!settings) return;
+    const p = NEW_PROVIDER();
+    patch({
+      providers: [...settings.providers, p],
+      defaultProviderId: settings.providers.length === 0 ? p.id : settings.defaultProviderId,
+    });
+    setProviderOpen(p.id);
+    setProvPickerOpen(false);
+  };
+
+  // 翻译服务添加/移除：添加即启用（凭据可后补）；停用只摘出菜单、保留配置
+  // （用量耗尽先停不删）——「保留配置」是停用的语义，移除则连凭据一起删净，
+  // 两个动作分工明确，删除不留不可见的残余状态。默认项被停用/移除时顺延
+  const addTranslate = (id: string) => {
     if (!settings) return;
     const cur = settings.translate;
-    if (!on && cur.enabled.length <= 1) {
+    if (addedServiceIds.has(id)) return;
+    const enabled = [...cur.enabled, id];
+    setSvcOpen((m) => ({ ...m, [id]: true })); // 添加即自动展开该服务的凭据填写
+    patch({
+      translate: {
+        ...cur,
+        enabled,
+        order: [...cur.order, id],
+        default: cur.default || enabled[0] || "",
+      },
+    });
+  };
+
+  const removeTranslate = (id: string) => {
+    if (!settings) return;
+    const cur = settings.translate;
+    if (cur.enabled.length <= 1) {
       toast("至少保留一个翻译服务", "err");
       return;
     }
+    const enabled = cur.enabled.filter((x) => x !== id);
+    const credentials = { ...cur.credentials };
+    delete credentials[id];
+    patch({
+      translate: {
+        ...cur,
+        enabled,
+        order: cur.order.filter((x) => x !== id),
+        default: cur.default === id ? (enabled[0] ?? "") : cur.default,
+        credentials,
+      },
+    });
+    setConfirmDelSvc(null);
+  };
+
+  // 停用只摘出「翻译」展开列表（凭据与排序保留），全部停用也允许——
+  // 浮动条点击翻译时会兜底提示未启用服务
+  const toggleTranslate = (id: string, on: boolean) => {
+    if (!settings) return;
+    const cur = settings.translate;
     const enabled = on
       ? cur.enabled.includes(id)
         ? cur.enabled
         : [...cur.enabled, id]
       : cur.enabled.filter((x) => x !== id);
-    if (on) setSvcOpen((m) => ({ ...m, [id]: true })); // 启用即自动展开该服务的配置
     patch({
       translate: {
         ...cur,
@@ -542,14 +629,27 @@ export default function App() {
     (id) => CONTEXT_ACTION_IDS.has(id) && (IS_MAC || id !== "addr"),
   );
 
-  // 翻译服务展示顺序：已配置顺序 + 注册表新增（追加末尾）
-  const translateRows = settings
-    ? [
-        ...new Set([...settings.translate.order, ...TRANSLATE_SERVICES.map(([id]) => id)]),
-      ]
-        .map((id) => TRANSLATE_SERVICES.find(([sid]) => sid === id))
-        .filter((r): r is [string, string, string] => !!r)
-    : [];
+  // 翻译服务列表：已添加的（order ∪ enabled——旧配置 enabled 可能超出 order）
+  // 按 order 排，order 里没记到的 id 按注册表顺序垫底。行内开关决定是否进入
+  // 浮动条「翻译」展开列表（enabled ⊆ 已添加 ⊆ 注册表）；停用只摘出菜单，
+  // 凭据保留（用量耗尽时先停不删配置）
+  const translateRows: TranslateService[] = (() => {
+    if (!settings) return [];
+    const t = settings.translate;
+    const regIdx = (id: string) => TRANSLATE_SERVICES.findIndex((s) => s.id === id);
+    const okey = (id: string) => {
+      const i = t.order.indexOf(id);
+      return i >= 0 ? i : TRANSLATE_SERVICES.length + regIdx(id);
+    };
+    return [...new Set([...t.order, ...t.enabled])]
+      .map((id) => translateService(id))
+      .filter((s): s is TranslateService => !!s)
+      .sort((a, b) => okey(a.id) - okey(b.id));
+  })();
+  // 已添加集合（选择器据此排除，停用中的不算未添加）
+  const addedServiceIds = new Set(
+    settings ? [...settings.translate.order, ...settings.translate.enabled] : [],
+  );
 
   // 拖拽排序（指针事件实现，不依赖 WKWebView 残缺的 HTML5 DnD）：
   // 按住把手 → document 级 mousemove 做行命中检测 → 松手落位
@@ -688,8 +788,12 @@ export default function App() {
   const [svcDragId, setSvcDragId] = useState<string | null>(null);
   const [svcOverId, setSvcOverId] = useState<string | null>(null);
   const svcOverRef = useRef<string | null>(null);
-  // 翻译服务凭据折叠态；启用服务时自动展开一次（见 toggleTranslate）
+  // 翻译服务凭据折叠态；添加服务时自动展开一次（见 addTranslate）
   const [svcOpen, setSvcOpen] = useState<Record<string, boolean>>({});
+  // 「添加服务」内联 chips 面板（卡片底部展开，非弹窗）：完整目录常驻，已添加置灰
+  const [svcPickerOpen, setSvcPickerOpen] = useState(false);
+  // 移除翻译服务的二次确认（.row-del 一发就删太容易手滑；确认文案言明密钥同删）
+  const [confirmDelSvc, setConfirmDelSvc] = useState<string | null>(null);
 
   // 提示词卡手风琴：同时只展开一个（三张卡全展开要滚三屏，而这页的用法就是一次调一个动作）。
   // 编辑框始终是「当前生效内容」，内容与默认一致时不落覆盖项——恢复默认因此是删 key，
@@ -697,6 +801,8 @@ export default function App() {
   const [promptOpen, setPromptOpen] = useState<AiActionId | null>(null);
   // 模型服务折叠卡：单开（同 Prompt 页），添加服务后自动展开新卡进入编辑
   const [providerOpen, setProviderOpen] = useState<string | null>(null);
+  // 「添加服务」预设 chips 面板（与翻译页同款内联交互）
+  const [provPickerOpen, setProvPickerOpen] = useState(false);
 
   const setPrompt = (id: AiActionId, value: string) => {
     if (!settings) return;
@@ -859,16 +965,15 @@ export default function App() {
       setSvcDragId(null);
       setSvcOverId(null);
       svcOverRef.current = null;
-      if (!settings || !target || target === id) return;
-      const order = [
-        ...new Set([...settings.translate.order, ...TRANSLATE_SERVICES.map(([sid]) => sid)]),
-      ];
-      const from = order.indexOf(id);
-      const to = order.indexOf(target);
-      if (from < 0 || to < 0) return;
-      order.splice(from, 1);
-      order.splice(to, 0, id);
-      patch({ translate: { ...settings.translate, order } });
+      if (!target || target === id) return;
+      // 行序即新 order：列表是已添加全集，按视觉顺序整体替换
+      const ids = translateRows.map((r) => r.id);
+      const from = ids.indexOf(id);
+      const to = ids.indexOf(target);
+      if (from < 0 || to < 0 || !settings) return;
+      ids.splice(from, 1);
+      ids.splice(to, 0, id);
+      patch({ translate: { ...settings.translate, order: ids } });
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
@@ -925,12 +1030,16 @@ export default function App() {
           <>
             <h1>模型服务</h1>
             <p className="page-hint">
-              添加 OpenAI 协议兼容的模型服务，设为默认的一项供全部划词动作调用。密钥仅保存在本机。更改需保存后生效。
+              添加模型服务选预设即可自动带出地址与形态，只填密钥并确认模型名；设为默认的一项供全部划词动作调用。密钥仅保存在本机。更改需保存后生效。
             </p>
 
             <h2 className="sec">服务</h2>
             {settings.providers.map((p) => {
               const open = providerOpen === p.id;
+              // 按地址反查预设（含所在形态项）：命中则给占位指引并决定形态切换是否露出；
+              // 改过地址即不再命中
+              const hit = presetByBaseUrl(p.baseUrl);
+              const preset = hit?.preset;
               return (
                 <div className="card" key={p.id}>
                   {/* 折叠卡头：名称 + 模型 + 默认标记，点击展开编辑（与 Prompt 页同形态） */}
@@ -954,7 +1063,37 @@ export default function App() {
                         </label>
                         <label className="field">
                           <span>模型</span>
-                          <input value={p.model} onChange={(e) => patchProvider(p.id, { model: e.target.value })} />
+                          <input
+                            value={p.model}
+                            placeholder={preset?.hint ?? ""}
+                            onChange={(e) => patchProvider(p.id, { model: e.target.value })}
+                          />
+                        </label>
+                        {/* 接口形态所有卡常驻：形态选择权在用户（厂商随时可能新增
+                            端点，注册表快照不该锁死）。预设含该形态地址则切换时
+                            自动带出（不同形态端点前缀可能完全不同，如智谱两形态
+                            是两个基址）；未含则保持当前地址由用户自行确认 */}
+                        <label className="field">
+                          <span>接口形态</span>
+                          <div style={{ display: "flex", gap: 14, marginTop: 6 }}>
+                            {(["chat", "responses"] as const).map((f) => (
+                              <label key={f} className="radio sm">
+                                <input
+                                  type="radio"
+                                  name={`form-${p.id}`}
+                                  checked={(p.form ?? "chat") === f}
+                                  onChange={() => {
+                                    const next = preset ? formEntryOf(preset, f) : undefined;
+                                    patchProvider(
+                                      p.id,
+                                      next ? { form: f, baseUrl: next.baseUrl } : { form: f },
+                                    );
+                                  }}
+                                />
+                                {f === "chat" ? "Chat · 通用" : "Responses"}
+                              </label>
+                            ))}
+                          </div>
                         </label>
                         <label className="field wide">
                           <span>服务地址</span>
@@ -1014,19 +1153,25 @@ export default function App() {
                 </div>
               );
             })}
-            <button
-              className="btn"
-              onClick={() => {
-                const p = NEW_PROVIDER();
-                patch({
-                  providers: [...settings.providers, p],
-                  defaultProviderId: settings.providers.length === 0 ? p.id : settings.defaultProviderId,
-                });
-                setProviderOpen(p.id); // 新卡自动展开，直接进入编辑
-              }}
-            >
-              ＋ 添加服务
-            </button>
+            <div className="prov-add">
+              <button className="btn" onClick={() => setProvPickerOpen((v) => !v)}>
+                <Plus size={13} strokeWidth={2} /> {provPickerOpen ? "收起" : "添加服务"}
+              </button>
+              {/* 内联 chips 面板（与翻译页同款交互）：选预设即预填地址/形态/候选模型，
+                  点自定义保留手填全项；不置灰已添加项——同一家开两个号是合理需求 */}
+              {provPickerOpen && (
+                <div className="svc-chips">
+                  {PRESET_PROVIDERS.map((ps) => (
+                    <button key={ps.id} className="svc-chip" onClick={() => addProvider(ps)}>
+                      {ps.label}
+                    </button>
+                  ))}
+                  <button className="svc-chip" onClick={addCustomProvider}>
+                    自定义
+                  </button>
+                </div>
+              )}
+            </div>
 
             <div className="save-bar">
               <button className="btn primary" onClick={save}>
@@ -1561,38 +1706,38 @@ export default function App() {
           <>
             <h1>翻译</h1>
             <p className="page-hint">
-              开关决定该服务是否进入「翻译」展开列表，拖动把手调整顺序，「默认」为单击直达项；译文方向自动识别。改动即时反映到浮动条，点「保存更改」持久化。
+              「添加服务」选择服务商，添加即启用（开关随时停用，配置保留——用量耗尽先停不删）；凭据在行内展开填写，「默认」为浮动条单击直达项，拖动把手调整顺序；译文方向自动识别。改动即时反映到浮动条，点「保存更改」持久化。
             </p>
 
             <h2 className="sec">服务</h2>
             <div className="card">
-              {translateRows.map(([id, name, desc]) => (
+              {translateRows.map((svc) => (
                 <div
-                  key={id}
+                  key={svc.id}
                   ref={(el) => {
-                    if (el) svcRowEls.current.set(id, el);
-                    else svcRowEls.current.delete(id);
+                    if (el) svcRowEls.current.set(svc.id, el);
+                    else svcRowEls.current.delete(svc.id);
                   }}
-                  className={`svc ${svcDragId === id ? "dragging" : ""} ${
-                    svcOverId === id && svcDragId && svcDragId !== id ? "drop-target" : ""
+                  className={`svc ${svcDragId === svc.id ? "dragging" : ""} ${
+                    svcOverId === svc.id && svcDragId && svcDragId !== svc.id ? "drop-target" : ""
                   }`}
                 >
                   <div className="svc-main">
                     <span
                       className="grip"
                       title="拖动排序"
-                      onMouseDown={(e) => onSvcGripDown(e, id)}
+                      onMouseDown={(e) => onSvcGripDown(e, svc.id)}
                     >
                       <GripVertical size={13} strokeWidth={1.75} />
                     </span>
                     <div className="svc-content">
                       <div className="svc-head">
-                        <div className="row-title">{name}</div>
+                        <div className="row-title">{svc.label}</div>
                         <div className="row-ctl">
                           <label
                             className="radio sm"
                             title={
-                              settings.translate.enabled.includes(id)
+                              settings.translate.enabled.includes(svc.id)
                                 ? "设为默认翻译服务"
                                 : "启用后才可设为默认"
                             }
@@ -1600,40 +1745,51 @@ export default function App() {
                             <input
                               type="radio"
                               name="defaultTranslate"
-                              checked={settings.translate.default === id}
-                              disabled={!settings.translate.enabled.includes(id)}
+                              checked={settings.translate.default === svc.id}
+                              disabled={!settings.translate.enabled.includes(svc.id)}
                               onChange={() =>
-                                patch({ translate: { ...settings.translate, default: id } })
+                                patch({ translate: { ...settings.translate, default: svc.id } })
                               }
                             />
                             默认
                           </label>
-                          <label className="switch">
+                          <label className="switch" title="启用后进入「翻译」展开列表">
                             <input
                               type="checkbox"
-                              checked={settings.translate.enabled.includes(id)}
-                              onChange={(e) => toggleTranslate(id, e.target.checked)}
+                              checked={settings.translate.enabled.includes(svc.id)}
+                              onChange={(e) => toggleTranslate(svc.id, e.target.checked)}
                             />
                             <span className="knob" />
                           </label>
                           <button
-                            className={`svc-chev ${svcOpen[id] ? "open" : ""}`}
-                            title={svcOpen[id] ? "收起配置" : "展开配置"}
-                            onClick={() => setSvcOpen((m) => ({ ...m, [id]: !m[id] }))}
+                            className="row-del"
+                            title="移除该服务"
+                            aria-label={`移除${svc.label}`}
+                            onClick={() => {
+                              if (settings.translate.enabled.length <= 1) {
+                                toast("至少保留一个翻译服务", "err");
+                                return;
+                              }
+                              setConfirmDelSvc(svc.id);
+                            }}
+                          >
+                            <Trash2 size={13} strokeWidth={1.75} />
+                          </button>
+                          <button
+                            className={`svc-chev ${svcOpen[svc.id] ? "open" : ""}`}
+                            title={svcOpen[svc.id] ? "收起配置" : "展开配置"}
+                            onClick={() => setSvcOpen((m) => ({ ...m, [svc.id]: !m[svc.id] }))}
                           >
                             <ChevronDown size={13} strokeWidth={2} />
                           </button>
                         </div>
                       </div>
-                      <div className="row-sub">{desc}</div>
+                      <div className="row-sub">{svc.blurb}</div>
 
-                      {id === "ai" && (
-                        <div className={`svc-body ${svcOpen[id] ? "open" : ""}`}>
+                      {svc.auth === "ai" && (
+                        <div className={`svc-body ${svcOpen[svc.id] ? "open" : ""}`}>
                           <div>
                             <div className="svc-fields">
-                              <div className="row-sub" style={{ marginTop: 0 }}>
-                                翻译使用「模型服务」页设为默认的模型，密钥与地址在该页统一管理。
-                              </div>
                               <div className="svc-fields-foot">
                                 <button
                                   className="btn sm"
@@ -1647,76 +1803,51 @@ export default function App() {
                         </div>
                       )}
 
-                      {(id === "baidu" || id === "deepl") && (
-                        <div className={`svc-body ${svcOpen[id] ? "open" : ""}`}>
+                      {svc.fields.length > 0 && (
+                        <div className={`svc-body ${svcOpen[svc.id] ? "open" : ""}`}>
                           <div>
                             <div className="svc-fields">
-                              {id === "baidu" && (
-                                <>
-                                  <label className="field">
-                                    <span>APPID</span>
-                                    <input
-                                      value={settings.translate.appId}
-                                      onChange={(e) =>
-                                        patch({
-                                          translate: {
-                                            ...settings.translate,
-                                            appId: e.target.value,
-                                          },
-                                        })
-                                      }
-                                      placeholder="注册后登录官网获取"
-                                    />
-                                  </label>
-                                  <label className="field">
-                                    <span>API 密钥</span>
-                                    <input
-                                      type="password"
-                                      value={settings.translate.appKey}
-                                      onChange={(e) =>
-                                        patch({
-                                          translate: {
-                                            ...settings.translate,
-                                            appKey: e.target.value,
-                                          },
-                                        })
-                                      }
-                                      placeholder="与 APPID 在同一页面"
-                                    />
-                                  </label>
-                                </>
-                              )}
-                              {id === "deepl" && (
-                                <label className="field wide">
-                                  <span>Authentication Key</span>
+                              {svc.fields.map((f) => (
+                                <label
+                                  key={f.field}
+                                  className={`field ${svc.fields.length === 1 ? "wide" : ""}`}
+                                >
+                                  <span>{f.label}</span>
                                   <input
-                                    type="password"
-                                    value={settings.translate.deeplKey}
+                                    type={f.secret ? "password" : "text"}
+                                    value={
+                                      (settings.translate.credentials[svc.id]?.[f.field] as
+                                        | string
+                                        | undefined) ?? ""
+                                    }
                                     onChange={(e) =>
                                       patch({
                                         translate: {
                                           ...settings.translate,
-                                          deeplKey: e.target.value,
+                                          credentials: {
+                                            ...settings.translate.credentials,
+                                            [svc.id]: {
+                                              ...settings.translate.credentials[svc.id],
+                                              [f.field]: e.target.value,
+                                            },
+                                          },
                                         },
                                       })
                                     }
-                                    placeholder="免费密钥以 :fx 结尾"
+                                    placeholder={f.placeholder}
                                   />
                                 </label>
-                              )}
+                              ))}
                               <div className="svc-fields-foot">
                                 <button
                                   className="btn sm"
                                   onClick={() =>
-                                    invoke(
-                                      "open_url",
-                                      id === "baidu"
-                                        ? { url: "https://fanyi-api.baidu.com/product/11" }
-                                        : { url: "https://www.deepl.com/pro-api" },
-                                    ).catch(() => undefined)
+                                    invoke("open_url", { url: svc.docsUrl }).catch(
+                                      () => undefined,
+                                    )
                                   }
                                 >
-                                  {id === "baidu" ? "打开官网文档" : "打开 DeepL API"}
+                                  {svc.docsLabel}
                                 </button>
                               </div>
                             </div>
@@ -1727,6 +1858,35 @@ export default function App() {
                   </div>
                 </div>
               ))}
+              {TRANSLATE_SERVICES.some((s) => !addedServiceIds.has(s.id)) && (
+                <div className="card-foot">
+                  <button className="btn sm" onClick={() => setSvcPickerOpen((v) => !v)}>
+                    <Plus size={13} strokeWidth={2} /> {svcPickerOpen ? "收起" : "添加服务"}
+                  </button>
+                </div>
+              )}
+              {/* 内联 chips 面板（替代弹窗）：名字即决策，描述在列表行里常年可见；
+                  完整目录常驻（已添加置灰打勾），点即添加并收起 */}
+              {svcPickerOpen && (
+                <div className="svc-chips">
+                  {TRANSLATE_SERVICES.map((s) => {
+                    const added = addedServiceIds.has(s.id);
+                    return (
+                      <button
+                        key={s.id}
+                        className="svc-chip"
+                        disabled={added}
+                        onClick={() => {
+                          addTranslate(s.id);
+                          setSvcPickerOpen(false);
+                        }}
+                      >
+                        {added ? `✓ ${s.label}` : s.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="save-bar">
@@ -1734,6 +1894,20 @@ export default function App() {
                 {saved ? "已保存" : "保存更改"}
               </button>
             </div>
+
+            {confirmDelSvc &&
+              (() => {
+                const svc = translateRows.find((x) => x.id === confirmDelSvc);
+                if (!svc) return null;
+                return (
+                  <Confirm
+                    title="移除翻译服务"
+                    text={`移除「${svc.label}」？已填写的密钥会一并删除；停用可保留配置。`}
+                    onCancel={() => setConfirmDelSvc(null)}
+                    onConfirm={() => removeTranslate(confirmDelSvc)}
+                  />
+                );
+              })()}
           </>
         )}
 

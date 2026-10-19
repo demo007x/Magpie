@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Adding a model service now starts from a preset list — DeepSeek, Doubao, Zhipu, Kimi, Qwen, Xiaomi MiMo, SiliconFlow, OpenAI, xAI and OpenRouter — that fills in the name, service address and API form automatically: paste the key and confirm the model name. A custom entry keeps the fill-everything path for anything else. The OpenAI Responses API is now supported as a service form alongside Chat Completions (issue #1).
+- Seven new translation providers beyond AI, Baidu and DeepL: Google Translate, Microsoft Translator (Azure), Youdao, Tencent Cloud MT, Alibaba Cloud MT, Volcengine Translate and Caiyun Xiaoyi. Each is configured on the Translate settings page with its own credentials (an API key, an access-key pair, and a region where the provider requires one), then shows up in the floating bar menu and the result window like the built-ins. Provider signatures follow each vendor's official documentation.
+
+### Changed
+
+- Translation services are now managed as an added list on the Translate settings page: pick a provider via "添加服务", fill its credentials in the row, and toggle it on or off anytime — pausing a provider keeps its credentials, handy when a monthly quota runs out. The default radio picks the one-click service among enabled ones. Removing a provider asks for confirmation and clears its stored credentials (pausing is the way to keep them), and saving is blocked while an enabled provider's required credentials are empty. Existing Baidu/DeepL credentials migrate automatically — no re-entry needed.
+- Secondary menus on the floating bar and in the result window's action row (translate services, search engines, Obsidian targets, the overflow list and the row-side menus inside it) now open on hover: resting the pointer on an action with a chevron for a moment expands its menu — no click needed. Clicks keep working exactly as before (the action button runs its default service, the chevron opens instantly), sweeping past other actions while a menu is open switches instantly, and the menu tucks itself away shortly after the pointer leaves the bar.
+
+### Fixed
+
+- The floating bar no longer shows an action whose backing services are all disabled: the Translate action disappears when every translation service is toggled off, Search disappears when every engine is off, and the AI actions (解释/总结 and custom ones) hide while the default model service is missing its key or model. The result window's action row follows the same rules.
+
 ## [0.1.15] - 2026-10-17
 
 - Windows: the main window no longer stays on "Loading…" forever. App windows are now created only after all shared state is ready, so very early settings requests (WebView2 can serve pages faster than the backend finishes startup) can no longer fail; the settings page also retries a failed load instead of swallowing it.

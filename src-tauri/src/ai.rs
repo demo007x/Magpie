@@ -2,7 +2,6 @@
 //! 刻意保持"哑"——无任何 AI 逻辑；prompt/动作全部在 TS 层（docs/05）。
 
 use futures_util::StreamExt;
-use md5::{Digest, Md5};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -56,6 +55,15 @@ fn pick_provider<'a>(
 fn thinking_patch(base_url: &str, model: &str, on: bool) -> Option<Value> {
     let host = base_url.to_ascii_lowercase();
     let model_l = model.to_ascii_lowercase();
+    if host.contains("xiaomimimo.com") {
+        // 小米 MiMo：thinking{type}（官方默认 enabled）；文档无 reasoning_effort
+        // 强度参数，不发（核实来源：mimo.mi.com 官方 OpenAI 兼容接口文档）
+        return Some(if on {
+            json!({ "thinking": { "type": "enabled" } })
+        } else {
+            json!({ "thinking": { "type": "disabled" } })
+        });
+    }
     if host.contains("api.deepseek.com") || host.contains("volces.com") {
         // DeepSeek / 豆包：开/关都注入（推理模型默认开思考，关闭须显式）
         return Some(if on {
@@ -106,165 +114,60 @@ fn thinking_patch(base_url: &str, model: &str, on: bool) -> Option<Value> {
     None
 }
 
-// ---------- 百度翻译开放平台（通用翻译 API） ----------
-
-#[derive(serde::Deserialize)]
-struct BaiduTransItem {
-    dst: String,
-}
-
-#[derive(serde::Deserialize)]
-struct BaiduTransResp {
-    #[serde(default)]
-    trans_result: Vec<BaiduTransItem>,
-    #[serde(default)]
-    error_code: Option<String>,
-    #[serde(default)]
-    error_msg: Option<String>,
-}
-
-/// 百度翻译：appid + q + salt + key 的 MD5 签名鉴权，方向自动识别（中↔英由调用方给 to）
-#[tauri::command]
-pub async fn baidu_translate(app: AppHandle, text: String, to: String) -> Result<String, String> {
-    let s = settings::current(&app);
-    let tc = &s.translate;
-    if !tc.enabled.iter().any(|s| s == "baidu") {
-        return Err("未启用百度翻译服务".into());
-    }
-    if tc.app_id.trim().is_empty() || tc.app_key.trim().is_empty() {
-        return Err("请到「翻译」页填写百度翻译 APPID 与密钥".into());
-    }
-
-    let salt = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .to_string();
-    let sign_src = format!("{}{}{}{}", tc.app_id.trim(), text, salt, tc.app_key.trim());
-    let mut hasher = Md5::new();
-    hasher.update(sign_src.as_bytes());
-    let sign = format!("{:x}", hasher.finalize());
-
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let resp = client
-        .post("https://fanyi-api.baidu.com/api/trans/vip/translate")
-        .form(&[
-            ("q", text.as_str()),
-            ("from", "auto"),
-            ("to", to.as_str()),
-            ("appid", tc.app_id.trim()),
-            ("salt", salt.as_str()),
-            ("sign", sign.as_str()),
-        ])
-        .send()
-        .await
-        .map_err(|e| format!("网络请求失败：{e}"))?;
-
-    let v: BaiduTransResp = resp
-        .json()
-        .await
-        .map_err(|e| format!("响应解析失败：{e}"))?;
-    if let Some(code) = v.error_code {
-        return Err(format!(
-            "百度翻译错误 {}：{}",
-            code,
-            v.error_msg.unwrap_or_default()
-        ));
-    }
-
-    // 只输出译文：原文用户屏幕上就有，对照与语言识别属冗余
-    if v.trans_result.is_empty() {
-        return Err("翻译结果为空".into());
-    }
-    let out = v
-        .trans_result
-        .into_iter()
-        .map(|r| r.dst)
-        .collect::<Vec<_>>()
-        .join("\n");
-    Ok(out)
-}
-
-// ---------- DeepL 翻译 API ----------
-
-#[derive(serde::Deserialize)]
-struct DeeplTranslation {
-    text: String,
-}
-
-#[derive(serde::Deserialize)]
-struct DeeplTransResp {
-    #[serde(default)]
-    translations: Vec<DeeplTranslation>,
-    #[serde(default)]
-    message: Option<String>,
-}
-
-/// DeepL 翻译：`Authorization: DeepL-Auth-Key` 头鉴权（query 鉴权已弃用）；
-/// Free 密钥以 :fx 结尾 → api-free.deepl.com，其余 → api.deepl.com。
-/// 方向由调用方给 target_lang（"EN" | "ZH"），源语言省略走官方自动检测。
-#[tauri::command]
-pub async fn deepl_translate(app: AppHandle, text: String, to: String) -> Result<String, String> {
-    let s = settings::current(&app);
-    let tc = &s.translate;
-    if !tc.enabled.iter().any(|x| x == "deepl") {
-        return Err("未启用 DeepL 翻译服务".into());
-    }
-    let key = tc.deepl_key.trim();
-    if key.is_empty() {
-        return Err("请到「翻译」页填写 DeepL Authentication Key".into());
-    }
-
-    let host = if key.ends_with(":fx") {
-        "https://api-free.deepl.com"
-    } else {
-        "https://api.deepl.com"
-    };
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let resp = client
-        .post(format!("{host}/v2/translate"))
-        .header("Authorization", format!("DeepL-Auth-Key {key}"))
-        .json(&json!({
-            "text": [text],
-            "target_lang": to,
-        }))
-        .send()
-        .await
-        .map_err(|e| format!("网络请求失败：{e}"))?;
-
-    let status = resp.status();
-    let v: DeeplTransResp = resp
-        .json()
-        .await
-        .map_err(|e| format!("响应解析失败（HTTP {status}）：{e}"))?;
-    if !status.is_success() {
-        return Err(format!(
-            "DeepL 错误 HTTP {status}：{}",
-            v.message.unwrap_or_default()
-        ));
-    }
-
-    // 只输出译文：原文用户屏幕上就有，语言检测结果属冗余
-    if v.translations.is_empty() {
-        return Err("翻译结果为空".into());
-    }
-    Ok(v.translations
-        .into_iter()
-        .map(|t| t.text)
-        .collect::<Vec<_>>()
-        .join("\n"))
-}
-
 /// 思考参数被拒时的自动降级判定：仅参数类 4xx（400/404/415/422）且确实注入过
 /// 才值得重试；401/429 等与参数无关的状态重试也不会成功，不浪费请求
 fn should_retry_without_thinking(status: u16, injected: bool) -> bool {
     injected && matches!(status, 400 | 404 | 415 | 422)
+}
+
+/// Responses 形态的思考参数（按厂商分派，范式同 thinking_patch）：
+/// 各家对 effort 的语义/默认值不同，关思考在部分厂商必须显式传参——
+/// 核实来源（2026-10 官方文档）：智谱 Response API（effort 默认 max，
+/// none/minimal 才放弃思考，low/medium 映射 high）；百炼（reasoning.effort
+/// 优先级高于 enable_thinking）；方舟（thinking 迁移为 reasoning）
+fn responses_thinking_patch(base_url: &str, on: bool) -> Option<Value> {
+    let host = base_url.to_ascii_lowercase();
+    if host.contains("bigmodel.cn") {
+        // 智谱：不开就会落到默认 max 重思考，关必须显式 minimal；开无轻档
+        // （low 被映射为 high），只能以 low 表达「开」
+        return Some(if on {
+            json!({ "reasoning": { "effort": "low" } })
+        } else {
+            json!({ "reasoning": { "effort": "minimal" } })
+        });
+    }
+    if host.contains("dashscope.aliyuncs.com") {
+        // 百炼：reasoning.effort 优先级高于 enable_thinking；开 = low 档，
+        // 关 = 显式关掉 enable_thinking（不发参会落回模型默认思考）
+        return Some(if on {
+            json!({ "reasoning": { "effort": "low" } })
+        } else {
+            json!({ "enable_thinking": false })
+        });
+    }
+    // OpenAI 官方 / 方舟 / 其他兼容网关：开 = low 档轻思考；关 = 不发参
+    // （等价模型默认；非推理模型拒收时由参数类 4xx 自动降级兜底）
+    on.then(|| json!({ "reasoning": { "effort": "low" } }))
+}
+
+/// Chat Completions messages → Responses 请求体：system/developer 归入顶层
+/// `instructions`，其余按 role/content 平移进 `input`（本管道 content 恒为字符串）
+fn responses_body(model: &str, messages: &[Value]) -> Value {
+    let mut instructions = String::new();
+    let mut input: Vec<Value> = Vec::new();
+    for m in messages {
+        let role = m.get("role").and_then(Value::as_str).unwrap_or("user");
+        let content = m.get("content").and_then(Value::as_str).unwrap_or("");
+        if role == "system" || role == "developer" {
+            if !instructions.is_empty() {
+                instructions.push_str("\n\n");
+            }
+            instructions.push_str(content);
+        } else {
+            input.push(json!({ "role": role, "content": content }));
+        }
+    }
+    json!({ "model": model, "instructions": instructions, "input": input, "stream": true })
 }
 
 #[tauri::command]
@@ -281,14 +184,25 @@ pub async fn ai_chat(
         return Err("API Key 为空，请到「设置」页填写".to_string());
     }
 
-    let url = format!(
-        "{}/chat/completions",
-        provider.base_url.trim_end_matches('/')
-    );
-    let mut body = json!({ "model": provider.model, "messages": messages, "stream": true });
+    let form_responses = provider.form == "responses";
+    let base = provider.base_url.trim_end_matches('/');
+    let url = if form_responses {
+        format!("{base}/responses")
+    } else {
+        format!("{base}/chat/completions")
+    };
+    let mut body = if form_responses {
+        responses_body(&provider.model, &messages)
+    } else {
+        json!({ "model": provider.model, "messages": messages, "stream": true })
+    };
     // 思考模式开关（仅已知厂商注入，见 thinking_patch）；思考型模型会先流出
     // reasoning_content 增量，本管道只转发 content——思维链阶段表现为静默等待
-    let patch = thinking_patch(&provider.base_url, &provider.model, provider.thinking);
+    let patch = if form_responses {
+        responses_thinking_patch(&provider.base_url, provider.thinking)
+    } else {
+        thinking_patch(&provider.base_url, &provider.model, provider.thinking)
+    };
     if let Some(p) = &patch {
         if let (Some(obj), Some(po)) = (body.as_object_mut(), p.as_object()) {
             obj.extend(po.clone());
@@ -368,14 +282,47 @@ pub async fn ai_chat(
                         let Ok(v) = serde_json::from_str::<Value>(data) else {
                             continue;
                         };
-                        let content = v
-                            .pointer("/choices/0/delta/content")
-                            .and_then(Value::as_str);
-                        if let Some(c) = content {
-                            if !c.is_empty() {
-                                let _ = channel.send(AiEvent::Delta {
-                                    content: c.to_string(),
-                                });
+                        if form_responses {
+                            // Responses 事件流：data 自带 type 字段（与 event: 行一致）。
+                            // 正文走 output_text.delta；思考摘要 reasoning_summary_text.delta
+                            // 不转发（与 chat 形态静默等待思维链同口径）
+                            match v.get("type").and_then(Value::as_str).unwrap_or("") {
+                                "response.output_text.delta" => {
+                                    if let Some(c) = v.get("delta").and_then(Value::as_str) {
+                                        if !c.is_empty() {
+                                            let _ = channel.send(AiEvent::Delta {
+                                                content: c.to_string(),
+                                            });
+                                        }
+                                    }
+                                }
+                                "response.completed" | "response.incomplete" => {
+                                    let _ = channel.send(AiEvent::Done);
+                                    return Ok(());
+                                }
+                                "response.error" | "response.failed" => {
+                                    let msg = v
+                                        .pointer("/response/error/message")
+                                        .or_else(|| v.get("message"))
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("模型返回错误");
+                                    let _ = channel.send(AiEvent::Error {
+                                        message: msg.to_string(),
+                                    });
+                                    return Ok(());
+                                }
+                                _ => {}
+                            }
+                        } else {
+                            let content = v
+                                .pointer("/choices/0/delta/content")
+                                .and_then(Value::as_str);
+                            if let Some(c) = content {
+                                if !c.is_empty() {
+                                    let _ = channel.send(AiEvent::Delta {
+                                        content: c.to_string(),
+                                    });
+                                }
                             }
                         }
                     }
@@ -463,6 +410,40 @@ mod tests {
         let on = thinking_patch("https://openrouter.ai/api/v1", "any-model", true).unwrap();
         assert_eq!(on.pointer("/reasoning/effort").unwrap(), "low");
         assert!(thinking_patch("https://openrouter.ai/api/v1", "any-model", false).is_none());
+        // 小米 MiMo：thinking{type}（默认 enabled），无强度参数
+        let on_mimo = thinking_patch("https://api.xiaomimimo.com/v1", "mimo-v2.6-flash", true).unwrap();
+        assert_eq!(on_mimo.pointer("/thinking/type").unwrap(), "enabled");
+        assert!(on_mimo.get("reasoning_effort").is_none());
+        let off_mimo = thinking_patch("https://api.xiaomimimo.com/v1", "mimo-v2.6-flash", false).unwrap();
+        assert_eq!(off_mimo.pointer("/thinking/type").unwrap(), "disabled");
+    }
+
+    #[test]
+    fn responses_thinking_patch_vendors() {
+        // 智谱：开 = low（服务端映射 high，无轻档）；关必须显式 minimal（默认 max）
+        let on = responses_thinking_patch("https://open.bigmodel.cn/api/v1", true).unwrap();
+        assert_eq!(on.pointer("/reasoning/effort").unwrap(), "low");
+        let off = responses_thinking_patch("https://open.bigmodel.cn/api/v1", false).unwrap();
+        assert_eq!(off.pointer("/reasoning/effort").unwrap(), "minimal");
+        // 百炼：开 = low；关 = 显式 enable_thinking:false（不发参落回模型默认思考）
+        let on = responses_thinking_patch(
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            true,
+        )
+        .unwrap();
+        assert_eq!(on.pointer("/reasoning/effort").unwrap(), "low");
+        let off = responses_thinking_patch(
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            false,
+        )
+        .unwrap();
+        assert_eq!(off.get("enable_thinking"), Some(&serde_json::json!(false)));
+        // OpenAI / 方舟 / 其他兼容网关：开 = low；关 = 不发参
+        for url in ["https://api.openai.com/v1", "https://ark.cn-beijing.volces.com/api/v3"] {
+            let on = responses_thinking_patch(url, true).unwrap();
+            assert_eq!(on.pointer("/reasoning/effort").unwrap(), "low");
+            assert!(responses_thinking_patch(url, false).is_none());
+        }
     }
 
     #[test]

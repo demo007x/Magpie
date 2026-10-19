@@ -933,6 +933,44 @@ input[type="radio"] {
   line-height: 1.75;
 }
 
+/* 「添加翻译服务」内联 chips 面板：单行名字即可决策（描述在列表行常年可见），
+   已添加的置灰打勾不可再选（管理回列表行做） */
+.svc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* 模型页「添加服务」容器：按钮 + 展开的预设 chips */
+.prov-add {
+  margin-top: 12px;
+}
+
+.svc-chip {
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.svc-chip:hover {
+  background: var(--hov);
+}
+
+.svc-chip:disabled {
+  color: var(--sec);
+  cursor: default;
+  opacity: 0.55;
+}
+
+.svc-chip:disabled:hover {
+  background: transparent;
+}
+
 /* 只读正文紧跟字段标题，间距由 .field 的 gap 统一给 */
 .field > .prompt-default {
   margin-top: 0;

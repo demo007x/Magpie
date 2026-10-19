@@ -236,16 +236,7 @@ pub fn spawn_worker(app: AppHandle, rx: Receiver<CaptureEvent>) {
                     floating::dismiss_ocr_if_unpinned(&app);
                 }
                 CaptureEvent::DragMove { x, y } => floating::apply_drag(&app, x, y),
-                CaptureEvent::HoverMove { x, y } => {
-                    // 按光标落点路由到目标窗口，坐标换算成该窗口的视口坐标
-                    if let Some((label, cx, cy)) = floating::hover_target_at(&app, x, y) {
-                        let _ = app.emit_to(
-                            label.as_str(),
-                            "hover://move",
-                            json!({ "x": cx, "y": cy }),
-                        );
-                    }
-                }
+                CaptureEvent::HoverMove { x, y } => floating::route_hover(&app, x, y),
                 CaptureEvent::DragEnd => floating::end_drag(&app),
                 CaptureEvent::Escape => {
                     // Esc 收起与点击空白走同一个事件：钉住/流式中的「忽略」判定

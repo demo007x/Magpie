@@ -30,6 +30,10 @@ image = { version = "0.25", default-features = false, features = [
   "webp",
 ] }
 md-5 = "0.10"
+# 机翻签名：有道 v3（SHA-256）、腾讯 TC3（HMAC-SHA256 链）、阿里 RPC（HMAC-SHA1+Base64）
+sha2 = "0.10"
+sha1 = "0.10"
+hmac = "0.12"
 arboard = "3"
 rfd = "0.15"
 

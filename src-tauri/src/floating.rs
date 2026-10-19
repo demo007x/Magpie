@@ -940,6 +940,11 @@ pub fn hover_feed_active() -> bool {
 pub fn update_hover_feed(app: &AppHandle) {
     let on = is_visible(app) || ocr_visible(app) || pops_visible(app);
     HOVER_FEED.store(on, Ordering::Relaxed);
+    // 关 feed 即光标不再被跟踪：清边沿记忆，避免下次开启后首个事件误发「离开」
+    if !on {
+        HOVER_IN.store(false, Ordering::Relaxed);
+        *HOVER_LAST.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
 }
 
 /// 光标落在哪个 hover 目标窗口内 → (窗口 label, 视口坐标)。
@@ -965,7 +970,43 @@ pub fn hover_target_at(app: &AppHandle, gx: f64, gy: f64) -> Option<(String, f64
             }
         }
     }
+    // Windows 分离卡：光标在二级浮层卡内也路由给胶囊窗口——胶囊是唯一交互逻辑端
+    // （弹层是哑渲染端），hover 驻留的「离开才收起」判定靠持续收到事件区分
+    // 「光标在菜单里挑选」与「光标已划走」，缺这条会在延迟收起时误收。
+    // 坐标按胶囊原点换算，落在胶囊视口外属预期（前端命中不了元素即视为浮层区）
+    if let Some(state) = app.try_state::<FloatingState>() {
+        let r = *state.lock().unwrap();
+        if r.visible && pop_rect_contains(gx, gy, 0.0) {
+            return Some(("floating".into(), gx - r.x, gy - r.y));
+        }
+    }
     None
+}
+
+/// hover 路由的「光标在目标窗口内」边沿记忆（配合 route_hover 的离开信号）
+static HOVER_IN: AtomicBool = AtomicBool::new(false);
+/// 上次命中的窗口 label：离开边沿要发回光标实际划出的那个窗口
+///（胶囊与结果窗都有 hover 菜单，发错窗口菜单会悬空不收）
+static HOVER_LAST: Mutex<Option<&'static str>> = Mutex::new(None);
+
+/// capture 线程的 HoverMove 消费：命中目标窗口发坐标事件（同 hover_target_at）；
+/// 光标从目标窗口内划出的瞬间补发一次 `hover://left` 边沿给最后命中的窗口——
+/// Windows 分离卡下胶囊文档看不到弹层窗口的边界，光标从弹层直接划走时
+/// 胶囊收不到任何 mouseleave，没有这条信号「延迟收起」判定会失灵（菜单悬空不收）
+pub fn route_hover(app: &AppHandle, gx: f64, gy: f64) {
+    if let Some((label, cx, cy)) = hover_target_at(app, gx, gy) {
+        *HOVER_LAST.lock().unwrap_or_else(|e| e.into_inner()) = Some(match label.as_str() {
+            "ocr" => "ocr",
+            _ => "floating",
+        });
+        HOVER_IN.store(true, Ordering::Relaxed);
+        let _ = app.emit_to(label.as_str(), "hover://move", json!({ "x": cx, "y": cy }));
+    } else if HOVER_IN.swap(false, Ordering::Relaxed) {
+        let last = HOVER_LAST.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if let Some(label) = last {
+            let _ = app.emit_to(label, "hover://left", json!({}));
+        }
+    }
 }
 
 pub fn is_visible(app: &AppHandle) -> bool {

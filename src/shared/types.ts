@@ -5,6 +5,9 @@ export interface Provider {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** 请求形态："chat" = OpenAI Chat Completions（默认，兼容绝大多数厂商）；
+   *  "responses" = OpenAI Responses API（input/reasoning.effort/类型化 SSE 事件） */
+  form?: "chat" | "responses";
   /** 思考模式：仅对支持的厂商生效（DeepSeek/智谱按服务地址自动识别注入
    *  thinking.type 参数）；未知厂商不传参、保持厂商默认行为。默认关闭 */
   thinking?: boolean;
@@ -39,6 +42,14 @@ export interface SearchEngine {
   enabled: boolean;
 }
 
+/** 单个翻译服务的凭据：单密钥服务只用 key；签名式（appId+密钥）两者都用；
+ *  region 供微软/腾讯等按区域接入的厂商填写（全球/默认区可空） */
+export interface TranslateCredentials {
+  appId?: string;
+  key?: string;
+  region?: string;
+}
+
 export interface TranslateConfig {
   /** 启用的翻译服务（多选，浮动条「翻译」展开列表）：["ai", "baidu", "deepl"] */
   enabled: string[];
@@ -46,11 +57,9 @@ export interface TranslateConfig {
   default: string;
   /** 服务展示顺序（设置页行序与浮动条展开顺序）；缺省 id 按注册表顺序追加 */
   order: string[];
-  /** 百度翻译开放平台凭据 */
-  appId: string;
-  appKey: string;
-  /** DeepL Authentication Key（Free 密钥以 :fx 结尾） */
-  deeplKey: string;
+  /** 各服务凭据（key = 服务 id，字段取值见注册表 fields 声明）；
+   *  旧版平铺字段由 Rust 载入时一次性迁移进这里 */
+  credentials: Record<string, TranslateCredentials>;
 }
 
 /** 用户自定义 AI 动作：与内置三动作同属注册表，只是 prompt 由用户持有 */

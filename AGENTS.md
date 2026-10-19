@@ -66,7 +66,9 @@ Rust 侧 `src-tauri/src/`：
 - 变更纪律：用户可见的行为改动 → `CHANGELOG.md` 的 Unreleased 段；项目现状描述 → README「功能」清单；贡献流程与 PR 规范见 `CONTRIBUTING.md`（面向人类贡献者，与本文件约定一致）。
 - CHANGELOG 条目规范（Keep a Changelog 格式、英文）：只用 `Added`（新功能）/ `Changed`（行为、文案、交互变更）/ `Fixed`（修复）三节；**每一项可以有多条**（fix 了什么、新增了什么），不写实现细节。
 - 发版清单：① Unreleased 条目归位成带日期的版本节（`## [x.y.z] - YYYY-MM-DD`）；② 版本号三处同步 `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`，`cargo check` 刷新 `Cargo.lock`。
+- 版本需求沉淀在 `docs/release/release-v<版本号>.md`：只写需求清单（完成一项勾一项，含一句关键交互决策）和发版归位说明，不抄实现细节（那属于代码注释与 docs/02）；发布时按发版清单归位 CHANGELOG，文件状态改「已发布」后冻结（CHANGELOG.md 是对外记录的唯一权威，release 文件是内部需求/验收源）。
 - 产品边界：不做程序员向功能（报错/代码解释）；AX 取词不碰剪贴板，仅兼容模式兜底时模拟 ⌘C 且自动还原快照（ADR-05）；捕获失败静默。
 - 截屏框选等模态鼠标操作期间须持 `CaptureMuteGuard` 静音捕获管线，防止误触发划词 → AX 查询 → 模态会话内 ObjC 异常。
 - API Key 目前明文存 `settings.json`（ADR-07，M2 迁 keyring），设置页已向用户明示——不要在别处引入新的密钥落盘点。
 - **UI 文案面向普通用户**：产品里的文案（按钮、提示、开关描述、报错）一定写给不懂技术的用户看——不用厂商/参数/协议/端点等技术词汇，一句话说清「是什么、该做什么」；实现细节与兼容性处理收进代码和日志，不进界面。文案写完自查一遍能否更短。文档与 UI 文案用简体中文；代码注释密度向现有文件看齐（各模块头部有大段"为什么"注释，改代码前先读该模块头注释）。
+- **自媒体宣传素材不进仓库**：宣传图文、HTML 截图模板、视频等一律存放在 Obsidian 知识库的 `/Users/oo7/Obsidian/wemedia/`，结构与创作约定见该目录 README.md。

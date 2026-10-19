@@ -6,6 +6,7 @@
 // 单窗原生阴影承担。卡片样式复用 floating.css 的 .pop（html.win 分支：卡片
 // 铺满窗口、圆角与描边对齐 DWM）。
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ChevronDown } from "lucide-react";
@@ -33,6 +34,8 @@ type PopData =
 export default function PopCard() {
   const [data, setData] = useState<PopData | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
+  // 行 hover 上报的去重记忆（仅行变化时上报，见 onPanelRowMove）
+  const lastRowRef = useRef("");
 
   useEffect(() => {
     // 必须用窗口作用域监听：全局 listen() 注册在 EventTarget::Any 上，
@@ -41,6 +44,8 @@ export default function PopCard() {
     const un = getCurrentWebviewWindow().listen<{ open: boolean; data: PopData }>(
       "floating://pop",
       (e) => {
+        // 面板重开/内容刷新即作废行记忆：上次悬停的行重开后不一定还在光标下
+        lastRowRef.current = "";
         setData(e.payload.open ? e.payload.data : null);
       },
     );
@@ -62,12 +67,25 @@ export default function PopCard() {
     invoke("floating_pick", { kind, key, rowY: rowY ?? null }).catch(() => undefined);
   };
 
+  // 行 hover 上报：胶囊窗口看不到面板窗口内部的行布局，行命中在此检测
+  // （WebView2 真 mousemove 可靠），驻留/即切决策仍在胶囊（row-hover 经
+  // floating_pick 回传）。仅行变化时上报（进入/离开/换行），不做逐 move 上报；
+  // id 为空串 = 光标在行间留白，胶囊据此清驻留计时
+  const onPanelRowMove = (e: ReactMouseEvent) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>(".pitem");
+    const id = row?.dataset.id ?? "";
+    if (id === lastRowRef.current) return;
+    lastRowRef.current = id;
+    const rowY = row ? Math.round(row.getBoundingClientRect().top) : null;
+    pick("row-hover", id, rowY ?? undefined);
+  };
+
   if (!data) return null;
 
   if (data.type === "overflow") {
     return (
       <div className="stage">
-        <div className="pop overflow" ref={ref}>
+        <div className="pop overflow" ref={ref} onMouseMove={onPanelRowMove}>
           {data.items.map((e) => (
             <span key={e.id} className="pitem" data-id={e.id}>
               <button type="button" className="action" onClick={() => pick("action", e.id)}>

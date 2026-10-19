@@ -16,10 +16,18 @@ pub struct Provider {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
+    /// 请求形态："chat" = OpenAI Chat Completions（默认）；"responses" =
+    /// OpenAI Responses API（input/instructions/reasoning.effort，类型化 SSE 事件）
+    #[serde(default = "default_provider_form")]
+    pub form: String,
     /// 思考模式：开启 = 注入厂商思考开关参数（更准更慢）；关闭 = 注入关闭参数
     /// （仅已知厂商，见 ai.rs::thinking_patch）；未知厂商不传任何参数（保持厂商默认）
     #[serde(default)]
     pub thinking: bool,
+}
+
+fn default_provider_form() -> String {
+    "chat".into()
 }
 
 impl Default for Provider {
@@ -30,6 +38,7 @@ impl Default for Provider {
             base_url: "https://api.deepseek.com".into(),
             api_key: String::new(),
             model: "deepseek-chat".into(),
+            form: default_provider_form(),
             thinking: false,
         }
     }
@@ -109,6 +118,20 @@ fn default_engines() -> Vec<SearchEngine> {
     ]
 }
 
+/// 单服务凭据：单密钥服务只用 key；签名式（appId+密钥）两者都用。
+/// 空值不落盘（skip_serializing_if），未填写的字段不出现在 settings.json
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ServiceCredentials {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub app_id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key: String,
+    /// 区域资源标识：微软/腾讯等按区域接入的厂商需要（全球/默认区可空）
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub region: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TranslateConfig {
@@ -119,10 +142,17 @@ pub struct TranslateConfig {
     pub default: String,
     /// 服务展示顺序（设置页行序与浮动条展开顺序）；缺省 id 按注册表顺序追加
     pub order: Vec<String>,
-    /// 百度翻译开放平台凭据
+    /// 各服务凭据（key = 服务 id）。新增厂商只加 map 条目，不再加字段
+    #[serde(default)]
+    pub credentials: std::collections::BTreeMap<String, ServiceCredentials>,
+    /// 旧版百度翻译凭据：仅作升级迁移的读取口，init 载入时搬进 credentials
+    /// 后清空（skip 序列化 = 迁移完成后 settings.json 不再出现这些字段）
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub app_id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub app_key: String,
-    /// DeepL Authentication Key（Free 密钥以 :fx 结尾，据此选 api-free 域名）
+    /// 旧版 DeepL Authentication Key：同上，迁移后恒为空
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub deepl_key: String,
 }
 
@@ -132,10 +162,40 @@ impl Default for TranslateConfig {
             enabled: vec!["ai".into(), "baidu".into()],
             default: "ai".into(),
             order: Vec::new(),
+            credentials: std::collections::BTreeMap::new(),
             app_id: String::new(),
             app_key: String::new(),
             deepl_key: String::new(),
         }
+    }
+}
+
+impl TranslateConfig {
+    /// 旧版平铺凭据 → credentials map（服务已有凭据时不覆盖）。返回是否发生
+    /// 了迁移，调用方据此回写文件。此后 legacy 字段恒为空、不再参与序列化
+    fn migrate_legacy_credentials(&mut self) -> bool {
+        let mut migrated = false;
+        if !self.app_id.is_empty() || !self.app_key.is_empty() {
+            let e = self.credentials.entry("baidu".into()).or_default();
+            if e.app_id.is_empty() {
+                e.app_id = self.app_id.clone();
+            }
+            if e.key.is_empty() {
+                e.key = self.app_key.clone();
+            }
+            self.app_id.clear();
+            self.app_key.clear();
+            migrated = true;
+        }
+        if !self.deepl_key.is_empty() {
+            let e = self.credentials.entry("deepl".into()).or_default();
+            if e.key.is_empty() {
+                e.key = self.deepl_key.clone();
+            }
+            self.deepl_key.clear();
+            migrated = true;
+        }
+        migrated
     }
 }
 
@@ -366,10 +426,17 @@ fn migrate_legacy_config(app: &AppHandle, path: &std::path::Path) {
 pub fn init(app: &AppHandle) {
     let path = config_path(app);
     migrate_legacy_config(app, &path);
-    let settings = fs::read_to_string(&path)
+    let mut settings = fs::read_to_string(&path)
         .ok()
         .and_then(|s| serde_json::from_str::<Settings>(&s).ok())
         .unwrap_or_default();
+    // 旧版平铺翻译凭据一次性搬进 credentials map 并回写（升级迁移）：
+    // 此后凭据只存 map，legacy 字段不再落盘
+    if settings.translate.migrate_legacy_credentials() {
+        if let Ok(json) = serde_json::to_string_pretty(&settings) {
+            let _ = fs::write(&path, json);
+        }
+    }
     app.manage(Mutex::new(settings));
     app.manage(SettingsPath(path));
 }

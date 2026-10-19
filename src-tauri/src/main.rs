@@ -10,6 +10,7 @@ mod ocr;
 mod pin;
 mod settings;
 mod toast;
+mod translate;
 mod update;
 
 use tauri::{
@@ -629,8 +630,15 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             ui_debug_log,
             open_url,
-            ai::baidu_translate,
-            ai::deepl_translate,
+            translate::baidu_translate,
+            translate::deepl_translate,
+            translate::google_translate,
+            translate::azure_translate,
+            translate::youdao_translate,
+            translate::tencent_translate,
+            translate::aliyun_translate,
+            translate::volcano_translate,
+            translate::caiyun_translate,
             ai::ai_chat,
             entities::detect_dates,
             obsidian::obsidian_append,

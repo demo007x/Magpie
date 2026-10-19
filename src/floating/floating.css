@@ -884,6 +884,13 @@ body,
   user-select: text;
 }
 
+/* 机器翻译纯文本通道：API 返回即纯文本，按原样展示（保留换行、不做 markdown 解释），
+   版式基线（字号/行高/字距）随 .ocr-result */
+.ocr-result .plain-text {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
 /* OCR 面板动作行：对识别文本执行的 AI 动作（紧凑版胶囊按钮） */
 /* OCR 面板主体：原文区固定，结果区独立滚动（动作行按常规流排在面板底部） */
 .ocr-main {

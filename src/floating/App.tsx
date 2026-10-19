@@ -39,7 +39,7 @@ import {
 import { actionPrompt, actionRegistry, isContextAction } from "../shared/actions";
 import { customIconNode } from "../shared/icons";
 import { aiChat } from "../shared/ai";
-import { translateMissingReason } from "../shared/translate";
+import { TRANSLATE_SERVICES, translateMissingReason, translateService } from "../shared/translate";
 import {
   extractAll,
   extractCode,
@@ -218,13 +218,6 @@ const CopyIcon = <Copy size={13} strokeWidth={1.75} />;
 const CheckIcon = <Check size={13} strokeWidth={2} className="ok" />;
 const CloseIcon = <X size={13} strokeWidth={1.75} />;
 
-// 翻译服务注册表（id 与设置页/后端约定："ai" | "baidu" | "deepl"）
-const TRANSLATE_SERVICES = [
-  { id: "ai", label: "AI 翻译" },
-  { id: "baidu", label: "百度翻译" },
-  { id: "deepl", label: "DeepL" },
-];
-
 // 状态机：Bar（胶囊） → Result（流式面板）/ Extract（多值列表）；dismiss/新选区回收
 type Phase =
   | { kind: "bar" }
@@ -248,6 +241,8 @@ type Phase =
     streaming: boolean;
     error: string | null;
     expanded: boolean;
+    /** 机器翻译结果按纯文本渲染（API 返回即纯文本，不进 markdown 解释） */
+    plain?: boolean;
   };
 
 // 重复查询缓存：同动作 + 同服务 + 同文本，5 分钟内直接复用结果
@@ -261,6 +256,28 @@ const CACHE_CAP = 50;
 // Windows 一卡一窗：窗口即卡片，留白归零（出血会原样透出桌面）
 const FLOAT_PAD = IS_WIN_LIKE ? 0 : 8;
 const CARD_GAP = 3;
+
+// hover 驻留展开：光标在「带 ⌄ 的动作项」上停留满 OPEN 才展开二级浮层
+// （快速路过不开）；离开胶囊∪浮层满 CLOSE 后自动收起（跨窗口缝隙、
+// 瞄准时的犹豫抖动不打断）。收起比展开略长：leave → 进菜单窗口的间隙别误收
+const HOVER_OPEN_MS = 300;
+const HOVER_CLOSE_MS = 350;
+
+// hover 驻留的作用域入口 id（menu 状态取值域的子集）：
+// chev:* = 胶囊动作 ⌄，overflow = 最右收纳钮，pmenu:* = 收纳面板行的行侧菜单
+// （面板开着才可达，故行 hover 恒走「已开即切」，不走驻留分支），
+// search/translate/obsidian = 结果窗口动作行 ⌄（同窗流内菜单，窗口向下生长）
+type HoverMenuId =
+  | "chev:translate"
+  | "chev:search"
+  | "chev:obsidian"
+  | "overflow"
+  | "pmenu:translate"
+  | "pmenu:search"
+  | "pmenu:obsidian"
+  | "search"
+  | "translate"
+  | "obsidian";
 
 // Rust 返回的窗口落位 / 显示器逻辑矩形（逻辑坐标）
 interface WindowPos {
@@ -580,6 +597,15 @@ export default function App() {
   // 合成 hover 当前命中的动作：hover://move 驱动 elementFromPoint 增删类，
   // 绕开 WebKit 对非活动页面的 :hover 门控（真 mousemove 在本窗口不可靠）
   const synHoverRef = useRef<HTMLElement | null>(null);
+  // —— 二级浮层 hover 驻留展开（胶囊条与结果窗口动作行，两处动作行同构）——
+  // dwell：光标连续停在同一个 ⌄ 动作项上的计时；menuStateRef：hover 回调读
+  // 最新 menu 的守卫镜像；hoverLeftAtRef：document mouseleave 记下的离开时刻
+  // （非 key 窗口收不到逐元素 mousemove，但 document 级离开/进入边沿可靠——
+  // ghost-state 修复已依赖同一对事件），null = 光标在胶囊∪浮层内
+  const dwellRef = useRef<{ trig: HoverMenuId; since: number } | null>(null);
+  const menuStateRef = useRef(menu);
+  menuStateRef.current = menu;
+  const hoverLeftAtRef = useRef<number | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
   // 分离卡几何基准：屏幕矩形（贴边翻转判定）、窗口上次落位、bar 在窗口内偏移。
   // 卡片屏幕坐标 = 窗口位置 + 窗口内偏移；winPos 由 show/resize 返回值与
@@ -638,6 +664,11 @@ export default function App() {
   );
   const defaultTranslate =
     enabledTranslates.find((s) => s.id === translateDefault) ?? enabledTranslates[0] ?? null;
+  // 默认模型服务是否可用（密钥与模型名齐备）：解释/总结等 AI 动作的显示闸——
+  // 与动作开关共同决定动作是否出现，用不了的动作不占位（翻译走自有服务列表闸）
+  const hasUsableModel = providers.some(
+    (p) => p.id === defaultProviderId && p.apiKey.trim() !== "" && p.model.trim() !== "",
+  );
 
   const openEngine = (engine: SearchEngine, q = text.trim()) => {
     const tpl = engine.url.includes("{q}") ? engine.url : `${engine.url}{q}`;
@@ -667,6 +698,23 @@ export default function App() {
     window.addEventListener("mousemove", onMove, { once: true });
     return () => window.removeEventListener("mousemove", onMove);
   }, [hoverSuppress]);
+
+  // 二级浮层 hover 收起：光标离开∪浮层满 HOVER_CLOSE_MS 后自动收（胶囊条与
+  // 结果窗口动作行同一套）。只信 mouseleave 离开边沿 + 心跳复核，不做「事件
+  // 超时即收」——光标静止时 hover://move 本就不来，超时会把「在菜单里犹豫」
+  // 误判成「已划走」。结果窗口的收起走 grow=0 分支，窗口随之缩回
+  useEffect(() => {
+    if (menu === null) return;
+    const iv = window.setInterval(() => {
+      const left = hoverLeftAtRef.current;
+      if (left !== null && performance.now() - left > HOVER_CLOSE_MS) {
+        hoverLeftAtRef.current = null;
+        dwellRef.current = null;
+        setMenu(null);
+      }
+    }, 100);
+    return () => window.clearInterval(iv);
+  }, [menu]);
 
   // 完成闪烁：streaming true→false 且已有输出（出错不闪绿，错误有自己的提示）
   useEffect(() => {
@@ -816,6 +864,11 @@ export default function App() {
     for (const a of registry) {
       if (isContextAction(a.id)) continue;
       if (actions[a.id] === false) continue;
+      // 动作开关之外的配置闸（与开关共同决定显示，用不了的动作不占位）：
+      // 翻译看启用服务列表、搜索看启用引擎列表、其余 AI 动作看默认模型可用性
+      if (a.id === "translate" && enabledTranslates.length === 0) continue;
+      if (a.id === "search" && enabledEngines.length === 0) continue;
+      if (a.kind === "ai" && a.id !== "translate" && !hasUsableModel) continue;
       // 「存入 Obsidian」只在已配置 vault 时出现（与结果窗动作行、设置页口径一致）
       if (a.id === "obsidian" && !obsidianCfg?.vaultPath) continue;
       entries.push({
@@ -1001,6 +1054,9 @@ export default function App() {
       runIdRef.current++;
       streamingRef.current = false;
       setMenu(null);
+      // 驻留计时一并作废：残留的 since 会让新胶囊的同一动作「一碰就开」
+      dwellRef.current = null;
+      hoverLeftAtRef.current = null;
       // OCR 来源事件：仅 OCR 独立窗口消费（浮动条抢走 pending 会与之竞争）
       if (e.payload.app === "ocr") {
         if (!IS_OCR) return;
@@ -1166,8 +1222,41 @@ export default function App() {
     listen<{ x: number; y: number }>("hover://move", (e) => {
       const cx = e.payload.x;
       const cy = e.payload.y;
+      // 事件到达即光标在胶囊∪浮层内的证据（Rust 按落点路由，Windows 分离卡
+      // 含光标落在弹层窗口的情形）：清掉 mouseleave 记下的离开边沿
+      hoverLeftAtRef.current = null;
       const el = document.elementFromPoint(cx, cy);
-      const btn = el?.closest<HTMLElement>(".action") ?? null;
+      {
+        // 驻留目标检测（胶囊条与结果窗口动作行同构，复用同一套）：命中「带 ⌄
+        // 的动作项」才算——主按钮与 ⌄ 同属一个 .action-slot（面板行为 .pitem），
+        // 整个项都是驻留区；无 ⌄ 的动作不参与。无浮层时驻留满 HOVER_OPEN_MS
+        // 才展开（快速路过不开）；已有浮层开着时划过其他 ⌄ 项立即切换
+        // （菜单栏心智，这正是 hover 的核心收益）。拖拽中（胶囊搬移/结果窗拖拽）不开
+        const dragging = dragActiveRef.current || ocrDragActiveRef.current;
+        const slot =
+          el?.closest<HTMLElement>(".action-slot") ?? el?.closest<HTMLElement>(".pitem");
+        const trig = (
+          dragging ? null : slot?.querySelector<HTMLElement>("[data-trig]")?.dataset.trig ?? null
+        ) as HoverMenuId | null;
+        const now = performance.now();
+        if (!trig || menuStateRef.current === trig) {
+          dwellRef.current = null;
+        } else if (menuStateRef.current !== null) {
+          dwellRef.current = null;
+          setMenu(trig);
+        } else if (dwellRef.current?.trig !== trig) {
+          dwellRef.current = { trig, since: now };
+        } else if (now - dwellRef.current.since >= HOVER_OPEN_MS) {
+          dwellRef.current = null;
+          setMenu(trig);
+        }
+      }
+      const btn =
+        el?.closest<HTMLElement>(".action") ??
+        // 光标落在 ⌄ 上时点亮同项主按钮：⌄ 太小，单独反馈没有「这一项悬停」感
+        (el?.closest<HTMLElement>(".chev")?.closest<HTMLElement>(".action-slot") ??
+          el?.closest<HTMLElement>(".pchev")?.closest<HTMLElement>(".pitem")
+        )?.querySelector<HTMLElement>(".action") ?? null;
       if (btn !== synHoverRef.current) {
         // 诊断：仅在 hover 目标变化（进入/离开动作）时记录——稳态移动 60Hz
         // 逐事件记录会每秒刷数十行，淹没真正有用的日志
@@ -1185,14 +1274,38 @@ export default function App() {
       else unlisteners.push(un);
     });
 
+    // Rust 侧离开边沿：光标划出全部 hover 目标窗口的瞬间补发给最后命中的
+    // 窗口（本窗口若非目标则收不到；Windows 分离卡下胶囊文档看不到弹层窗口
+    // 边界，光标从弹层直接划走时收不到 mouseleave）。mouseleave 已先记过
+    // 时刻时保留较早值，收起从真正离开那刻起算
+    listen("hover://left", () => {
+      if (hoverLeftAtRef.current === null) hoverLeftAtRef.current = performance.now();
+    }).then((un) => {
+      if (listenCancelled) un();
+      else unlisteners.push(un);
+    });
+
     document.addEventListener("mouseleave", suspendPointer);
     document.addEventListener("mouseenter", restorePointer);
+    // 收起判定的离开/回归边沿：离开窗口记时刻（心跳到点收起浮层，清驻留计时），
+    // 回到窗口即撤销——与 suspendPointer 同用一对 document 级事件
+    const markHoverLeft = () => {
+      hoverLeftAtRef.current = performance.now();
+      dwellRef.current = null;
+    };
+    const markHoverInside = () => {
+      hoverLeftAtRef.current = null;
+    };
+    document.addEventListener("mouseleave", markHoverLeft);
+    document.addEventListener("mouseenter", markHoverInside);
 
     return () => {
       listenCancelled = true;
       unlisteners.forEach((u) => u());
       document.removeEventListener("mouseleave", suspendPointer);
       document.removeEventListener("mouseenter", restorePointer);
+      document.removeEventListener("mouseleave", markHoverLeft);
+      document.removeEventListener("mouseenter", markHoverInside);
     };
   }, []);
 
@@ -1849,7 +1962,8 @@ export default function App() {
       return;
     }
 
-    // 翻译服务路由：显式指定（chips）或默认服务；baidu/deepl = 机器翻译直达，ai 走下方通用模型流式
+    // 翻译服务路由：显式指定（chips）或默认服务；注册表命中的机器翻译服务直达，
+    // "ai" 落空 → 走下方通用模型流式
     if (id === "translate") {
       const svc = serviceOverride ?? defaultTranslate?.id;
       if (!svc) {
@@ -1865,7 +1979,8 @@ export default function App() {
           return;
         }
       }
-      if (svc === "baidu" || svc === "deepl") {
+      const entry = translateService(svc);
+      if (entry && entry.auth !== "ai" && entry.rustCmd) {
         const trimmed = source.trim();
         const cacheKey = `${id}:${svc}:${trimmed}`;
         const cachedOut = cacheGet(cacheKey);
@@ -1873,7 +1988,7 @@ export default function App() {
           // 缓存命中：跳过请求直接展示
           setPhase((p) =>
             p.kind === "ocr"
-              ? { ...p, actionId: id, output: cachedOut, streaming: false, error: null }
+              ? { ...p, actionId: id, output: cachedOut, streaming: false, error: null, plain: true }
               : p,
           );
           return;
@@ -1897,16 +2012,15 @@ export default function App() {
           setPhase({ kind: "bar" });
           return;
         }
-        const isDeepl = svc === "deepl";
-        // 中文→英文，其他→中文；目标语言代码 DeepL 用大写（EN/ZH）
-        const to = /[一-鿿]/.test(trimmed) ? (isDeepl ? "EN" : "en") : (isDeepl ? "ZH" : "zh");
-        invoke<string>(isDeepl ? "deepl_translate" : "baidu_translate", { text: trimmed, to })
+        // 中文→英文，其他→中文；各厂商语言码差异（EN/ZH/zh-CN…）由注册表映射
+        const to = entry.langOf!(/[一-鿿]/.test(trimmed) ? "en" : "zh");
+        invoke<string>(entry.rustCmd, { text: trimmed, to })
           .then((out) => {
             if (runIdRef.current !== runId) return;
             streamingRef.current = false;
             cachePut(cacheKey, out);
             setPhase((p) =>
-              p.kind === "ocr" ? { ...p, output: out, streaming: false } : p,
+              p.kind === "ocr" ? { ...p, output: out, streaming: false, plain: true } : p,
             );
           })
           .catch((e) => {
@@ -2032,8 +2146,13 @@ export default function App() {
             { key: "task", label: "任务", on: false },
             { key: "card", label: "卡片", on: false },
           ];
-  // 行 ⌄ 的判定与 macOS 收纳面板一致（动态，非 barEntries.hasMenu）：
-  // 翻译行=多个翻译服务、搜索行=多个引擎、Obsidian 行=已配置 vault
+  // 行 ⌄ 的判定（动态，非 barEntries.hasMenu）：翻译行=多个翻译服务、
+  // 搜索行=多个引擎、Obsidian 行=已配置 vault——macOS 面板渲染、Windows
+  // 面板数据组装与行 hover 回传校验共用同一判据
+  const entryHasMenu = (id: string) =>
+    (id === "translate" && enabledTranslates.length > 1) ||
+    (id === "search" && enabledEngines.length > 1) ||
+    (id === "obsidian" && Boolean(obsidianCfg?.vaultPath));
   const panelData = (subOpenForce?: string | null) => ({
     type: "overflow" as const,
     subOpen:
@@ -2046,10 +2165,7 @@ export default function App() {
       id: e.id,
       label: e.label,
       icon: e.icon ?? null,
-      hasMenu:
-        (e.id === "translate" && enabledTranslates.length > 1) ||
-        (e.id === "search" && enabledEngines.length > 1) ||
-        (e.id === "obsidian" && Boolean(obsidianCfg?.vaultPath)),
+      hasMenu: entryHasMenu(e.id),
     })),
   });
   // 弹层同步的内容签名（id/文案/图标/⌄ 有无——任一变化才重发 payload）
@@ -2112,33 +2228,45 @@ export default function App() {
   const pickRef = useRef<(p: { kind: string; key: string; rowY: number | null }) => void>(
     () => undefined,
   );
+  // 行侧菜单展开（Windows 分离卡）：pmenu 锚点 rowY 只有面板窗口知道，随
+  // menu-toggle 点击 / row-hover 上报带来；面板 payload 一并重发让 pchev
+  // 高亮跟着 subOpen 走（panelData 显式传 subOpen——此刻 menu 还是旧状态）
+  const showRowMenu = (key: string, rowY: number | null) => {
+    setMenu(`pmenu:${key}` as "pmenu:translate" | "pmenu:search" | "pmenu:obsidian");
+    invoke("set_floating_pops", {
+      target: "menu",
+      trigX: null,
+      rowY,
+      data: { type: "menu", kind: key, items: menuItemsFor(key) },
+    }).catch(() => undefined);
+    invoke("set_floating_pops", {
+      target: "panel",
+      trigX: null,
+      rowY: null,
+      data: panelData(key),
+    }).catch(() => undefined);
+  };
   pickRef.current = (p) => {
     if (p.kind === "action") {
       setMenu(null);
       runAction(p.key);
       return;
     }
+    if (p.kind === "row-hover") {
+      // 面板行 hover 回传：面板开着 ⇒ 必有浮层入口开着，行 ⌄ 恒走「已开即切」
+      // （与胶囊 ⌄ 一致）；无 ⌄ 的行只清驻留计时。行命中在面板窗口检测
+      // （WebView2 真 mousemove 可靠），决策集中在胶囊
+      const hasMenu = entryHasMenu(p.key) && restEntries.some((x) => x.id === p.key);
+      if (!hasMenu) {
+        dwellRef.current = null;
+        return;
+      }
+      if (menuStateRef.current !== `pmenu:${p.key}`) showRowMenu(p.key, p.rowY);
+      return;
+    }
     if (p.kind === "menu-toggle") {
-      const target = `pmenu:${p.key}` as
-        | "pmenu:translate"
-        | "pmenu:search"
-        | "pmenu:obsidian";
-      if (menu !== target) {
-        setMenu(target);
-        // 面板 payload 一并重发：pchev 高亮跟着 subOpen 走。
-        // subOpen 必须显式传入——此刻闭包里的 menu 还是旧状态
-        invoke("set_floating_pops", {
-          target: "menu",
-          trigX: null,
-          rowY: p.rowY,
-          data: { type: "menu", kind: p.key, items: menuItemsFor(p.key) },
-        }).catch(() => undefined);
-        invoke("set_floating_pops", {
-          target: "panel",
-          trigX: null,
-          rowY: null,
-          data: panelData(p.key),
-        }).catch(() => undefined);
+      if (menu !== `pmenu:${p.key}`) {
+        showRowMenu(p.key, p.rowY);
       } else {
         // 收起 = 回到父级（面板保持展开），effect 会重发面板 payload 复位高亮
         setMenu("overflow");
@@ -2196,6 +2324,7 @@ export default function App() {
     if (Math.hypot(e.screenX - s.sx, e.screenY - s.sy) > 5) {
       dragActiveRef.current = true;
       suppressClickRef.current = true;
+      dwellRef.current = null; // 拖拽期间不开二级浮层（拖拽中驻留检测已被守卫，这里清残留计时）
       // 拖动即收起二级浮层（Windows 分离卡是独立窗口，不随胶囊联动移动）
       if (POPS_EXTERNAL) setMenu(null);
       // 用按下时的全局坐标计算抓取偏移（此刻窗口尚未移动）
@@ -2232,6 +2361,9 @@ export default function App() {
       suppressClickRef.current = false;
       return;
     }
+    // 点击终结驻留计时：点主按钮执行动作后光标仍停在动作项上，
+    // 残留的计时会让二级浮层在动作执行后「自己弹开」
+    dwellRef.current = null;
     fn();
   };
 
@@ -2326,10 +2458,7 @@ export default function App() {
       {!IS_OCR && !POPS_EXTERNAL && (menu === "overflow" || menu?.startsWith("pmenu:")) && (
         <div className="pop overflow" ref={overflowRef}>
           {restEntries.map((e) => {
-            const hasMenu =
-              (e.id === "translate" && enabledTranslates.length > 1) ||
-              (e.id === "search" && enabledEngines.length > 1) ||
-              (e.id === "obsidian" && Boolean(obsidianCfg?.vaultPath));
+            const hasMenu = entryHasMenu(e.id);
             return (
               <span key={e.id} className="pitem">
                 <button
@@ -2659,22 +2788,27 @@ export default function App() {
               <div className="ocr-result-scroll" ref={ocrBodyRef} onScroll={onOcrResultScroll}>
                 <div className="ocr-result md">
                 {phase.output ? (
-                  <>
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>
-                      {(phase.actionId === "translate"
-                        ? splitTranslate(phase.output).main
-                        : phase.output) + (phase.streaming ? " ▍" : "")}
-                    </ReactMarkdown>
-                    {phase.actionId === "translate" &&
-                      splitTranslate(phase.output).notes &&
-                      !phase.streaming && (
-                        <div className="notes md">
-                          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>
-                            {splitTranslate(phase.output).notes}
-                          </ReactMarkdown>
-                        </div>
-                      )}
-                  </>
+                  phase.plain ? (
+                    // 机器翻译：API 返回即纯文本，按原样渲染（保留换行，不做 markdown 解释）
+                    <div className="plain-text">{phase.output}</div>
+                  ) : (
+                    <>
+                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>
+                        {(phase.actionId === "translate"
+                          ? splitTranslate(phase.output).main
+                          : phase.output) + (phase.streaming ? " ▍" : "")}
+                      </ReactMarkdown>
+                      {phase.actionId === "translate" &&
+                        splitTranslate(phase.output).notes &&
+                        !phase.streaming && (
+                          <div className="notes md">
+                            <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>
+                              {splitTranslate(phase.output).notes}
+                            </ReactMarkdown>
+                          </div>
+                        )}
+                    </>
+                  )
                 ) : phase.error ? null : (
                   <div className="placeholder">正在思考…</div>
                 )}
@@ -2696,12 +2830,14 @@ export default function App() {
                 AI 动作（翻译/解释/总结 + 用户的自定义动作）结果内嵌滚动区；搜索为本地动作，
                 用识别文本直接打开默认引擎——对识别出的书名/术语等尤其实用 */}
             <div className="ocr-actions">
-              {registry.filter(
-                (a) =>
-                  (a.kind === "ai" || a.id === "search" || a.id === "obsidian") &&
-                  actions[a.id] !== false &&
-                  (a.id !== "obsidian" || Boolean(obsidianCfg?.vaultPath)),
-              ).map((a) => (
+              {registry.filter((a) => {
+                // 与胶囊同一套闸：开关 + 配置可用性（服务列表/默认模型/vault）
+                if (actions[a.id] === false) return false;
+                if (a.id === "obsidian") return Boolean(obsidianCfg?.vaultPath);
+                if (a.id === "translate") return enabledTranslates.length > 0;
+                if (a.id === "search") return enabledEngines.length > 0;
+                return a.kind === "ai" && hasUsableModel;
+              }).map((a) => (
                 <span key={a.id} className="action-slot">
                   <button
                     className={`action sm ${phase.actionId === a.id ? "active" : ""}`}
@@ -2723,6 +2859,7 @@ export default function App() {
                         : enabledEngines.length > 1) && (
                       <button
                         className="chev"
+                        data-trig={a.id}
                         aria-label={
                           a.id === "translate"
                             ? "更多翻译服务"
