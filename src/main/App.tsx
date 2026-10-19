@@ -397,10 +397,14 @@ export default function App() {
   const applyResultPreset = (size: [number, number]) => {
     invoke("apply_result_preset", { width: size[0], height: size[1] }).catch(() => undefined);
     // save_settings 提交的是本地全量 settings——本地不同步的话，其他页面的保存会回退预设
-    setSettings((s) => (s ? { ...s, resultWindowSize: size } : s));
+    patch({ resultWindowSize: size });
   };
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [saved, setSaved] = useState(false);
+  // settings 的同步镜像：同一 tick 内连发的多个 patch 依次叠加在 ref 上，紧随其后
+  // 的 saveNow() 读 ref 即得最新值（函数式 setState 的更新在事件结束后才提交，
+  // 靠它做「改完即存」会存到旧值——自定义动作丢字问题的同源坑）
+  const settingsRef = useRef<Settings | null>(null);
+  const [saved, setSaved] = useState(true);
   const [granted, setGranted] = useState<boolean | null>(null);
   const [listenAccess, setListenAccess] = useState<boolean | null>(null);
   const [axServiceOk, setAxServiceOk] = useState<boolean | null>(null);
@@ -416,7 +420,10 @@ export default function App() {
         if (stop) return;
         invoke<Settings>("get_settings")
           .then((s) => {
-            if (!stop) setSettings(s);
+            if (!stop) {
+              settingsRef.current = s;
+              setSettings(s);
+            }
           })
           .catch(() => load(delay === 0 ? 250 : Math.min(delay * 2, 2000)));
       }, delay);
@@ -470,9 +477,25 @@ export default function App() {
     };
   }, [page]);
 
-  const patch = useCallback((p: Partial<Settings>) => {
-    setSettings((s) => (s ? { ...s, ...p } : s));
+  const patch = useCallback((p: Partial<Settings> | ((s: Settings) => Partial<Settings>)) => {
+    const s = settingsRef.current;
+    if (!s) return;
+    // 同步镜像：同一 tick 内连发的多个 patch（中文 IME 组合串、快速连打）依次
+    // 叠加在 ref 上互不覆盖；渲染用 setSettings(next) 提交同一份。
+    // 文本类更新必须走函数式 partial，禁止用渲染闭包的 settings 拼数组
+    const next = { ...s, ...(typeof p === "function" ? p(s) : p) };
+    settingsRef.current = next;
+    setSettings(next);
     setSaved(false);
+  }, []);
+
+  // 即时落盘：读镜像 ref（恒为最新），供「改完即存」的路径调用
+  const saveNow = useCallback(() => {
+    const s = settingsRef.current;
+    if (!s) return;
+    invoke("save_settings", { settings: s })
+      .then(() => setSaved(true))
+      .catch((e) => toast(`保存失败：${e}`, "err"));
   }, []);
 
   // 动作开关/顺序/搜索引擎变更实时推送到浮动条（无需等保存）
@@ -523,8 +546,7 @@ export default function App() {
   };
 
   const patchProvider = (id: string, p: Partial<Provider>) => {
-    if (!settings) return;
-    patch({ providers: settings.providers.map((x) => (x.id === id ? { ...x, ...p } : x)) });
+    patch((s) => ({ providers: s.providers.map((x) => (x.id === id ? { ...x, ...p } : x)) }));
   };
 
   // 添加模型服务：预设（预填名称/地址/形态/候选模型，只差密钥）或自定义（手填全项）。
@@ -618,6 +640,19 @@ export default function App() {
     });
   };
 
+  // 翻译凭据输入：函数式 partial（密钥是文本输入，同 updateCustom 的连发丢键风险）
+  const updateCred = (svcId: string, field: string, value: string) => {
+    patch((s) => ({
+      translate: {
+        ...s.translate,
+        credentials: {
+          ...s.translate.credentials,
+          [svcId]: { ...s.translate.credentials[svcId], [field]: value },
+        },
+      },
+    }));
+  };
+
   // 动作顺序：已配置顺序 + 注册表中新增动作（追加末尾）
   const orderedActionIds = settings ? allActionIds(settings) : [];
   // resident 动作（含自定义）与上下文动作分两张卡：后者只在选中内容含实体时出现，
@@ -678,17 +713,17 @@ export default function App() {
       setOverId(null);
       overIdRef.current = null;
       if (!target || target === id) return;
-      // 落位：从原位置移除后插入目标位置
-      setSettings((s) => {
-        if (!s) return s;
+      // 落位：从原位置移除后插入目标位置，随即落盘（划词页即时保存）
+      patch((s) => {
         const order = allActionIds(s);
         const from = order.indexOf(id);
         const to = order.indexOf(target);
-        if (from < 0 || to < 0) return s;
+        if (from < 0 || to < 0) return {};
         order.splice(from, 1);
         order.splice(to, 0, id);
-        return { ...s, actionOrder: order };
+        return { actionOrder: order };
       });
+      saveNow();
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
@@ -701,27 +736,24 @@ export default function App() {
   const engOverRef = useRef<string | null>(null);
 
   const updateEngine = (idx: number, p: Partial<SearchEngine>) => {
-    if (!settings) return;
-    const old = settings.searchEngines[idx];
-    let next = settings.searchEngines.map((x, i) => (i === idx ? { ...x, ...p } : x));
-    let defaultSearch = settings.defaultSearch;
-
-    // 重命名默认引擎时同步默认项
-    if (p.name && old.name === defaultSearch) {
-      defaultSearch = p.name;
-    }
-    if (p.enabled === false) {
-      // 至少保留一个启用的引擎，保证「搜索」按钮始终可用
+    // 守卫走渲染闭包即可：点击路径离散无连发竞态；文本字段（名称/URL）才需要函数式
+    if (p.enabled === false && settings) {
       if (settings.searchEngines.filter((x) => x.enabled).length <= 1) {
         toast("至少保留一个启用的搜索引擎", "err");
         return;
       }
-      // 停用的是默认引擎：默认顺延到首个启用引擎（默认 ⊆ 启用）
-      if (defaultSearch === old.name) {
+    }
+    patch((s) => {
+      const old = s.searchEngines[idx];
+      const next = s.searchEngines.map((x, i) => (i === idx ? { ...x, ...p } : x));
+      let defaultSearch = s.defaultSearch;
+      // 重命名默认引擎时同步默认项；停用默认引擎时顺延到首个启用项
+      if (p.name && old.name === defaultSearch) defaultSearch = p.name;
+      if (p.enabled === false && defaultSearch === old.name) {
         defaultSearch = next.find((x) => x.enabled)?.name ?? "";
       }
-    }
-    patch({ searchEngines: next, defaultSearch });
+      return { searchEngines: next, defaultSearch };
+    });
   };
 
   const patchEngines = (engines: SearchEngine[]) => patch({ searchEngines: engines });
@@ -805,11 +837,12 @@ export default function App() {
   const [provPickerOpen, setProvPickerOpen] = useState(false);
 
   const setPrompt = (id: AiActionId, value: string) => {
-    if (!settings) return;
-    const next = { ...settings.actionPrompts };
-    if (value.trim() === DEFAULT_PROMPTS[id].trim()) delete next[id];
-    else next[id] = value;
-    patch({ actionPrompts: next });
+    patch((s) => {
+      const next = { ...s.actionPrompts };
+      if (value.trim() === DEFAULT_PROMPTS[id].trim()) delete next[id];
+      else next[id] = value;
+      return { actionPrompts: next };
+    });
   };
 
   const resetPrompt = (id: AiActionId) => {
@@ -860,11 +893,20 @@ export default function App() {
     setActionModal(id);
   };
 
+  /** 关闭编辑模态 = 即时落盘（完成 / × / Esc / 点遮罩共用路径）：编辑在每次按键
+   *  时已写入本地状态，这里统一持久化——划词页不再有「保存更改」按钮 */
+  const closeActionModal = () => {
+    tryRunRef.current++;
+    setTryRun(null);
+    setDelArm(false);
+    setActionModal(null);
+    saveNow();
+  };
+
   const updateCustom = (id: string, p: Partial<CustomAction>) => {
-    if (!settings) return;
-    patch({
-      customActions: settings.customActions.map((c) => (c.id === id ? { ...c, ...p } : c)),
-    });
+    patch((s) => ({
+      customActions: s.customActions.map((c) => (c.id === id ? { ...c, ...p } : c)),
+    }));
   };
 
   const addCustom = () => {
@@ -906,6 +948,7 @@ export default function App() {
     setTryRun(null);
     setDelArm(false);
     setActionModal(null);
+    saveNow();
   };
 
   /** 试跑：走默认模型服务（Rust 读的是已落盘的配置，未保存的改动不生效） */
@@ -1263,7 +1306,7 @@ export default function App() {
           <>
             <h1>划词</h1>
             <p className="page-hint">
-              设定浮动条显示哪些动作及其排列顺序：拖动把手调序，开关停用某项。开关与顺序即时反映到浮动条；新增动作及其名称、提示词需保存后生效。
+              设定浮动条显示哪些动作及其排列顺序：拖动把手调序，开关停用某项。开关、顺序与自定义动作的编辑即时生效并自动保存。
               <br />
               「提取信息」仅在所选文字含网址 / 邮箱 / 电话 / 验证码 / 日期
               {IS_MAC ? " / 地点" : ""}时出现。
@@ -1364,6 +1407,7 @@ export default function App() {
                             onChange={(e) => {
                               if (c) {
                                 updateCustom(c.id, { enabled: e.target.checked });
+                                saveNow();
                                 return;
                               }
                               // 至少保留一个开启的动作，避免浮动条变空白
@@ -1377,6 +1421,7 @@ export default function App() {
                               patch({
                                 actions: { ...settings.actions, [k]: e.target.checked },
                               });
+                              saveNow();
                             }}
                           />
                           <span className="knob" />
@@ -1430,13 +1475,6 @@ export default function App() {
               ))}
             </div>
 
-
-            <div className="save-bar">
-              <button className="btn primary" onClick={save}>
-                {saved ? "已保存" : "保存更改"}
-              </button>
-            </div>
-
             {/* 编辑模态：名称/提示词/图标 + 试跑 + 删除在一个面板里完成——
                 写提示词 → 就地试跑 → 改，闭环不再跨两个 UI 层。
                 提示词取当前编辑内容；模型服务读已落盘配置（试跑前先保存） */}
@@ -1447,10 +1485,7 @@ export default function App() {
               return (
                 <Modal
                   title={`自定义动作「${c.name || "未命名"}」`}
-                  onClose={() => {
-                    setActionModal(null);
-                    setDelArm(false);
-                  }}
+                  onClose={closeActionModal}
                   footer={
                     <>
                       <button
@@ -1465,7 +1500,7 @@ export default function App() {
                       >
                         {delArm ? "确认删除？" : "删除"}
                       </button>
-                      <button className="btn primary sm" onClick={() => setActionModal(null)}>
+                      <button className="btn primary sm" onClick={closeActionModal}>
                         完成
                       </button>
                     </>
@@ -1821,18 +1856,7 @@ export default function App() {
                                         | undefined) ?? ""
                                     }
                                     onChange={(e) =>
-                                      patch({
-                                        translate: {
-                                          ...settings.translate,
-                                          credentials: {
-                                            ...settings.translate.credentials,
-                                            [svc.id]: {
-                                              ...settings.translate.credentials[svc.id],
-                                              [f.field]: e.target.value,
-                                            },
-                                          },
-                                        },
-                                      })
+                                      updateCred(svc.id, f.field, e.target.value)
                                     }
                                     placeholder={f.placeholder}
                                   />
@@ -2333,9 +2357,7 @@ export default function App() {
                     onChange={(e) => {
                       const enabled = e.target.checked;
                       invoke("set_launch_at_login", { enabled })
-                        .then(() =>
-                          setSettings((s) => (s ? { ...s, launchAtLogin: enabled } : s)),
-                        )
+                        .then(() => patch({ launchAtLogin: enabled }))
                         .catch((err) => toast(`设置失败：${err}`, "err"));
                     }}
                   />
@@ -2361,11 +2383,8 @@ export default function App() {
                     type="checkbox"
                     checked={settings.showDockIcon}
                     onChange={(e) => {
-                      const next = { ...settings, showDockIcon: e.target.checked };
-                      setSettings(next);
-                      invoke("save_settings", { settings: next }).catch(() =>
-                        toast("保存失败，请重试", "err"),
-                      );
+                      patch({ showDockIcon: e.target.checked });
+                      saveNow();
                     }}
                   />
                   <span className="knob" />

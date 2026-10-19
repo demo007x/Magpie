@@ -14,11 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The 划词 (actions) page now saves automatically: action toggles, drag-reordering and custom-action edits persist the moment they happen — closing the editor with 完成 (or × / Esc) writes to disk, so the page-level "保存更改" button is gone. Other pages keep their save button.
+
 - Translation services are now managed as an added list on the Translate settings page: pick a provider via "添加服务", fill its credentials in the row, and toggle it on or off anytime — pausing a provider keeps its credentials, handy when a monthly quota runs out. The default radio picks the one-click service among enabled ones. Removing a provider asks for confirmation and clears its stored credentials (pausing is the way to keep them), and saving is blocked while an enabled provider's required credentials are empty. Existing Baidu/DeepL credentials migrate automatically — no re-entry needed.
 - Secondary menus on the floating bar and in the result window's action row (translate services, search engines, Obsidian targets, the overflow list and the row-side menus inside it) now open on hover: resting the pointer on an action with a chevron for a moment expands its menu — no click needed. Clicks keep working exactly as before (the action button runs its default service, the chevron opens instantly), sweeping past other actions while a menu is open switches instantly, and the menu tucks itself away shortly after the pointer leaves the bar.
 
 ### Fixed
 
+- Fixed custom AI actions losing typed characters or saving an older prompt than what was on screen: rapid typing and Chinese IME composition could silently drop edits (updates now build on the latest state). The same hardening covers model-service fields, prompt overrides, search engines and translation credentials.
 - The floating bar no longer shows an action whose backing services are all disabled: the Translate action disappears when every translation service is toggled off, Search disappears when every engine is off, and the AI actions (解释/总结 and custom ones) hide while the default model service is missing its key or model. The result window's action row follows the same rules.
 
 ## [0.1.15] - 2026-10-17
