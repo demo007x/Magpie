@@ -56,9 +56,9 @@ Every piece of text on your screen is one mouse gesture away: select or capture 
 - **Result window** — AI results and recognized text open in a standalone persistent window that can be pinned, dragged, and remembers position & size, with default-size presets in the appearance settings
 - **Custom AI actions** — a name + prompt + icon become capsule buttons (up to 10, ordered with the built-ins), with a try-run preview
 - **Dedicated permissions page (macOS)** — Accessibility, Input Monitoring, and a capture health check in one place, with one-click guided authorization; the Windows build needs no permission grants
-- **Three translation channels** — AI translation (LLM), Baidu Translate, and DeepL; click for the default, expand to switch
+- **Ten translation channels** — AI translation (LLM) plus nine machine-translation engines: Google, Microsoft, DeepL, Baidu, Youdao, Tencent, Alibaba, Volcengine and Caiyun; click runs the default, the chevron lists them all, and services can be added, paused or reordered anytime
 - **Custom search engines** — ships with Baidu AI / Baidu / Google AI / Google / Bing / GitHub; any `{q}` URL template works
-- **BYOK** — bring your own API key; DeepSeek preset, works with any OpenAI-compatible endpoint; the prompts behind Translate / Explain / Summarize are customizable
+- **BYOK model services** — bring your own API key; one-click presets for DeepSeek, Volcengine (Doubao), Zhipu, Kimi, Qwen, Xiaomi MiMo, SiliconFlow, OpenAI, xAI and OpenRouter, plus any OpenAI-compatible endpoint — in both Chat Completions and OpenAI Responses forms; the prompts behind Translate / Explain / Summarize are customizable
 - **Tray resident** — lives in the menu bar (macOS) / system tray (Windows); closing the main window just hides it while capture keeps running; GitHub update notifications
 - **App blocklist** — selection is disabled inside terminals, password managers, and other sensitive apps; system apps are reliably covered
 - **Compatibility mode (macOS)** — text selection also works in WeChat, Office, and similar apps, without disturbing your clipboard contents
@@ -88,7 +88,7 @@ pnpm tauri dev
 
 1. **Accessibility permission (dev mode, macOS)**: the unpacked dev binary won't appear in the Accessibility list automatically. Add the **terminal app** running `tauri dev` (Terminal / iTerm2 / VS Code) under System Settings → Privacy & Security → Accessibility. Not an issue for the packaged .app. On Windows, no permission grants are needed
 2. Drag-select or double-click text in **any app** → the floating bar appears
-3. Configure a provider in the main window (DeepSeek preset, or any OpenAI-compatible endpoint); Baidu / DeepL keys go in the Translate page
+3. Add a model service on the **Model** page — pick a preset, paste your key, confirm the model name — or point it at any OpenAI-compatible endpoint; add translation services with their keys on the **Translate** page
 4. Click Translate / Explain / Summarize → streaming results
 
 ## Commands
