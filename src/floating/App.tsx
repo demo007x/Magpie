@@ -3061,7 +3061,7 @@ export default function App() {
                 {enabledTranslates.map((s) => (
                   <button
                     key={s.id}
-                    className={`chip ${(usedTranslate ?? defaultTranslate?.id) === s.id ? "primary" : ""}`}
+                    className="chip"
                     onClick={guarded(() => {
                       setUsedTranslate(s.id); // 点击哪个哪个选中
                       setMenu(null);
@@ -3078,7 +3078,7 @@ export default function App() {
                 {enabledEngines.map((e) => (
                   <button
                     key={e.name}
-                    className={`chip ${(usedEngine ?? defaultEngine?.name) === e.name ? "primary" : ""}`}
+                    className="chip"
                     onClick={guarded(() => {
                       setUsedEngine(e.name); // 点击哪个哪个选中
                       setMenu(null);
@@ -3101,7 +3101,7 @@ export default function App() {
                 ).map(([key, label]) => (
                   <button
                     key={key}
-                    className={`chip ${key === "note" ? "primary" : ""}`}
+                    className="chip"
                     onClick={guarded(() => {
                       setMenu(null);
                       runAction("obsidian", undefined, undefined, key);
@@ -3176,7 +3176,7 @@ export default function App() {
                 enabledTranslates.map((s) => (
                   <button
                     key={s.id}
-                    className={`chip ${(usedTranslate ?? defaultTranslate?.id) === s.id ? "primary" : ""}`}
+                    className="chip"
                     onClick={guarded(() => {
                       setUsedTranslate(s.id);
                       setMenu(null);
@@ -3190,7 +3190,7 @@ export default function App() {
                 enabledEngines.map((e) => (
                   <button
                     key={e.name}
-                    className={`chip ${(usedEngine ?? defaultEngine?.name) === e.name ? "primary" : ""}`}
+                    className="chip"
                     onClick={guarded(() => {
                       setUsedEngine(e.name);
                       setMenu(null);
@@ -3205,7 +3205,7 @@ export default function App() {
                   ([key, label]) => (
                     <button
                       key={key}
-                      className={`chip ${key === "note" ? "primary" : ""}`}
+                      className="chip"
                       onClick={guarded(() => {
                         setMenu(null);
                         runAction("obsidian", undefined, undefined, key);

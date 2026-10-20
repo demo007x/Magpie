@@ -46,8 +46,17 @@ fn with_pins<T>(f: impl FnOnce(&mut HashMap<String, PinData>) -> T) -> Option<T>
 
 /// OCR 面板「钉图」：取走 pending 里的截图原图（所有权移交），钉回屏幕。
 /// 锚点取 OCR 面板左上角——钉图贴面板上方出现。
+///
+/// 必须是 async command：同步 command 跑在主线程的 IPC 派发内，而 build()
+/// 的 WebView2 创建要在主线程上泵消息等完成回调（wry wait_with_pump）——
+/// 泵到的下一条 IPC 会重入已被占住的派发路径 → 主线程死锁（实测 AppHangB1：
+/// 点钉图后全部窗口冻结、拖动失效、钉图窗永不出现）。async command 跑在
+/// 异步运行时线程，建窗请求经事件代理回主线程常规循环处理，无重入。
+/// 代价：跨线程建窗是「排队即返回」，build 的真实失败不再传回调用方
+/// （回滚逻辑失效；运行时建窗失败罕见，可接受），set_theme 对尚不存在
+/// 的窗口静默跳过。
 #[tauri::command]
-pub fn pin_from_ocr(window: WebviewWindow) -> Result<(), String> {
+pub async fn pin_from_ocr(window: WebviewWindow) -> Result<(), String> {
     let result = pin_from_ocr_inner(&window);
     if let Err(e) = &result {
         eprintln!("[pin] pin_from_ocr 失败：{e}");

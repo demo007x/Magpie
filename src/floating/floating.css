@@ -26,6 +26,14 @@
   --source-line: rgba(74, 99, 176, 0.32); /* 原文区左侧引用竖线 */
   --ok: #2fa14c;
   --radius: 12px;
+  /* 悬浮操作层「反色面」（用户定稿 2026-10-20）：浮层永远取主题的反极性，
+     双主题都是最大对比——亮色主题墨底白字（Dynamic Island / Linear 徽章
+     语言），暗色主题近白底墨字；hover = 实心品牌色 + 白字，默认服务标记 =
+     品牌色文字。半透明与投影都不可用：叠正文会透字/糊成灰斑 */
+  --ink-bg: #1c1c24;
+  --ink-border: transparent;
+  --ink-text: rgba(255, 255, 255, 0.82);
+  --ink-accent: #a6a4ff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -49,6 +57,10 @@
     --source: #94a0bd;
     --source-line: rgba(147, 167, 232, 0.3);
     --ok: #32d158;
+    --ink-bg: #f4f4f6;
+    --ink-border: transparent;
+    --ink-text: #1c1c24;
+    --ink-accent: #5e5ce6;
     }
 }
 
@@ -76,6 +88,10 @@
   --source: #4d5a75;
   --source-line: rgba(74, 99, 176, 0.32);
   --ok: #2fa14c;
+  --ink-bg: #1c1c24;
+  --ink-border: transparent;
+  --ink-text: rgba(255, 255, 255, 0.82);
+  --ink-accent: #a6a4ff;
 }
 
 :root.theme-dark {
@@ -98,6 +114,10 @@
   --source: #94a0bd;
   --source-line: rgba(147, 167, 232, 0.3);
   --ok: #32d158;
+  --ink-bg: #f4f4f6;
+  --ink-border: transparent;
+  --ink-text: #1c1c24;
+  --ink-accent: #5e5ce6;
 }
 
 * {
@@ -499,18 +519,55 @@ body,
   white-space: nowrap;
 }
 
-/* 二级菜单入场：轻微上滑 + 淡入（160ms），只做内容动画——
-   高度生长由 Rust 侧窗口 grow 承担，动画高度会与窗口生长打架。
+/* 二级菜单入场：容器只做淡入——位移/缩放交给 chip 自身的逐颗级联
+   （容器 transform 会污染锚点测量的 getBoundingClientRect，见 .pop 注释）。
    收起为瞬时：撤销语义 + 窗口同步回缩，滞留动画反而显得拖沓 */
 @keyframes menu-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
   }
 }
 
+/* 子操作 chip/胶囊堆入场：逐颗上浮 + 轻缩放，26ms 级联（用户定稿 2026-10-20，
+   Raycast/Linear 式微交互）；backwards 让延迟中的 chip 保持首帧隐藏。
+   .hchips 的 chip 只淡入：它的容器位置由胶囊实测坐标摆位（placeRailChips），
+   transform 动画期间测量会得到偏移值。尊重 prefers-reduced-motion（见下） */
+@keyframes chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.94);
+  }
+}
+
+@keyframes chip-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.ocr-menu-slot .chip,
+.hchips .chip,
+.rail .pitem {
+  animation: chip-in 200ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.hchips .chip {
+  animation-name: chip-fade-in;
+}
+
+.ocr-menu-slot .chip:nth-child(2), .hchips .chip:nth-child(2), .rail .pitem:nth-child(2) { animation-delay: 26ms; }
+.ocr-menu-slot .chip:nth-child(3), .hchips .chip:nth-child(3), .rail .pitem:nth-child(3) { animation-delay: 52ms; }
+.ocr-menu-slot .chip:nth-child(4), .hchips .chip:nth-child(4), .rail .pitem:nth-child(4) { animation-delay: 78ms; }
+.ocr-menu-slot .chip:nth-child(5), .hchips .chip:nth-child(5), .rail .pitem:nth-child(5) { animation-delay: 104ms; }
+.ocr-menu-slot .chip:nth-child(6), .hchips .chip:nth-child(6), .rail .pitem:nth-child(6) { animation-delay: 130ms; }
+.ocr-menu-slot .chip:nth-child(7), .hchips .chip:nth-child(7), .rail .pitem:nth-child(7) { animation-delay: 156ms; }
+.ocr-menu-slot .chip:nth-child(8), .hchips .chip:nth-child(8), .rail .pitem:nth-child(8) { animation-delay: 182ms; }
+
 @media (prefers-reduced-motion: reduce) {
-  .ocr-menu-slot {
+  .ocr-menu-slot,
+  .ocr-menu-slot .chip,
+  .hchips .chip,
+  .rail .pitem {
     animation: none;
   }
 }
@@ -963,7 +1020,8 @@ body,
    限宽换行向上生长、限高内滚；临时遮盖正文属浮层语义。窗口生长机制
    （RESULT_MENU_GROW + 冻结/解冻）随之退役——尺寸模型回到「只由拖动/
    预设改变」。chips 跟面板配色（§B.5 同规则：悬停/选中只变文字色），
-   胶囊形与槽间距同 .hchips；相邻分隔线不适用于浮层胶囊 */
+   8px 方圆角与动作行按钮同档（用户定稿 2026-10-20，胶囊堆行侧子菜单
+   仍是胶囊形）；相邻分隔线不适用于浮层 chips */
 .ocr-menu-slot {
   position: absolute;
   z-index: 10;
@@ -979,9 +1037,26 @@ body,
 .ocr-menu-slot .chip {
   height: 24px;
   padding: 0 11px;
-  border-radius: 999px;
-  background: var(--surf);
-  box-shadow: inset 0 0 0 0.5px var(--edge);
+  /* 8px 方圆角（用户定稿 2026-10-20）：与正下方动作行按钮同档，不再用胶囊形；
+     胶囊堆的行侧子菜单（.hchips）仍是胶囊形 */
+  border-radius: 8px;
+  /* 反色墨面（用户定稿 2026-10-20）：chip 叠在结果正文上，不透明墨底 +
+     白字（任何半透明都会透字）；无边框无投影，暗色主题墨底叠暗面板靠
+     --ink-border 细白边立形；默认服务 = 浅靛文字（见下方 .primary） */
+  background: var(--ink-bg);
+  border: 1px solid var(--ink-border);
+  color: var(--ink-text);
+}
+
+/* hover = 蓝底白字（用户定稿 2026-10-20）：文字恒为白色，只有底色在变 */
+.ocr-menu-slot .chip:hover {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--on-accent);
+}
+
+.ocr-menu-slot .chip:active {
+  filter: brightness(0.88);
 }
 
 .ocr-menu-slot .chip + .chip::before {
@@ -1016,32 +1091,53 @@ body,
   bottom: 68.5px;
 }
 
-/* 堆内胶囊：与动作行按钮同语言（图标 + 短文字），子菜单展开中转品牌色。
-   底色跟面板表面色走（§B.5 定稿），轮廓交给发丝 + 投影 */
+/* 堆内胶囊：悬浮在正文上 = 墨面反色（2026-10-20 用户定稿，与子菜单 chip
+   同语言；§B.5.2 的「实底+发丝+投影」随后翻案）。无边框无投影——白底上的
+   白胶囊+发丝区分不开（用户反馈），墨面靠反差立形 */
 .rail .pitem {
   width: auto;
   height: 28px;
   gap: 2px;
   padding: 0 4px 0 9px;
   border-radius: 999px;
-  background: var(--surf);
-  box-shadow: inset 0 0 0 0.5px var(--edge);
+  background: var(--ink-bg);
+  border: 1px solid var(--ink-border);
+  color: var(--ink-text);
 }
 
-/* hover 只变文字/图标色，不加底色（§B.5.2） */
+/* 墨底上的按钮/箭头/图标继承墨面文字色（.action 自带 --text 深色、
+   .action .ic 自带 --sec 灰，均需压过） */
+.rail .pitem .action,
+.rail .pitem .ic,
+.rail .pitem .pchev {
+  color: inherit;
+}
+
+/* hover = 蓝底白字（与子菜单 chip 同款交互）：文字一律白，含展开态胶囊；
+   .ic 图标写死了 --sec 灰，必须一并显式覆盖（用户反馈：图标要跟文字同色） */
 .rail .pitem:hover {
-  box-shadow: inset 0 0 0 0.5px var(--edge), 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: var(--accent);
+  border-color: transparent;
 }
 
 .rail .pitem:hover .action,
+.rail .pitem:hover .ic,
 .rail .pitem:hover .pchev {
-  color: var(--accent-strong);
+  color: var(--on-accent);
 }
 
-/* 选中/展开态：只变文字色，不加底色（§B.5.2） */
+/* 选中/展开态：只变文字色（浅靛在墨底上可读），不加底色 */
 .rail .pitem.open .action,
 .rail .pitem.open .pchev {
-  color: var(--accent-strong);
+  color: var(--ink-accent);
+}
+
+/* 展开态胶囊被悬停：同样走蓝底白字——本规则必须排在 .open 之后，
+   否则浅靛/深靛文字落在品牌色底上 = 蓝底蓝字（用户指出的拉跨点） */
+.rail .pitem.open:hover .action,
+.rail .pitem.open:hover .ic,
+.rail .pitem.open:hover .pchev {
+  color: var(--on-accent);
 }
 
 /* 覆盖 .pop.overflow .action 的拉伸/方角（特异度需压过它） */
@@ -1080,17 +1176,20 @@ body,
   height: 24px;
   padding: 0 11px;
   border-radius: 999px;
-  background: var(--surf);
-  box-shadow: inset 0 0 0 0.5px var(--edge);
+  /* 反色墨面：同 .ocr-menu-slot .chip（2026-10-20，§B.5.3 子菜单同一语言） */
+  background: var(--ink-bg);
+  border: 1px solid var(--ink-border);
+  color: var(--ink-text);
 }
 
 .hchips .chip:hover {
-  color: var(--accent-strong);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--on-accent);
 }
 
-.hchips .chip.primary {
-  color: var(--accent-strong);
+.hchips .chip:active {
+  filter: brightness(0.88);
 }
 
 /* 识别中占位：截图预览（两段式推送，文本回填前显示） */
@@ -1415,4 +1514,13 @@ html.win .pop {
   margin: 0;
   border-radius: calc(8px / var(--dpr, 1));
   box-shadow: inset 0 0 0 calc(1px / var(--dpr, 1)) var(--edge);
+}
+
+/* 行侧子菜单容器（.hchips）是透明容器、无容器卡（§B.5.3）——上面 html.win .pop
+   的圆角+发丝是给卡片类浮层的，但特异性 (0,2,0) 压过 .hchips (0,1,0) 的重置，
+   透明容器在 Windows 上会凭空多出一圈边框；按同特异性收掉（macOS 无 .win 根类，
+   .hchips 基础重置本就生效，双平台一致） */
+html.win .pop.hchips {
+  border-radius: 0;
+  box-shadow: none;
 }

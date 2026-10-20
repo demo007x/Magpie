@@ -614,18 +614,6 @@ fn main() {
                     let _ = window.hide();
                 }
             }
-            // 「跟随系统」下系统主题切换：弹层的不透明底色跟着换（仅 Windows）
-            #[cfg(target_os = "windows")]
-            if let tauri::WindowEvent::ThemeChanged(_) = event {
-                if matches!(
-                    window.label(),
-                    "floating" | "ocr" | "toast" | "floating-panel" | "floating-menu"
-                ) {
-                    if let Some(w) = window.app_handle().get_webview_window(window.label()) {
-                        crate::floating::apply_webview_background(&w, "auto");
-                    }
-                }
-            }
         })
         .invoke_handler(tauri::generate_handler![
             ui_debug_log,

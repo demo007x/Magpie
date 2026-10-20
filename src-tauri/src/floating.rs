@@ -47,8 +47,11 @@ pub(crate) fn show_without_activation(win: &WebviewWindow) -> Result<(), String>
 
 /// 原生圆角裁切：macOS 走 NSWindow contentView 图层（12px 精确圆角）；
 /// Windows 走 DWM 窗口圆角属性（Win11 22H2+，系统固定约 8px——radius 参数
-/// 在 Windows 不生效，视觉略小但远好于 CSS 圆角压透明边界的毛刺）；
-/// Win10 对该属性返回错误 → 自动维持 CSS 圆角回退，行为不变
+/// 在 Windows 不生效）。注意 DWM 对无边框窗口是否真的按此属性裁圆角**因机器
+/// 而异**：属性调用恒返回成功，但部分机器（Win11 ARM64 实测）视觉不裁切，
+/// 且与 THICKFRAME/CAPTION/透明与否均无关——不得押注。因此 webview 底色
+/// 常驻透明，CSS 圆角是所有机器的兜底；DWM 肯裁的机器上裁切顺带消除了
+/// CSS 圆角压窗口边界的毛刺，双轨并存无害
 #[cfg(target_os = "windows")]
 pub fn apply_native_corner_radius(win: &WebviewWindow, _radius: f64) {
     use windows::Win32::Foundation::HWND;
@@ -92,9 +95,10 @@ pub fn apply_native_corner_radius(win: &WebviewWindow, _radius: f64) {
 /// ≠ 卡片矩形：阴影沿外圈画、带子透出桌面，卡片上缘显形为毛边。
 /// 这里在「客户区 = 满窗」（卡片零出血贴边）的前提下，用经典配方自请
 /// DWM 边框（DwmExtendFrameIntoClientArea 1px）恢复阴影与圆角：边框线颜色
-/// 已由 BORDER_COLOR=NONE 收掉，1px 玻璃边被卡片不透明像素盖住（仅 CSS
-/// 圆角外的透明角露出，该处本就被 DWM 圆角裁掉）。前提：set_shadow(false)
-/// 先行（否则 MARKER_UNDECORATED_SHADOW 仍会让 WM_NCCALCSIZE 内缩客户区）
+/// 已由 BORDER_COLOR=NONE 收掉，1px 玻璃边被卡片像素盖住（CSS 圆角外的
+/// 透明角在有 DWM 圆角的机器上被 DWM 裁掉，其余机器透出桌面）。
+/// 前提：set_shadow(false) 先行（否则 MARKER_UNDECORATED_SHADOW 仍会让
+/// WM_NCCALCSIZE 内缩客户区）
 #[cfg(target_os = "windows")]
 pub fn apply_frame_shadow(win: &WebviewWindow) {
     use windows::Win32::Foundation::HWND;
@@ -117,54 +121,27 @@ pub fn apply_frame_shadow(win: &WebviewWindow) {
     }
 }
 
-/// WebView2 不透明背景：透明弹层的 DefaultBackgroundColor 被 wry 在创建分支
-/// 写死为全透明，窗口层也没有 WM_ERASEBKGND 画刷——拖拽放大结果窗时，新露出
-/// 的区域在渲染帧跟上前直接透出桌面，经 DWM 合成呈「透明白闪」。给弹层设
-/// 不透明的卡片底色（与 floating.css/toast.css 的 --surf 同值）后，未绘制
-/// 区域按底色出现，闪动不可见。代价：页面透明像素（CSS 圆角外四角）变成
-/// 底色实心——Win11 22H2+ 由 DWM 原生圆角裁切兜住；Win10 无此能力，探测
-/// 失败即跳过（维持旧行为：闪但角圆）。底色随主题：appearance 传
-/// "light"/"dark" 用指定值，传 "auto" 按窗口当前生效主题取值
-/// （「跟随系统」下系统主题切换由 ThemeChanged 事件再次驱动到这里）
+/// 结果窗拖拽缩放期间的不透明底色守卫（Windows）：拖拽放大时新露出的窗口
+/// 区域在 WebView2 渲染帧跟上前直接透出桌面，呈「透明白闪」（0.1.15 修）。
+/// 但不透明底色常驻会让 CSS 圆角外的四角变实心——在 DWM 不给无边框窗口
+/// 裁圆角的机器上（见 apply_native_corner_radius 注释）卡片 silhouette
+/// 整个变直角。所以底色只在拖拽进行中不透明（直角一闪而过），松手/隐藏
+/// 即恢复全透明，圆角由 CSS 常驻。颜色按窗口当前生效主题取 --surf 同值；
+/// 同值重复设置经 RESULT_OPAQUE 边沿记忆跳过（拖拽 tick 高频调用）
 #[cfg(target_os = "windows")]
-pub fn apply_webview_background(win: &WebviewWindow, appearance: &str) {
+static RESULT_OPAQUE: AtomicBool = AtomicBool::new(false);
+
+#[cfg(target_os = "windows")]
+pub fn set_result_window_opaque(win: &WebviewWindow, opaque: bool) {
+    if RESULT_OPAQUE.swap(opaque, Ordering::Relaxed) == opaque {
+        return;
+    }
     use tauri::utils::config::Color;
     use tauri::Theme;
 
-    if !native_corner_rounding_active(win) {
-        return;
-    }
-    let theme = match appearance {
-        "light" => Some(Theme::Light),
-        "dark" => Some(Theme::Dark),
-        _ => win.theme().ok(),
-    }
-    .unwrap_or(Theme::Dark);
+    let theme = win.theme().ok().unwrap_or(Theme::Dark);
     let (r, g, b) = if theme == Theme::Light { (255, 255, 255) } else { (40, 40, 40) };
-    let _ = win.set_background_color(Some(Color(r, g, b, 255)));
-}
-
-/// 探测 DWM 原生圆角是否可用（Win11 22H2+）：重设 ROUND 属性并检查结果，
-/// 与 apply_native_corner_radius 的设置幂等；Win10 对该属性返回错误
-#[cfg(target_os = "windows")]
-fn native_corner_rounding_active(win: &WebviewWindow) -> bool {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWM_WINDOW_CORNER_PREFERENCE, DWMWA_WINDOW_CORNER_PREFERENCE,
-        DWMWCP_ROUND,
-    };
-
-    win.hwnd().map_or(false, |hwnd| unsafe {
-        let hwnd = HWND(hwnd.0);
-        let pref = DWM_WINDOW_CORNER_PREFERENCE(DWMWCP_ROUND.0);
-        DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_WINDOW_CORNER_PREFERENCE,
-            &pref as *const _ as *const std::ffi::c_void,
-            std::mem::size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
-        )
-        .is_ok()
-    })
+    let _ = win.set_background_color(Some(Color(r, g, b, if opaque { 255 } else { 0 })));
 }
 
 /// 其余平台无原生圆角能力，CSS 圆角兜底
@@ -787,6 +764,9 @@ pub fn set_result_window_size(window: WebviewWindow, width: f64, height: f64) {
     if window.label() != "ocr" {
         return;
     }
+    // 拖拽缩放进行中：底色临时不透明防透白闪（松手恢复，见 set_result_window_opaque）
+    #[cfg(target_os = "windows")]
+    set_result_window_opaque(&window, true);
     let w = width.clamp(RESULT_MIN_W, RESULT_MAX_W);
     let h = height.clamp(RESULT_MIN_H, RESULT_MAX_H);
     if let Ok(mut sz) = LAST_RESULT_SIZE.lock() {
@@ -819,6 +799,9 @@ pub fn persist_result_window_state(window: WebviewWindow) {
     if window.label() != "ocr" {
         return;
     }
+    // 拖拽结束：恢复透明底色（CSS 圆角重新显形）
+    #[cfg(target_os = "windows")]
+    set_result_window_opaque(&window, false);
     let app = window.app_handle();
     let pos = *LAST_RESULT_POS.lock().unwrap();
     let size = *LAST_RESULT_SIZE.lock().unwrap();
@@ -832,6 +815,9 @@ pub fn persist_result_window_state(window: WebviewWindow) {
 #[tauri::command]
 pub fn hide_ocr_window(window: WebviewWindow) {
     if window.label() == "ocr" {
+        // 兜底：拖拽中直接收窗时也把底色守卫复位
+        #[cfg(target_os = "windows")]
+        set_result_window_opaque(&window, false);
         let app = window.app_handle();
         let pos = *LAST_RESULT_POS.lock().unwrap();
         let size = *LAST_RESULT_SIZE.lock().unwrap();
