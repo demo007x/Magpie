@@ -1,6 +1,7 @@
 name: CI
 
-# push / PR 门禁：macOS + Windows 双平台「编译链接 + 测试」。
+# push / PR 门禁：macOS（arm64 + 交叉 x86_64，对齐 universal 发布目标）+
+# Windows（x64）「编译链接 + 测试」。
 # 抓两类在本地（macOS）发现不了的问题：
 # 1. Windows 专属的编译层破坏——cfg(windows) 分支不编译、MSVC 链接失败、
 #    依赖在 Windows 缺失（这类在 Mac 上 cargo check/build 全绿是常态）；
@@ -47,6 +48,13 @@ jobs:
       - name: 安装 Rust（stable）
         uses: dtolnay/rust-toolchain@stable
 
+      # macOS 补装 Intel 交叉目标：发布的是 universal 双架构包，Intel 侧的
+      # 编译破坏要在 push 时暴露而不是等 tag 的 release.yml（标准 Intel
+      # macOS runner 已退役，同机交叉编译是唯一经济路径）
+      - name: 补装 Intel 交叉目标（仅 macOS）
+        if: runner.os == 'macOS'
+        run: rustup target add x86_64-apple-darwin
+
       # 单包工程在 src-tauri（根目录无 Cargo.toml），显式指向以命中缓存
       - name: Rust 编译缓存
         uses: Swatinem/rust-cache@v2
@@ -75,3 +83,11 @@ jobs:
       - name: Rust 测试
         working-directory: src-tauri
         run: cargo test --locked
+
+      # Intel 侧交叉编译验证（仅 macOS，在 arm64 runner 上交叉编 x86_64）：
+      # 依赖里的目标特定代码只在另一架构编译时暴露；只编译链接不跑测试——
+      # 单元测试语义不随架构变，Rosetta 跑一遍性价比过低
+      - name: Rust 编译链接（x86_64 交叉，仅 macOS）
+        if: runner.os == 'macOS'
+        working-directory: src-tauri
+        run: cargo build --locked --target x86_64-apple-darwin
