@@ -271,6 +271,9 @@ const CARD_GAP = 3;
 // 瞄准时的犹豫抖动不打断）。收起比展开略长：leave → 进菜单窗口的间隙别误收
 const HOVER_OPEN_MS = 300;
 const HOVER_CLOSE_MS = 350;
+// 子菜单退场时长：与 floating.css 的 --menu-out-ms 同步（switchMenu 以 fading
+// 快照续挂旧菜单 .m-out 淡出，到点卸载）
+const MENU_FADE_MS = 110;
 
 // hover 驻留的作用域入口 id（menu 状态取值域的子集）：
 // chev:* = 胶囊动作 ⌄，overflow = 最右收纳钮，pmenu:* = 收纳面板行的行侧菜单
@@ -287,6 +290,11 @@ type HoverMenuId =
   | "search"
   | "translate"
   | "obsidian";
+
+// 二级浮层开合状态的取值域（fading 退场快照同域）：chev:* 仅浮动条胶囊、
+// overflow 浮动条「更多」收纳 / OCR 结果窗胶囊堆共用一名、pmenu:* 为堆内
+// 行侧菜单、search/translate/obsidian 为结果窗动作行 ⌄ 槽位菜单
+type MenuState = HoverMenuId;
 
 // Rust 返回的窗口落位 / 显示器逻辑矩形（逻辑坐标）
 interface WindowPos {
@@ -571,19 +579,7 @@ export default function App() {
   // 结果窗口的动作行 chips 沿用（obsidian = 存入目标：笔记/任务/卡片）；浮动条用
   // overflow（收纳面板）/ chev:*（胶囊动作换渠道/存入目标）/
   // pmenu:*（收纳面板项换渠道/存入目标），二级一律窄单列浮出菜单（形式全局统一）
-  const [menu, setMenu] = useState<
-    | null
-    | "search"
-    | "translate"
-    | "obsidian"
-    | "overflow"
-    | "chev:translate"
-    | "chev:search"
-    | "chev:obsidian"
-    | "pmenu:translate"
-    | "pmenu:search"
-    | "pmenu:obsidian"
-  >(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
   // 二级菜单当前选中的服务：初始跟随默认服务，点谁谁选中；
   // 点主菜单按钮（走默认服务）时置 null 回落到默认高亮
   const [usedTranslate, setUsedTranslate] = useState<string | null>(null);
@@ -614,6 +610,22 @@ export default function App() {
   const dwellRef = useRef<{ trig: HoverMenuId; since: number } | null>(null);
   const menuStateRef = useRef(menu);
   menuStateRef.current = menu;
+  // 子菜单退场快照：纯收起/切换时旧菜单值在此多挂 MENU_FADE_MS 毫秒，
+  // 渲染层按它续挂旧内容并加 .m-out 原地淡出（与新菜单入场交叉），到点清空
+  // 一并卸载。执行动作的收起不经此（结果区立即接管，退场抢戏）
+  const [fading, setFading] = useState<MenuState | null>(null);
+  const fadeTimerRef = useRef(0);
+  // 菜单纯收起/切换的统一入口（替代直接 setMenu）：事件闭包经 menuStateRef
+  // 读最新值，渲染期回调经渲染闭包——两条路径都取到当前菜单；同值调用无副作用
+  const switchMenu = useCallback((next: MenuState | null) => {
+    const cur = menuStateRef.current;
+    if (cur !== null && cur !== next) {
+      setFading(cur);
+      window.clearTimeout(fadeTimerRef.current);
+      fadeTimerRef.current = window.setTimeout(() => setFading(null), MENU_FADE_MS);
+    }
+    setMenu(next);
+  }, []);
   const hoverLeftAtRef = useRef<number | null>(null);
   // 子菜单级划出时刻：chips 开着时光标离开「胶囊堆 ∪ chips」区域即计时，
   // 150ms 后只收回 chips（回 overflow 态，主堆保留）；窗口级离开仍走 hoverLeft
@@ -732,14 +744,14 @@ export default function App() {
         // 光标仍在窗口内（只是离开了堆 ∪ chips 区域）：窗口级收起计时一并作废，
         // 否则停在正文上不动，350ms 后会把整个堆也收掉
         hoverLeftAtRef.current = null;
-        setMenu("overflow");
+        switchMenu("overflow");
         return;
       }
       const left = hoverLeftAtRef.current;
       if (left !== null && now - left > HOVER_CLOSE_MS) {
         hoverLeftAtRef.current = null;
         dwellRef.current = null;
-        setMenu(null);
+        switchMenu(null);
       }
     }, 100);
     return () => window.clearInterval(iv);
@@ -989,6 +1001,28 @@ export default function App() {
   const CAPSULE_MAX = Math.max(2, Math.min(8, capsuleMax));
   const topEntries = barEntries.slice(0, CAPSULE_MAX);
   const restEntries = barEntries.slice(CAPSULE_MAX);
+
+  // OCR 子菜单渲染值：活动菜单优先；纯收起的退场窗口（menu=null）用 fading
+  // 续挂旧内容淡出（.m-out + .mflow.still）。切换（menu 已是新值）不续挂
+  // 旧内容——新旧同容器叠放会打架，新菜单的入场动画即是切换过渡
+  const slotVal: MenuState | null =
+    menu === "translate" || menu === "search" || menu === "obsidian"
+      ? menu
+      : menu === null &&
+          (fading === "translate" || fading === "search" || fading === "obsidian")
+        ? fading
+        : null;
+  const slotGhost = menu === null && slotVal !== null;
+  const railLive = menu === "overflow" || !!menu?.startsWith("pmenu:");
+  const railGhost =
+    !railLive && (fading === "overflow" || !!fading?.startsWith("pmenu:"));
+  const pmenuVal =
+    menu !== null && menu.startsWith("pmenu:")
+      ? menu
+      : fading !== null && fading.startsWith("pmenu:")
+        ? fading
+        : null;
+  const pmenuGhost = !(menu !== null && menu.startsWith("pmenu:")) && pmenuVal !== null;
 
   useEffect(() => {
     loadSettings();
@@ -1318,7 +1352,7 @@ export default function App() {
             hoverLeftAtRef.current = null;
           } else {
             hoverLeftAtRef.current = null;
-            setMenu(null);
+            switchMenu(null);
           }
         }
       } else {
@@ -1342,12 +1376,12 @@ export default function App() {
           dwellRef.current = null;
         } else if (menuStateRef.current !== null) {
           dwellRef.current = null;
-          setMenu(trig);
+          switchMenu(trig);
         } else if (dwellRef.current?.trig !== trig) {
           dwellRef.current = { trig, since: now };
         } else if (now - dwellRef.current.since >= HOVER_OPEN_MS) {
           dwellRef.current = null;
-          setMenu(trig);
+          switchMenu(trig);
         }
       }
       const btn =
@@ -1401,6 +1435,7 @@ export default function App() {
     return () => {
       listenCancelled = true;
       unlisteners.forEach((u) => u());
+      window.clearTimeout(fadeTimerRef.current);
       document.removeEventListener("mouseleave", suspendPointer);
       document.removeEventListener("mouseenter", restorePointer);
       document.removeEventListener("mouseleave", markHoverLeft);
@@ -1552,7 +1587,12 @@ export default function App() {
     const ro = panel ? new ResizeObserver(placeAll) : null;
     if (panel && ro) ro.observe(panel);
     window.addEventListener("resize", placeAll);
+    // 胶囊堆入场动画收尾时复核摆位：入场位移进行中量触发胶囊会带上 ≤3px
+    // 偏移，而 hover「已开即切」能在 150ms 内就开出 pmenu，不能赌用户手速
+    const rail = panel?.querySelector<HTMLElement>(".pop.overflow.rail") ?? null;
+    rail?.addEventListener("animationend", placeAll);
     return () => {
+      rail?.removeEventListener("animationend", placeAll);
       ro?.disconnect();
       window.removeEventListener("resize", placeAll);
     };
@@ -2416,7 +2456,7 @@ export default function App() {
     // 不参与浮动条拖拽（结果窗拖拽走 onOcrPanelDown 一条链）
     if (IS_OCR) {
       if (menu !== null && !t.closest(".pop") && !t.closest(".ocr-actions")) {
-        setMenu(null);
+        switchMenu(null);
       }
       return;
     }
@@ -2523,7 +2563,9 @@ export default function App() {
           onClick={
             interactive
               ? guarded(() =>
-                  setMenu((m) => (m === a.id ? null : (a.id as "search" | "translate" | "obsidian"))),
+                  switchMenu(
+                    menu === a.id ? null : (a.id as "search" | "translate" | "obsidian"),
+                  ),
                 )
               : undefined
           }
@@ -3024,8 +3066,10 @@ export default function App() {
                     data-trig="overflow"
                     aria-label={`还有 ${ocrOverflow} 个动作`}
                     onClick={guarded(() =>
-                      setMenu((m) =>
-                        m === "overflow" || m?.startsWith("pmenu:") ? null : "overflow",
+                      switchMenu(
+                        menu === "overflow" || menu?.startsWith("pmenu:")
+                          ? null
+                          : "overflow",
                       ),
                     )}
                   >
@@ -3054,10 +3098,12 @@ export default function App() {
               左缘对齐触发槽位（定位 effect 摆位）、底边距行上缘 8px；限宽换行
               向上生长、限高内滚；临时遮盖正文属浮层语义。窗口生长机制
               （RESULT_MENU_GROW + 冻结/解冻）随之退役——尺寸模型回到
-              「只由拖动/预设改变」。chips 跟面板配色，悬停/选中只变文字色 */}
-          <div className="ocr-menu-slot">
-            {menu === "translate" && enabledTranslates.length > 1 && (
-              <>
+              「只由拖动/预设改变」。chips 跟面板配色，悬停/选中只变文字色。
+              动效（2026-10-20 定稿）：入场在内层 .mflow（key=菜单值，兄弟切换
+              重放），纯收起时容器挂 .m-out 淡出（fading 快照续挂旧内容） */}
+          <div className={`ocr-menu-slot ${slotGhost ? "m-out" : ""}`}>
+            {slotVal === "translate" && enabledTranslates.length > 1 && (
+              <div key="translate" className={`mflow ${slotGhost ? "still" : ""}`}>
                 {enabledTranslates.map((s) => (
                   <button
                     key={s.id}
@@ -3071,10 +3117,10 @@ export default function App() {
                     {s.label}
                   </button>
                 ))}
-              </>
+              </div>
             )}
-            {menu === "search" && enabledEngines.length > 1 && (
-              <>
+            {slotVal === "search" && enabledEngines.length > 1 && (
+              <div key="search" className={`mflow ${slotGhost ? "still" : ""}`}>
                 {enabledEngines.map((e) => (
                   <button
                     key={e.name}
@@ -3088,10 +3134,10 @@ export default function App() {
                     {e.name}
                   </button>
                 ))}
-              </>
+              </div>
             )}
-            {menu === "obsidian" && (
-              <>
+            {slotVal === "obsidian" && (
+              <div key="obsidian" className={`mflow ${slotGhost ? "still" : ""}`}>
                 {(
                   [
                     ["note", "笔记"],
@@ -3110,7 +3156,7 @@ export default function App() {
                     {label}
                   </button>
                 ))}
-              </>
+              </div>
             )}
           </div>
           {/* 溢出收纳浮层：竖排胶囊堆（§B.5.2 定稿）——无容器卡，每颗胶囊
@@ -3119,8 +3165,12 @@ export default function App() {
               chips 的弹出方向。DOM 挂在 .panel 下：.ocr-actions（单行收纳
               裁切）与 .ocr-main（菜单生长兜底）都 overflow:hidden，向上出界
               必被裁切，面板是第一个不裁切的定位锚。点胶囊执行并收起 */}
-          {(menu === "overflow" || menu?.startsWith("pmenu:")) && ocrOverflow > 0 && (
-            <div className={`pop overflow rail ${phase.streaming && !ocrStick ? "rail-lift" : ""}`}>
+          {(railLive || railGhost) && ocrOverflow > 0 && (
+            <div
+              className={`pop overflow rail ${
+                phase.streaming && !ocrStick ? "rail-lift" : ""
+              } ${railGhost ? "m-out" : ""}`}
+            >
               {rowActions.slice(rowActions.length - ocrOverflow).map((a) => (
                 <span
                   key={a.id}
@@ -3151,10 +3201,13 @@ export default function App() {
                             : "存入目标"
                       }
                       onClick={guarded(() =>
-                        setMenu((m) =>
-                          m === `pmenu:${a.id}`
+                        switchMenu(
+                          menu === `pmenu:${a.id}`
                             ? "overflow"
-                            : (`pmenu:${a.id}` as "pmenu:translate" | "pmenu:search" | "pmenu:obsidian"),
+                            : (`pmenu:${a.id}` as
+                                | "pmenu:translate"
+                                | "pmenu:search"
+                                | "pmenu:obsidian"),
                         ),
                       )}
                     >
@@ -3169,52 +3222,57 @@ export default function App() {
           {/* 子菜单：横向 chips 行侧级联（§B.5.3）——独立浮层无容器，定位
               effect 摆到触发胶囊左侧（右缘距 6px、垂直居中）；限宽换行、
               行右对齐；点 chip 执行并收起全部。带 .pop 类：纳入「点外收起」
-              的浮层判定，避免 mousedown 收起导致 click 丢失 */}
-          {menu?.startsWith("pmenu:") && ocrOverflow > 0 && (
-            <div className="pop hchips" ref={railChipsRef}>
-              {menu === "pmenu:translate" &&
-                enabledTranslates.map((s) => (
-                  <button
-                    key={s.id}
-                    className="chip"
-                    onClick={guarded(() => {
-                      setUsedTranslate(s.id);
-                      setMenu(null);
-                      runAction("translate", s.id);
-                    })}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              {menu === "pmenu:search" &&
-                enabledEngines.map((e) => (
-                  <button
-                    key={e.name}
-                    className="chip"
-                    onClick={guarded(() => {
-                      setUsedEngine(e.name);
-                      setMenu(null);
-                      openEngine(e, phase.text);
-                    })}
-                  >
-                    {e.name}
-                  </button>
-                ))}
-              {menu === "pmenu:obsidian" &&
-                ([["note", "笔记"], ["task", "任务"], ["card", "卡片"]] as Array<[string, string]>).map(
-                  ([key, label]) => (
+              的浮层判定，避免 mousedown 收起导致 click 丢失。入场在内层
+              .mflow（key=菜单值，pmenu 兄弟切换重放），纯收起/收回主堆时
+              容器挂 .m-out 淡出（fading 快照续挂，定位 effect 对 menu=null
+              早退、inline 摆位原样保留） */}
+          {pmenuVal !== null && ocrOverflow > 0 && (
+            <div className={`pop hchips ${pmenuGhost ? "m-out" : ""}`} ref={railChipsRef}>
+              <div key={pmenuVal} className={`mflow ${pmenuGhost ? "still" : ""}`}>
+                {pmenuVal === "pmenu:translate" &&
+                  enabledTranslates.map((s) => (
                     <button
-                      key={key}
+                      key={s.id}
                       className="chip"
                       onClick={guarded(() => {
+                        setUsedTranslate(s.id);
                         setMenu(null);
-                        runAction("obsidian", undefined, undefined, key);
+                        runAction("translate", s.id);
                       })}
                     >
-                      {label}
+                      {s.label}
                     </button>
-                  ),
-                )}
+                  ))}
+                {pmenuVal === "pmenu:search" &&
+                  enabledEngines.map((e) => (
+                    <button
+                      key={e.name}
+                      className="chip"
+                      onClick={guarded(() => {
+                        setUsedEngine(e.name);
+                        setMenu(null);
+                        openEngine(e, phase.text);
+                      })}
+                    >
+                      {e.name}
+                    </button>
+                  ))}
+                {pmenuVal === "pmenu:obsidian" &&
+                  ([["note", "笔记"], ["task", "任务"], ["card", "卡片"]] as Array<[string, string]>).map(
+                    ([key, label]) => (
+                      <button
+                        key={key}
+                        className="chip"
+                        onClick={guarded(() => {
+                          setMenu(null);
+                          runAction("obsidian", undefined, undefined, key);
+                        })}
+                      >
+                        {label}
+                      </button>
+                    ),
+                  )}
+              </div>
             </div>
           )}
           {IS_OCR && (

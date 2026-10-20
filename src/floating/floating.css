@@ -26,6 +26,13 @@
   --source-line: rgba(74, 99, 176, 0.32); /* 原文区左侧引用竖线 */
   --ok: #2fa14c;
   --radius: 12px;
+  /* 子菜单动效 token（2026-10-20 定稿）：三类二级表面（槽位 chips/胶囊堆/
+     行侧 chips）共用同一时长与曲线，菜单作为一个物体整体浮现/收拢；
+     App.tsx 的 MENU_FADE_MS 必须与 --menu-out-ms 同步 */
+  --menu-in-ms: 150ms;
+  --menu-out-ms: 110ms;
+  --menu-in-curve: cubic-bezier(0.16, 1, 0.3, 1);
+  --menu-out-curve: cubic-bezier(0.55, 0, 1, 0.45);
   /* 悬浮操作层「反色面」（用户定稿 2026-10-20）：浮层永远取主题的反极性，
      双主题都是最大对比——亮色主题墨底白字（Dynamic Island / Linear 徽章
      语言），暗色主题近白底墨字；hover = 实心品牌色 + 白字，默认服务标记 =
@@ -220,7 +227,7 @@ body,
 }
 
 .chev-svg {
-  transition: transform 150ms;
+  transition: transform var(--menu-in-ms) var(--menu-in-curve);
 }
 
 .chev-svg.open {
@@ -519,55 +526,87 @@ body,
   white-space: nowrap;
 }
 
-/* 二级菜单入场：容器只做淡入——位移/缩放交给 chip 自身的逐颗级联
-   （容器 transform 会污染锚点测量的 getBoundingClientRect，见 .pop 注释）。
-   收起为瞬时：撤销语义 + 窗口同步回缩，滞留动画反而显得拖沓 */
-@keyframes menu-in {
+/* 二级菜单动效（2026-10-20 定稿，替换旧的逐颗 26ms 级联）：菜单作为一个
+   物体整体浮现——入场一次运动（朝锚点方向 3px 位移 + 轻缩放，expo-out），
+   纯收起/切换走 110ms 退场（.m-out，App.tsx 的 switchMenu 以 fading 快照
+   续挂旧内容；执行动作的收起仍瞬时，结果区立即接管，退场反而抢戏）。
+   逐颗级联读作「排队蹦出」且总时长拖到 300ms+，是旧版生硬感的来源；
+   且单颗 chip 的 transform 会污染摆位 effect 对触发胶囊 getBoundingClientRect
+   的锚点测量（旧版 .hchips 被迫只淡入的根因）——整体化之后入场位移只挂在
+   容器或 keyed 内层上，被测元素（触发胶囊/槽位、容器自身的 offsetWidth/
+   Height 布局尺寸）都不经过动画，三类表面得以共用同一套位移语言 */
+@keyframes menu-in-up {
   from {
     opacity: 0;
+    transform: translateY(3px) scale(0.985);
   }
 }
 
-/* 子操作 chip/胶囊堆入场：逐颗上浮 + 轻缩放，26ms 级联（用户定稿 2026-10-20，
-   Raycast/Linear 式微交互）；backwards 让延迟中的 chip 保持首帧隐藏。
-   .hchips 的 chip 只淡入：它的容器位置由胶囊实测坐标摆位（placeRailChips），
-   transform 动画期间测量会得到偏移值。尊重 prefers-reduced-motion（见下） */
-@keyframes chip-in {
+@keyframes menu-in-left {
   from {
     opacity: 0;
-    transform: translateY(4px) scale(0.94);
+    transform: translateX(4px) scale(0.985);
   }
 }
 
-@keyframes chip-fade-in {
-  from {
+/* 退场朝锚点收拢：位移比入场更小更快——消失不该比出现更抢戏 */
+@keyframes menu-out-up {
+  to {
     opacity: 0;
+    transform: translateY(2px) scale(0.99);
   }
 }
 
-.ocr-menu-slot .chip,
-.hchips .chip,
-.rail .pitem {
-  animation: chip-in 200ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+@keyframes menu-out-left {
+  to {
+    opacity: 0;
+    transform: translateX(3px) scale(0.99);
+  }
 }
 
-.hchips .chip {
-  animation-name: chip-fade-in;
+/* 槽位子菜单的入场内层：key=菜单值（App.tsx），兄弟切换（翻译⌄→搜索⌄）
+   重放入场即切换过渡；退场由容器承担（.m-out），内外分工互不叠加。
+   still = fading 快照续挂的旧内容：只淡出不入场 */
+.ocr-menu-slot .mflow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  transform-origin: 50% 100%;
+  animation: menu-in-up var(--menu-in-ms) var(--menu-in-curve);
 }
 
-.ocr-menu-slot .chip:nth-child(2), .hchips .chip:nth-child(2), .rail .pitem:nth-child(2) { animation-delay: 26ms; }
-.ocr-menu-slot .chip:nth-child(3), .hchips .chip:nth-child(3), .rail .pitem:nth-child(3) { animation-delay: 52ms; }
-.ocr-menu-slot .chip:nth-child(4), .hchips .chip:nth-child(4), .rail .pitem:nth-child(4) { animation-delay: 78ms; }
-.ocr-menu-slot .chip:nth-child(5), .hchips .chip:nth-child(5), .rail .pitem:nth-child(5) { animation-delay: 104ms; }
-.ocr-menu-slot .chip:nth-child(6), .hchips .chip:nth-child(6), .rail .pitem:nth-child(6) { animation-delay: 130ms; }
-.ocr-menu-slot .chip:nth-child(7), .hchips .chip:nth-child(7), .rail .pitem:nth-child(7) { animation-delay: 156ms; }
-.ocr-menu-slot .chip:nth-child(8), .hchips .chip:nth-child(8), .rail .pitem:nth-child(8) { animation-delay: 182ms; }
+/* 行侧 chips 同构：从触发胶囊方向（右缘）长出；行右对齐换行在内层完成 */
+.hchips .mflow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  transform-origin: 100% 50%;
+  animation: menu-in-left var(--menu-in-ms) var(--menu-in-curve);
+}
+
+.mflow.still {
+  animation: none;
+}
+
+/* 退场：容器整体淡出收拢，内容定格不可点（110ms 后 TS 卸载） */
+.ocr-menu-slot.m-out,
+.pop.overflow.rail.m-out {
+  animation: menu-out-up var(--menu-out-ms) var(--menu-out-curve) forwards;
+  pointer-events: none;
+}
+
+.hchips.m-out {
+  animation: menu-out-left var(--menu-out-ms) var(--menu-out-curve) forwards;
+  pointer-events: none;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .ocr-menu-slot,
-  .ocr-menu-slot .chip,
-  .hchips .chip,
-  .rail .pitem {
+  .ocr-menu-slot .mflow,
+  .ocr-menu-slot.m-out,
+  .hchips,
+  .hchips .mflow,
+  .hchips.m-out {
     animation: none;
   }
 }
@@ -1031,7 +1070,8 @@ body,
   gap: 5px;
   width: max-content;
   overflow-y: auto;
-  animation: menu-in 160ms ease;
+  /* 入场在内层 .mflow（keyed）、退场由 .m-out 承担：容器自身保持无动画，
+   定位 effect 的 left/top 与 offsetWidth/Height 测量不经过任何 transform */
 }
 
 .ocr-menu-slot .chip {
@@ -1084,7 +1124,20 @@ body,
   padding: 0 12px 12px 0;
   margin: 0 -12px -12px 0;
   max-height: min(276px, calc(100% - 62px));
-  transition: bottom 0.15s ease;
+  /* 整体入场：从「更多 N⌄」钮方向（右下角）浮起，压过 .pop 的纯淡入；
+     overflow↔pmenu 切换时堆保持挂载，入场只在堆首次展开时播一次 */
+  transform-origin: 100% 100%;
+  animation: menu-in-up var(--menu-in-ms) var(--menu-in-curve);
+  transition: bottom var(--menu-in-ms) var(--menu-in-curve);
+}
+
+/* 减弱动效须紧随其后声明：前面的总 reduced-motion 块与本规则同特异度，
+   按源序后者胜——放远了会被这里的入场动画压过 */
+@media (prefers-reduced-motion: reduce) {
+  .pop.overflow.rail,
+  .pop.overflow.rail.m-out {
+    animation: none;
+  }
 }
 
 .pop.overflow.rail.rail-lift {
@@ -1170,6 +1223,9 @@ body,
   border-radius: 0;
   box-shadow: none;
   padding: 0;
+  /* 入场在内层 .mflow、退场由 .m-out 承担：容器保持无动画（压过 .pop 的
+     pop-in 淡入，避免与内层入场叠加成双重淡入） */
+  animation: none;
 }
 
 .hchips .chip {
