@@ -64,10 +64,10 @@ Rust 侧 `src-tauri/src/`：
 ## 约定
 
 - 决策记录（为什么不用 Electron/LangChain、为什么无剪贴板等）见 `docs/04-技术选型.md`（ADR），翻案先改 ADR。
-- 变更纪律：用户可见的行为改动 → `CHANGELOG.md` 的 Unreleased 段；项目现状描述 → README「功能」清单；贡献流程与 PR 规范见 `CONTRIBUTING.md`（面向人类贡献者，与本文件约定一致）。
-- CHANGELOG 条目规范（Keep a Changelog 格式、英文）：只用 `Added`（新功能）/ `Changed`（行为、文案、交互变更）/ `Fixed`（修复）三节；**每一项可以有多条**（fix 了什么、新增了什么），不写实现细节。
-- 发版清单：① Unreleased 条目归位成带日期的版本节（`## [x.y.z] - YYYY-MM-DD`）；② 版本号三处同步 `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`，`cargo check` 刷新 `Cargo.lock`。
-- 版本需求沉淀在 `docs/release/release-v<版本号>.md`：只写需求清单（完成一项勾一项，含一句关键交互决策）和发版归位说明，不抄实现细节（那属于代码注释与 docs/02）；发布时按发版清单归位 CHANGELOG，文件状态改「已发布」后冻结（CHANGELOG.md 是对外记录的唯一权威，release 文件是内部需求/验收源）。
+- 变更纪律：用户可见的行为改动记入开发中的 `docs/release/release-v<版本号>.md` 对应板块（见下）；项目现状描述 → README「功能」清单；贡献流程与 PR 规范见 `CONTRIBUTING.md`（面向人类贡献者，与本文件约定一致）。
+- 需求记录（`docs/release/release-v<版本号>.md`，版本号 = 下一版，同一时刻只有一个开发中的 release 文件）：三板块 `Added`（新增）/`Changed`（行为、文案、交互变更）/`Fixed`（修复）；需求、想法、issue 链接、关键交互决策在提出时记入对应板块，条目为 checkbox + 一句验收要点，落地时勾选；纯内部改动（重构、性能、注释）不记；不抄实现细节（那属于代码注释与 docs/02）。
+- CHANGELOG 纪律：**开发阶段绝不修改 `CHANGELOG.md`**（文件无 Unreleased 段）；仅当用户明确指令发版并给出版本号时，从 release 文件**已勾选**条目生成带日期的版本节（`## [x.y.z] - YYYY-MM-DD`）：Keep a Changelog 格式、英文，只用 `Added`/`Changed`/`Fixed` 三节，**每一项可以有多条**，逐条压缩为用户视角（用户能看见什么），不照抄 release 原文，不写实现细节与草稿。
+- 发版清单：① 按上条从 release 文件生成版本节；② 版本号三处同步 `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`，`cargo check` 刷新 `Cargo.lock`；③ release 文件状态改「已发布」后冻结（CHANGELOG.md 是对外记录的唯一权威，release 文件是内部需求/验收源）。
 - 产品边界：不做程序员向功能（报错/代码解释）；AX 取词不碰剪贴板，仅兼容模式兜底时模拟 ⌘C 且自动还原快照（ADR-05）；捕获失败静默。
 - 截屏框选等模态鼠标操作期间须持 `CaptureMuteGuard` 静音捕获管线，防止误触发划词 → AX 查询 → 模态会话内 ObjC 异常。
 - API Key 目前明文存 `settings.json`（ADR-07，M2 迁 keyring），设置页已向用户明示——不要在别处引入新的密钥落盘点。

@@ -71,7 +71,7 @@ cargo build    # 链接验证（FFI 符号错误只有链接时才暴露）
 1. 从 `main` 拉出特性分支，命名如 `feat/ocr-batch-actions`、`fix/floating-clip-multi-display`；
 2. 一个 PR 聚焦一件事；大重构先开 Issue 讨论方案再动手（涉及架构决策的翻案须先改 [docs/04-技术选型](docs/04-技术选型.md) 的 ADR）；
 3. 确保上面的本地验证全部通过，并在 PR 描述里写明验证方式与真机测试的应用；
-4. 涉及用户可见行为的改动，同步更新 [CHANGELOG.md](CHANGELOG.md)（Keep a Changelog 格式）与相关 docs 文档；
+4. 涉及用户可见行为的改动，记入 `docs/release/` 下开发中的 release 文件对应板块（CHANGELOG.md 仅在发版时依据 release 文件生成，日常开发不改它）；相关 docs 文档同步；
 5. 提交信息用祈使句短行，首行 ≤ 50 字符，正文解释**为什么**（代码里写不了的那部分）。
 
 首次贡献可以从 [good first issue](https://github.com/demo007x/Magpie/labels/good%20first%20issue) 标签开始；文档改进（错别字、步骤过期、翻译）随时欢迎，不必先开 Issue。

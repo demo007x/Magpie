@@ -1,0 +1,77 @@
+name: CI
+
+# push / PR 门禁：macOS + Windows 双平台「编译链接 + 测试」。
+# 抓两类在本地（macOS）发现不了的问题：
+# 1. Windows 专属的编译层破坏——cfg(windows) 分支不编译、MSVC 链接失败、
+#    依赖在 Windows 缺失（这类在 Mac 上 cargo check/build 全绿是常态）；
+# 2. 链接期错误——FFI/framework 符号只有 cargo build 链接时才暴露，
+#    cargo check 不够（见 AGENTS.md）。
+# 射程边界：窗口/时序/渲染类运行时问题（钉图死锁、WebView2 启动竞态、
+# 圆角裁切这类）不在本层——它们编译全绿、只有真跑才显形；防线是 AGENTS.md
+# 的坑位记录、（翻车后逐场景固化的）启动烟雾测试与发版前真机清单。
+# 只做验证不做打包：debug 编译（不 bundle、不签名），打包发版走 release.yml
+#（tag 触发）。仓库公开，标准 runner 分钟数免费不限量。
+on:
+  push:
+    branches: [main, win_pc]
+  pull_request:
+
+# 同一分支的新 push 到来时取消未跑完的旧任务，排队不积压
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: 编译与测试（${{ matrix.os }}）
+    strategy:
+      fail-fast: false # 一个平台挂也让另一个跑完，两份诊断一次拿齐
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      # 与 release.yml 同一套环境：版本由 package.json 的 packageManager 决定
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装 Rust（stable）
+        uses: dtolnay/rust-toolchain@stable
+
+      # 单包工程在 src-tauri（根目录无 Cargo.toml），显式指向以命中缓存
+      - name: Rust 编译缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      # 单列一步：类型错误直接红在这里，比混进 build 的报错好读
+      - name: TS 类型检查
+        run: pnpm check
+
+      # cargo 编译期 generate_context! 要读 ../dist，必须先产出前端构建
+      - name: 前端构建（产出 dist/）
+        run: pnpm build
+
+      # debug 编译 + 链接（含 src/bin/ocr_helper）——验证 FFI/framework
+      # 链接通过；不打包（bundle 与签名走 release.yml）
+      - name: Rust 编译链接（debug）
+        working-directory: src-tauri
+        run: cargo build --locked
+
+      # 单元/烟雾测试：ai.rs 协议解析纯逻辑 + entities.rs 日期地名
+      #（平台无关：macOS 走 NSDataDetector，其余走本地规则层）
+      - name: Rust 测试
+        working-directory: src-tauri
+        run: cargo test --locked

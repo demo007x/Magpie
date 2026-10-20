@@ -4,34 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### Added
-
-- Adding a model service now starts from a preset list — DeepSeek, Doubao, Zhipu, Kimi, Qwen, Xiaomi MiMo, SiliconFlow, OpenAI, xAI and OpenRouter — that fills in the name, service address and API form automatically: paste the key and confirm the model name. A custom entry keeps the fill-everything path for anything else. The OpenAI Responses API is now supported as a service form alongside Chat Completions (issue #1).
-- Seven new translation providers beyond AI, Baidu and DeepL: Google Translate, Microsoft Translator (Azure), Youdao, Tencent Cloud MT, Alibaba Cloud MT, Volcengine Translate and Caiyun Xiaoyi. Each is configured on the Translate settings page with its own credentials (an API key, an access-key pair, and a region where the provider requires one), then shows up in the floating bar menu and the result window like the built-ins. Provider signatures follow each vendor's official documentation.
-
-### Changed
-
-- The result window's submenus (⌄ chips, the overflow pill stack and its row-side chip rows) now open and close more smoothly: a menu appears in one motion instead of popping in item by item, and it fades out briefly when dismissed or switched to another instead of vanishing. Menus still close instantly when an action runs.
-- The result window's action row stays on a single line at narrow widths: actions that no longer fit collapse into a 更多 button at the end of the row. The overflow opens as a floating stack of pills above the row's end, hugging the window's right edge — each pill runs its action, and pills with options (translate service, search engine, Obsidian target) expand a horizontal chip row to their left, vertically centered on the pill. The stack's size never changes with its submenu; long lists scroll inside the stack, and picking a chip runs it and closes everything.
-- The floating bar's overflow panel rows now point before they pop: a row with a side submenu shows a › chevron toward where the submenu will open (‹ when mirrored at the screen's right edge). Obsidian's three fixed targets (笔记/任务/卡片) open as a horizontal chip row beside their row instead of a nested list, while service and engine menus keep their vertical lists.
-- The result window's floating actions (⌄ submenus, the overflow pill stack and their row-side chip rows) now render as inverted pills — ink fill with light text in the light theme and a light surface with dark text in the dark theme — so they stay clearly separated from the result text they temporarily cover; hovering lights a chip up in the brand indigo. Available on both macOS and Windows.
-
-- The 划词 (actions) page now saves automatically: action toggles, drag-reordering and custom-action edits persist the moment they happen — closing the editor with 完成 (or × / Esc) writes to disk, so the page-level "保存更改" button is gone. Other pages keep their save button.
-
-- Translation services are now managed as an added list on the Translate settings page: pick a provider via "添加服务", fill its credentials in the row, and toggle it on or off anytime — pausing a provider keeps its credentials, handy when a monthly quota runs out. The default radio picks the one-click service among enabled ones. Removing a provider asks for confirmation and clears its stored credentials (pausing is the way to keep them), and saving is blocked while an enabled provider's required credentials are empty. Existing Baidu/DeepL credentials migrate automatically — no re-entry needed.
-- Secondary menus on the floating bar and in the result window's action row (translate services, search engines, Obsidian targets, the overflow list and the row-side menus inside it) now open on hover: resting the pointer on an action with a chevron for a moment expands its menu — no click needed. Clicks keep working exactly as before (the action button runs its default service, the chevron opens instantly), sweeping past other actions while a menu is open switches instantly, and the menu tucks itself away shortly after the pointer leaves the bar.
-
-### Fixed
-
-- Fixed clicking 钉图 (pin to screen) in the result window freezing the whole app on Windows: every window stopped responding — dragging included — and the pinned image never appeared. The pin window is now created off the main thread, so it shows up right away and the rest of the app keeps working while it loads.
-- Fixed the floating bar and its popup cards showing as sharp-cornered rectangles on Windows machines where the system does not round borderless windows (for example Windows on ARM): the cards draw on a transparent background again, so their rounded corners render on every Windows form factor, and on machines that do round borderless windows the system clipping keeps them smooth.
-- Fixed the result window keeping an opaque, square-cornered backdrop outside of resize drags: the anti-flash guard now applies only while the window is being dragged, and the corners return to rounded the moment the drag ends.
-- Fixed the OCR/selection result window clipping the translation to a sliver when the service menu was opened while the result was still streaming: the menu's transient height-freeze is now always paired with its 400ms unfreeze, and a finished stream unfreezes immediately — the result area always returns to the full window height. The window size itself still only changes by dragging or the appearance preset, per the product spec.
-- Fixed custom AI actions losing typed characters or saving an older prompt than what was on screen: rapid typing and Chinese IME composition could silently drop edits (updates now build on the latest state). The same hardening covers model-service fields, prompt overrides, search engines and translation credentials.
-- The floating bar no longer shows an action whose backing services are all disabled: the Translate action disappears when every translation service is toggled off, Search disappears when every engine is off, and the AI actions (解释/总结 and custom ones) hide while the default model service is missing its key or model. The result window's action row follows the same rules.
+<!-- 本文件仅在发版时依据 docs/release/release-vX.Y.Z.md 的已勾选条目生成版本节，开发阶段勿改 -->
 
 ## [0.1.15] - 2026-10-17
 
