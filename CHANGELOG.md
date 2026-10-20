@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The result window's action row stays on a single line at narrow widths: actions that no longer fit collapse into a 更多 button at the end of the row. The overflow opens as a floating stack of pills above the row's end, hugging the window's right edge — each pill runs its action, and pills with options (translate service, search engine, Obsidian target) expand a horizontal chip row to their left, vertically centered on the pill. The stack's size never changes with its submenu; long lists scroll inside the stack, and picking a chip runs it and closes everything.
+- The floating bar's overflow panel rows now point before they pop: a row with a side submenu shows a › chevron toward where the submenu will open (‹ when mirrored at the screen's right edge). Obsidian's three fixed targets (笔记/任务/卡片) open as a horizontal chip row beside their row instead of a nested list, while service and engine menus keep their vertical lists.
+
 - The 划词 (actions) page now saves automatically: action toggles, drag-reordering and custom-action edits persist the moment they happen — closing the editor with 完成 (or × / Esc) writes to disk, so the page-level "保存更改" button is gone. Other pages keep their save button.
 
 - Translation services are now managed as an added list on the Translate settings page: pick a provider via "添加服务", fill its credentials in the row, and toggle it on or off anytime — pausing a provider keeps its credentials, handy when a monthly quota runs out. The default radio picks the one-click service among enabled ones. Removing a provider asks for confirmation and clears its stored credentials (pausing is the way to keep them), and saving is blocked while an enabled provider's required credentials are empty. Existing Baidu/DeepL credentials migrate automatically — no re-entry needed.
@@ -21,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed the OCR/selection result window clipping the translation to a sliver when the service menu was opened while the result was still streaming: the menu's transient height-freeze is now always paired with its 400ms unfreeze, and a finished stream unfreezes immediately — the result area always returns to the full window height. The window size itself still only changes by dragging or the appearance preset, per the product spec.
 - Fixed custom AI actions losing typed characters or saving an older prompt than what was on screen: rapid typing and Chinese IME composition could silently drop edits (updates now build on the latest state). The same hardening covers model-service fields, prompt overrides, search engines and translation credentials.
 - The floating bar no longer shows an action whose backing services are all disabled: the Translate action disappears when every translation service is toggled off, Search disappears when every engine is off, and the AI actions (解释/总结 and custom ones) hide while the default model service is missing its key or model. The result window's action row follows the same rules.
 

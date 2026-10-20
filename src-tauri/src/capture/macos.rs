@@ -781,13 +781,19 @@ unsafe fn ax_selected_text(
 
         // 编辑器家族 + AX 未开启（-25211 APIDisabled）：轻推 = 强制对方进 SR 模式，
         // 不轻推，一次性指引开启后走快通道；兼容模式本就被编辑器家族闸拦住，
-        // 这里快速失败，不再空转 500ms 轮询
-        if text.is_none() && rc_app_level == AX_ERROR_API_DISABLED {
+        // 这里快速失败，不再空转 500ms 轮询。聚焦应用与应用级两处 rc 任一报
+        // APIDisabled 即认定未开启（禁用态在不同调用上表现的错误码不一）
+        if text.is_none() {
             let family = running_bundle_id(pid).map_or(false, |b| bid_in_editor_family(&b));
             if family {
-                debug_log("AX: 编辑器家族 AX 未开启（APIDisabled），跳过轻推并指引");
-                show_editor_ax_guidance(app_handle);
-                return out;
+                if rc_app == AX_ERROR_API_DISABLED || rc_app_level == AX_ERROR_API_DISABLED {
+                    debug_log("AX: 编辑器家族 AX 未开启（APIDisabled），跳过轻推并指引");
+                    show_editor_ax_guidance(app_handle);
+                    return out;
+                }
+                debug_log(format!(
+                    "AX: 编辑器家族未取到文本（聚焦 rc={rc_app} 应用级 rc={rc_app_level}），非 APIDisabled 不指引"
+                ));
             }
         }
 

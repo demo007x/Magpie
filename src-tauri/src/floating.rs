@@ -476,20 +476,16 @@ static LAST_RESULT_POS: Mutex<Option<(f64, f64)>> = Mutex::new(None);
 /// 拖动钳制在默认 min/max 内；None = 尚未确定（显示时回退窗口当前尺寸）
 static LAST_RESULT_SIZE: Mutex<Option<(f64, f64)>> = Mutex::new(None);
 
-/// 二级菜单展开的生长高度（逻辑坐标）：唯一的内容相关尺寸例外——
-/// 展开时窗口向下长出菜单高度、收起即收回，主菜单（动作行）像素不动
-static RESULT_MENU_GROW: Mutex<f64> = Mutex::new(0.0);
-
 /// 结果窗口默认尺寸上下限（逻辑坐标）：用户怎么拖都不会超出
 pub const RESULT_MIN_W: f64 = 320.0;
 pub const RESULT_MAX_W: f64 = 560.0;
 pub const RESULT_MIN_H: f64 = 200.0;
 pub const RESULT_MAX_H: f64 = 800.0;
-/// 菜单生长的硬上限（防止极端长菜单把窗口顶出屏幕）
-pub const RESULT_MENU_MAX: f64 = 440.0;
-
-/// 结果窗口尺寸落位：用户尺寸 + 当前菜单生长高度，钳制后应用。
-/// 窗口尺寸只有两个来源——用户拖动、菜单展开生长；内容永不改变窗口尺寸
+/// 结果窗口尺寸落位（产品规范，勿改语义）：
+/// 窗口尺寸只有两个变化来源——① 用户拖动（拖过的尺寸被记住，跨会话生效）
+/// ② 外观配置预设（用户明确选择，写入记忆）。其余任何情况——切换动作、
+/// 流式输出、菜单开合——都不得改变窗口尺寸与位置。内容超限时只在结果
+/// 滚动区内滚动，窗口不动（长文本、短窗口均如此）
 fn apply_result_window_size(win: &WebviewWindow) {
     let scale = win.scale_factor().unwrap_or(2.0);
     let (uw, uh) = match *LAST_RESULT_SIZE.lock().unwrap() {
@@ -499,19 +495,18 @@ fn apply_result_window_size(win: &WebviewWindow) {
             .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
             .unwrap_or((420.0, 340.0)),
     };
-    let grow = *RESULT_MENU_GROW.lock().unwrap();
     let w = uw.clamp(RESULT_MIN_W, RESULT_MAX_W);
-    let h = (uh + grow).clamp(RESULT_MIN_H, RESULT_MAX_H + RESULT_MENU_MAX);
+    let h = uh.clamp(RESULT_MIN_H, RESULT_MAX_H);
     let _ = win.set_size(LogicalSize::new(w, h));
     #[cfg(debug_assertions)]
     {
         let phys = win.inner_size().map(|s| format!("{}x{}", s.width, s.height));
         let scale = win.scale_factor().unwrap_or(0.0);
         debug_log(format!(
-            "[menu-grow] rust: user={uw}x{uh} grow={grow} -> set_size {w}x{h} phys={phys:?} scale={scale}"
+            "[result-size] rust: user={uw}x{uh} -> set_size {w}x{h} phys={phys:?} scale={scale}"
         ));
     }
-    // 菜单生长后底部越出屏幕则整体上移，保证生长部分可见
+    // 窗口底部越出屏幕（预设可能高过小屏）则整体上移，保证完整可见
     if let (Ok(pos), Ok(Some(m))) = (win.outer_position(), win.current_monitor()) {
         let m_pos = m.position();
         let m_size = m.size();
@@ -786,16 +781,14 @@ pub fn focus_ocr_window(window: WebviewWindow) {
 }
 
 /// 用户拖拽尺寸手柄：更新用户尺寸并落位。
-/// 宽高只由拖动改变，钳制在默认 min/max 内；若二级菜单正展开，
-/// 拖到的总高度扣除菜单生长部分后才是「用户高度」
+/// 宽高只由拖动改变，钳制在默认 min/max 内
 #[tauri::command]
 pub fn set_result_window_size(window: WebviewWindow, width: f64, height: f64) {
     if window.label() != "ocr" {
         return;
     }
-    let grow = *RESULT_MENU_GROW.lock().unwrap();
     let w = width.clamp(RESULT_MIN_W, RESULT_MAX_W);
-    let h = (height - grow).clamp(RESULT_MIN_H, RESULT_MAX_H);
+    let h = height.clamp(RESULT_MIN_H, RESULT_MAX_H);
     if let Ok(mut sz) = LAST_RESULT_SIZE.lock() {
         *sz = Some((w, h));
     }
@@ -818,19 +811,6 @@ pub fn apply_result_preset(app: AppHandle, width: f64, height: f64) {
             apply_result_window_size(&win);
         }
     }
-}
-
-/// 二级菜单展开/收起：设置菜单生长高度（0 = 收起）并落位。
-/// 窗口向下生长/收回恰好菜单高度——主菜单（动作行）随窗口底边固定，像素不动
-#[tauri::command]
-pub fn set_result_menu_grow(window: WebviewWindow, grow: f64) {
-    if window.label() != "ocr" {
-        return;
-    }
-    *RESULT_MENU_GROW.lock().unwrap() = grow.clamp(0.0, RESULT_MENU_MAX);
-    apply_result_window_size(&window);
-    #[cfg(debug_assertions)]
-    debug_log(&format!("[menu-grow] rust: 收到 grow={grow}"));
 }
 
 /// 持久化结果窗口的位置与尺寸（拖拽尺寸结束时调用）

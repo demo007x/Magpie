@@ -663,7 +663,6 @@ fn main() {
             floating::ocr_take_pending,
             floating::ocr_window_ready,
             floating::hide_ocr_window,
-            floating::set_result_menu_grow,
             floating::push_selection_result,
             floating::focus_ocr_window,
             floating::set_result_window_size,

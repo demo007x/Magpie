@@ -34,6 +34,20 @@ const WIN_LABEL = (() => {
 })();
 const IS_POP = WIN_LABEL === "floating-panel" || WIN_LABEL === "floating-menu";
 
+// 主题根类：App 与弹层窗口（floating-panel/menu）共用同一外观设置——弹层窗口
+// 若不挂主题类会跟系统偏好走（系统浅色 + 应用深色 → 深色胶囊条旁出白卡片错配）；
+// appearance = auto 时不挂类，交由 prefers-color-scheme 媒体查询
+const applyTheme = (t: string) => {
+  document.documentElement.classList.toggle("theme-light", t === "light");
+  document.documentElement.classList.toggle("theme-dark", t === "dark");
+};
+invoke<{ appearance?: string }>("get_settings")
+  .then((s) => applyTheme(s.appearance ?? "auto"))
+  .catch(() => undefined);
+getCurrentWebviewWindow()
+  .listen<string>("theme://appearance", (e) => applyTheme(e.payload))
+  .catch(() => undefined);
+
 // 悬浮窗是透明无边框窗口：渲染树一旦崩溃，窗口就变成全透明空壳，
 // 用户看到的不是报错而是"胶囊没出现"。边界把异常显示出来并写进日志，
 // 便于在终端（ui_debug_log）直接定位崩溃原因。

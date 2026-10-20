@@ -161,6 +161,7 @@ body,
 .action-slot {
   display: inline-flex;
   align-items: center;
+  flex: none; /* 溢出收纳：按钮不收缩，超宽部分交给「更多」收纳而非压扁 */
 }
 
 /* 动作分组分隔线：短发丝线画在 gap 里，区分主按钮组与扩展动作组 */
@@ -295,6 +296,16 @@ body,
 .pchev.open {
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+/* 行侧子菜单方向示能（§B.2.4）：触发符 ›/‹ 跟随实际弹出方向——布局 effect
+   按镜像翻转结果置 data-flip，右弹 ›、翻左弹 ‹；不做 ⌄/⌃ 开合旋转 */
+.pchev svg {
+  transition: transform 0.15s ease;
+}
+
+.pchev[data-flip="1"] svg {
+  transform: rotate(180deg);
 }
 
 /* ⌃N 展开中：触发钮整体点亮，明示面板从属（箭头旋转由 chev-svg.open 负责） */
@@ -491,10 +502,6 @@ body,
 /* 二级菜单入场：轻微上滑 + 淡入（160ms），只做内容动画——
    高度生长由 Rust 侧窗口 grow 承担，动画高度会与窗口生长打架。
    收起为瞬时：撤销语义 + 窗口同步回缩，滞留动画反而显得拖沓 */
-.ocr-menu-slot .chips {
-  animation: menu-in 160ms ease;
-}
-
 @keyframes menu-in {
   from {
     opacity: 0;
@@ -503,7 +510,7 @@ body,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ocr-menu-slot .chips {
+  .ocr-menu-slot {
     animation: none;
   }
 }
@@ -914,7 +921,10 @@ body,
   margin-top: auto;
   flex: none;
   display: flex;
-  flex-wrap: wrap;
+  /* 单行不折行：放不下的尾部动作收进行尾「更多 ⌃」（App.tsx 溢出收纳），
+     窄窗不再挤成多行 */
+  flex-wrap: nowrap;
+  overflow: hidden;
   align-items: center;
   justify-content: flex-start; /* 动作按钮靠左（与正文同缘），不居中 */
   gap: 1px;
@@ -922,14 +932,165 @@ body,
   border-top: 0.5px solid var(--line);
 }
 
-/* 二级菜单槽位：常规流内紧跟动作行（正下方），是 footer 的一部分。
-   margin-top 抵消 flex gap：主按钮与二级菜单的视觉间距 ≈6px，
-   与「二级菜单 → 底边」的 6px 一致（chips 3px 边距 + 面板 3px 底距）。
-   展开瞬间结果区被短暂冻结定高（见 App.tsx 菜单状态机）——
-   生长落地前由 .ocr-main 裁切兜底，落地后解冻，主菜单/内容零位移 */
+/* 「更多」钮 hover 命中区外扩（§B.5.1）：伪元素随槽位外扩命中范围，
+   视觉零变化——合成 hover 的 elementFromPoint 与点击都落回本槽位，
+   驻留展开更容易触发；外扩量避开左右邻位（行 gap 仅 1px） */
+.more-slot {
+  position: relative;
+}
+
+.more-slot::before {
+  content: "";
+  position: absolute;
+  inset: -6px -4px -2px;
+}
+
+/* 溢出测算行：绝对定位覆在动作行内容盒上、visibility 隐藏不接事件——
+   与真实行动作同构同宽（同字体同内边距同 gap），供收纳计算逐项量宽 */
+.ocr-measure {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 1px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ⌄ 槽位子菜单（§B.5.3 行 ⌄ 同规则）：绝对定位浮层——锚在动作行上方，
+   左缘对齐触发槽位、底边距行上缘 8px（定位 effect 摆位，越界钳制）；
+   限宽换行向上生长、限高内滚；临时遮盖正文属浮层语义。窗口生长机制
+   （RESULT_MENU_GROW + 冻结/解冻）随之退役——尺寸模型回到「只由拖动/
+   预设改变」。chips 跟面板配色（§B.5 同规则：悬停/选中只变文字色），
+   胶囊形与槽间距同 .hchips；相邻分隔线不适用于浮层胶囊 */
 .ocr-menu-slot {
-  flex: none;
-  margin-top: -5px;
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 5px;
+  width: max-content;
+  overflow-y: auto;
+  animation: menu-in 160ms ease;
+}
+
+.ocr-menu-slot .chip {
+  height: 24px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: var(--surf);
+  box-shadow: inset 0 0 0 0.5px var(--edge);
+}
+
+.ocr-menu-slot .chip + .chip::before {
+  display: none;
+}
+
+/* 结果窗溢出浮层（§B.5.2 定稿：竖排胶囊堆）——无容器卡，每颗胶囊独立
+   浮层（实底 + 发丝 + 小投影），堆内右对齐成列。DOM 挂在 .panel 下：
+   .ocr-actions（单行收纳裁切）与 .ocr-main（菜单生长兜底）都 overflow:hidden，
+   向上出界的浮层必被裁切，面板是第一个不裁切的定位锚（position: relative）。
+   定位：内容右缘 13px 贴窗口内容区（.ocr-main 水平 padding）、内容底常态 =
+   动作行上方 8px（3px 主区底距 + 0.5px 发丝 + 5px 行上距 + 26px 行高 + 8 =
+   42.5px；offset 配负 margin 时内容内边距 = offset 值本身）；「回到底部」钮
+   可见（rail-lift）时抬到 34px 让出 6+22px 带，随 150ms 过渡落位。滚动容器
+   隐形，内边距 + 负 margin 补偿投影不被滚动边界裁切：限高 276 = 内容 264 +
+   12 补偿，内容限高再按面板剩余高度钳制（42.5 + 顶缘 8 呼吸 + 12 补偿 ≈ 62） */
+.pop.overflow.rail {
+  right: 13px;
+  bottom: 42.5px;
+  align-items: flex-end;
+  gap: 5px;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0 12px 12px 0;
+  margin: 0 -12px -12px 0;
+  max-height: min(276px, calc(100% - 62px));
+  transition: bottom 0.15s ease;
+}
+
+.pop.overflow.rail.rail-lift {
+  bottom: 68.5px;
+}
+
+/* 堆内胶囊：与动作行按钮同语言（图标 + 短文字），子菜单展开中转品牌色。
+   底色跟面板表面色走（§B.5 定稿），轮廓交给发丝 + 投影 */
+.rail .pitem {
+  width: auto;
+  height: 28px;
+  gap: 2px;
+  padding: 0 4px 0 9px;
+  border-radius: 999px;
+  background: var(--surf);
+  box-shadow: inset 0 0 0 0.5px var(--edge);
+}
+
+/* hover 只变文字/图标色，不加底色（§B.5.2） */
+.rail .pitem:hover {
+  box-shadow: inset 0 0 0 0.5px var(--edge), 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.rail .pitem:hover .action,
+.rail .pitem:hover .pchev {
+  color: var(--accent-strong);
+}
+
+/* 选中/展开态：只变文字色，不加底色（§B.5.2） */
+.rail .pitem.open .action,
+.rail .pitem.open .pchev {
+  color: var(--accent-strong);
+}
+
+/* 覆盖 .pop.overflow .action 的拉伸/方角（特异度需压过它） */
+.pop.overflow.rail .action {
+  flex: 0 0 auto;
+  height: 28px;
+  border-radius: 999px;
+}
+
+.rail .pchev {
+  width: 18px;
+  height: 20px;
+  border-radius: 999px;
+}
+
+.rail .pchev svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 子菜单横向 chips（§B.5.3）：独立浮层无容器，定位 effect 摆到触发胶囊
+   左侧（右缘距 6px、垂直居中）；限宽换行、行右对齐；投影与胶囊同规格。
+   带 .pop 基类（点外收起的浮层判定 + 入场动画），卡片外观全部清零 */
+.hchips {
+  z-index: 10;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.hchips .chip {
+  height: 24px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: var(--surf);
+  box-shadow: inset 0 0 0 0.5px var(--edge);
+}
+
+.hchips .chip:hover {
+  color: var(--accent-strong);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.hchips .chip.primary {
+  color: var(--accent-strong);
 }
 
 /* 识别中占位：截图预览（两段式推送，文本回填前显示） */

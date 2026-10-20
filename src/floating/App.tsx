@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "../shared/toast";
@@ -19,6 +26,8 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   Copy,
   ExternalLink,
@@ -606,6 +615,9 @@ export default function App() {
   const menuStateRef = useRef(menu);
   menuStateRef.current = menu;
   const hoverLeftAtRef = useRef<number | null>(null);
+  // 子菜单级划出时刻：chips 开着时光标离开「胶囊堆 ∪ chips」区域即计时，
+  // 150ms 后只收回 chips（回 overflow 态，主堆保留）；窗口级离开仍走 hoverLeft
+  const subLeftAtRef = useRef<number | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
   // 分离卡几何基准：屏幕矩形（贴边翻转判定）、窗口上次落位、bar 在窗口内偏移。
   // 卡片屏幕坐标 = 窗口位置 + 窗口内偏移；winPos 由 show/resize 返回值与
@@ -614,6 +626,10 @@ export default function App() {
   const winPosRef = useRef<WindowPos | null>(null);
   const barInWinRef = useRef({ x: FLOAT_PAD, y: FLOAT_PAD });
   const overflowRef = useRef<HTMLDivElement | null>(null);
+  // 结果窗「更多」浮层（§B.5）：胶囊堆挂 .panel 下（CSS 定位）；横向 chips
+  // 需按触发胶囊实测坐标级联，面板与 chips 各持一个 ref（见定位 effect）
+  const ocrPanelRef = useRef<HTMLDivElement | null>(null);
+  const railChipsRef = useRef<HTMLDivElement | null>(null);
   // 全关守卫镜像（见 captured 分支注释）：监听只注册一次，闭包拿不到渲染期
   // 状态——常驻动作存活性与动作开关的最新值经 ref 每次渲染刷新
   const barLiveRef = useRef(true);
@@ -629,9 +645,7 @@ export default function App() {
   // OCR 结果区：同一套智能跟随（默认贴底；用户上翻即暂停 + 回到底部圆钮）
   const ocrBodyRef = useRef<HTMLDivElement | null>(null);
   // 面板主体：菜单溢出量 = 槽位底边相对它的超出部分
-  const ocrMainRef = useRef<HTMLDivElement | null>(null);
   // 二级菜单槽位（动作行正下方）：开合状态机按它量菜单高度
-  const menuSlotRef = useRef<HTMLDivElement | null>(null);
   const ocrStickRef = useRef(true);
   const [ocrStick, setOcrStick] = useState(true);
 
@@ -706,8 +720,23 @@ export default function App() {
   useEffect(() => {
     if (menu === null) return;
     const iv = window.setInterval(() => {
+      const now = performance.now();
+      // 两级收起：子菜单（chips）开着时光标离开「堆 ∪ chips」→ 150ms 后只收回
+      // chips（回 overflow 态，主堆保留）；光标离开窗口 → 350ms 后收回全部
+      if (
+        menuStateRef.current?.startsWith("pmenu:") &&
+        subLeftAtRef.current !== null &&
+        now - subLeftAtRef.current > 150
+      ) {
+        subLeftAtRef.current = null;
+        // 光标仍在窗口内（只是离开了堆 ∪ chips 区域）：窗口级收起计时一并作废，
+        // 否则停在正文上不动，350ms 后会把整个堆也收掉
+        hoverLeftAtRef.current = null;
+        setMenu("overflow");
+        return;
+      }
       const left = hoverLeftAtRef.current;
-      if (left !== null && performance.now() - left > HOVER_CLOSE_MS) {
+      if (left !== null && now - left > HOVER_CLOSE_MS) {
         hoverLeftAtRef.current = null;
         dwellRef.current = null;
         setMenu(null);
@@ -732,6 +761,12 @@ export default function App() {
   // OCR 窗口显示链路状态：新识别结果到来时重置（强制重测量 + 重新显示）
   const lastSizeRef = useRef("");
   const ocrReadyRef = useRef(false);
+  // 结果窗动作行溢出收纳（方案 A）：一行放不下时尾部动作收进行尾「更多 ⌃」，
+  // 点开在菜单槽位以 chips 呈现（点击即执行）。overflowCount = 收进的数量；
+  // tick = 窗口/内容尺寸变化的重新测量信号
+  const [ocrOverflow, setOcrOverflow] = useState(0);
+  const [, setOcrTick] = useState(0);
+  const actionsRowRef = useRef<HTMLDivElement | null>(null);
   // 识别原文是否超长（超 3 行折叠高度）——决定展开/收起按钮是否显示
   const sourceRef = useRef<HTMLDivElement | null>(null);
   // 选中发生时来源应用的进程路径（captured 事件带上），供摘录模板 {source} 使用
@@ -855,6 +890,18 @@ export default function App() {
     return i >= 0 ? i : id === "__ctx" ? searchIdx : 999;
   };
 
+  // 结果窗动作行清单：与胶囊同一套闸（开关 + 配置可用性：服务列表/默认模型/vault）
+  // + 同一排序规则（settings.actionOrder 混排序）——行序与设置页/胶囊条一致
+  const rowActions = registry
+    .filter((a) => {
+      if (actions[a.id] === false) return false;
+      if (a.id === "obsidian") return Boolean(obsidianCfg?.vaultPath);
+      if (a.id === "translate") return enabledTranslates.length > 0;
+      if (a.id === "search") return enabledEngines.length > 0;
+      return a.kind === "ai" && hasUsableModel;
+    })
+    .sort((a, b) => orderKey(a.id) - orderKey(b.id));
+
   type BarEntry = { id: string; label: string; icon?: string; hasMenu?: boolean; onClick: () => void };
 
   // 常驻动作列表：上下文动作不在其中——它们由本次选中的内容触发，是动态附加层，
@@ -967,7 +1014,6 @@ export default function App() {
           setMenu(null); // 新结果回收展开中的二级菜单（防陈旧菜单泄漏进新面板）
           setUsedTranslate(null); // 选中态回落到默认服务
           setUsedEngine(null);
-          forceUnfreezeMenu(); // 强制解冻结果区：面板重建，不允许残留冻结高度
           setHoverSuppress(true);
           setPhase({
             kind: "ocr",
@@ -1069,8 +1115,7 @@ export default function App() {
             setMenu(null); // 新结果回收展开中的二级菜单（防陈旧菜单泄漏进新面板）
             setUsedTranslate(null); // 选中态回落到默认服务
             setUsedEngine(null);
-            forceUnfreezeMenu(); // 强制解冻结果区：面板重建，不允许残留冻结高度
-            setHoverSuppress(true);
+              setHoverSuppress(true);
             setPhase({
               kind: "ocr",
               text: p.text,
@@ -1222,9 +1267,63 @@ export default function App() {
     listen<{ x: number; y: number }>("hover://move", (e) => {
       const cx = e.payload.x;
       const cy = e.payload.y;
-      // 事件到达即光标在胶囊∪浮层内的证据（Rust 按落点路由，Windows 分离卡
-      // 含光标落在弹层窗口的情形）：清掉 mouseleave 记下的离开边沿
-      hoverLeftAtRef.current = null;
+      // 「光标在窗口内」的证据链（Rust 按落点路由，含 Windows 分离卡弹层）：
+      // 常规清掉 mouseleave 记下的离开边沿；结果窗浮层打开时改按「浮层∪触发区」
+      // 判定——大窗口里光标挪到正文/角落留白等同划出，350ms 后收起子菜单，
+      // 不让角落停留把浮层钉住；区域内则清边沿照常挑选
+      if (IS_OCR && menuStateRef.current !== null) {
+        const panel = ocrPanelRef.current;
+        const hit = (el: Element | null, pad: number) => {
+          if (!el) return false;
+          const r = el.getBoundingClientRect();
+          return (
+            cx >= r.left - pad &&
+            cx <= r.right + pad &&
+            cy >= r.top - pad &&
+            cy <= r.bottom + pad
+          );
+        };
+        if (menuStateRef.current === "overflow") {
+          // 主堆（「更多」展开）开着：整个窗口都算区域内——光标从 ⌃2 挪向
+          // 胶囊的途中堆不会消失；收起只由光标离开窗口 / 点外 / 再点钮触发
+          hoverLeftAtRef.current = null;
+        } else if (menuStateRef.current.startsWith("pmenu:")) {
+          // 子菜单（chips）开着：区域 = 触发胶囊 ∪ chips——离开两者 150ms 后
+          // 收回子菜单（主堆保留）；短防抖吸收边缘抖动/路过，区域内照常挑选。
+          // 触发胶囊 = 拥有该子菜单的那一颗（挪到兄弟胶囊上等同离开）
+          const anchor = panel
+            ? panel.querySelector(`.rail [data-pill="${menuStateRef.current.slice(6)}"]`)
+            : null;
+          const inRegion =
+            hit(anchor, 12) || hit(panel?.querySelector(".hchips") ?? null, 10);
+          if (inRegion) {
+            hoverLeftAtRef.current = null;
+            subLeftAtRef.current = null;
+          } else {
+            if (hoverLeftAtRef.current === null) hoverLeftAtRef.current = performance.now();
+            if (subLeftAtRef.current === null) subLeftAtRef.current = performance.now();
+          }
+        } else {
+          // 槽位子菜单（⌄ 服务/引擎/目标）开着：区域 = 触发槽位 ∪ 槽位 chips
+          // ——光标一离开两者立即收回，交互与胶囊堆 chips 一致。
+          // 注意：此分支不得吞掉 "overflow"（上一分支已单独处理）
+          const inRegion =
+            hit(
+              panel
+                ?.querySelector(`.ocr-actions [data-trig="${menuStateRef.current}"]`)
+                ?.closest(".action-slot") ?? null,
+              8,
+            ) || hit(panel?.querySelector(".ocr-menu-slot") ?? null, 10);
+          if (inRegion) {
+            hoverLeftAtRef.current = null;
+          } else {
+            hoverLeftAtRef.current = null;
+            setMenu(null);
+          }
+        }
+      } else {
+        hoverLeftAtRef.current = null;
+      }
       const el = document.elementFromPoint(cx, cy);
       {
         // 驻留目标检测（胶囊条与结果窗口动作行同构，复用同一套）：命中「带 ⌄
@@ -1322,8 +1421,10 @@ export default function App() {
     setSourceOverflow(el.scrollHeight > 75 + 1);
   }, [phase]);
 
-  // 结果窗口尺寸模型：宽高只由用户拖动决定（内容永不改变窗口尺寸），
-  // 唯一例外是二级菜单展开——窗口向下生长「菜单高度」，见下方 menu effect。
+  // 结果窗口尺寸模型（产品规范，与 floating.rs::apply_result_window_size 同一条规则）：
+  // 宽高只有两个变化来源——用户拖动（记住尺寸）/ 外观配置预设；切换动作、
+  // 流式输出、菜单开合均不改窗口大小位置；长结果在固定窗口内滚动。
+  // 唯一例外是二级菜单展开——窗口向下生长「菜单高度」，收起即收回。
   // 窗口就绪链路：pending 消费后触发 ocr_window_ready（Rust 侧先落用户尺寸再定位显示）
   useEffect(() => {
     if (!IS_OCR) return;
@@ -1333,131 +1434,129 @@ export default function App() {
     invoke("ocr_window_ready").catch(() => undefined);
   }, [phase]);
 
-  // 二级菜单开合（footer 模型 + 短命冻结）：
-  // 布局 = [原文（仅 fromOcr 识别流）][结果区 flex:1][动作行][菜单槽位]。
-  // 展开 = ①先把结果区当前高度读出并冻结（必须先读后写）②菜单进入流内。
-  //   冻结期间列内容超出窗口的部分被 .ocr-main 裁切——主菜单/内容零位移；
-  // 解冻有三重保障，冻结不可能长期残留（过期高度 → footer 悬空的根源）：
-  //   ① resize 确认落位（无闪动的主路径）② invoke 返回后 400ms 超时兜底
-  //   ③ 新结果到达强制解冻。解冻时弹性高度恰等于冻结值 → 零可见变化
-  const menuFrozenRef = useRef(false);
-  const menuGrowRef = useRef(0);
-  const menuBaseHRef = useRef(0);
-  const menuTargetHRef = useRef(0);
-  const menuVerifyGenRef = useRef(0);
-  const menuUnfreezeTimerRef = useRef<number | null>(null);
-  const forceUnfreezeMenu = () => {
-    if (menuUnfreezeTimerRef.current !== null) {
-      window.clearTimeout(menuUnfreezeTimerRef.current);
-      menuUnfreezeTimerRef.current = null;
+  // 溢出收纳计算（§B.5.1）：在隐形测算行上逐项量宽，一次求出「恰好放得下」
+  // 的可见数——确定性求解，幂等无循环。此前的 ±1 迭代在临界宽度遇上宽胶囊
+  // （放回后仍溢出 → 收纳 → 再放回）会互振，触发 React 嵌套更新上限
+  // （Maximum update depth exceeded）。注意不能用 scrollWidth 判富余——
+  // 内容放得下时恒等于 clientWidth，必须逐项量宽
+  useLayoutEffect(() => {
+    const row = actionsRowRef.current;
+    const measure = measureRowRef.current;
+    if (!row || !measure) return;
+    const rowW = row.clientWidth;
+    if (rowW <= 0) return;
+    const widths = Array.from(measure.children).map(
+      (c) => (c as HTMLElement).getBoundingClientRect().width,
+    );
+    const n = rowActions.length;
+    const moreW = widths[n] ?? 0; // 测算行末位 = 「更多」钮占位（宽度常数）
+    let acc = 0;
+    let fit = 0;
+    for (let i = 0; i < n; i++) {
+      const extra = i < n - 1 ? moreW : 0; // 非末项需要给「更多」钮留位
+      if (acc + widths[i] + extra <= rowW - 2) {
+        acc += widths[i];
+        fit = i + 1;
+      } else break;
     }
-    if (!menuFrozenRef.current) return;
-    menuFrozenRef.current = false;
-    const scroll = ocrBodyRef.current;
-    if (scroll) {
-      scroll.style.flex = "";
-      scroll.style.height = "";
+    const target = n - fit;
+    if (target !== ocrOverflow) setOcrOverflow(target);
+  });
+  // 溢出重测的触发源：RO 必须观察「当前」行节点——phase 重挂载会换新节点，
+  // 挂载期一次性 observe 会在第一次收起/重开后观察已卸载的旧节点，此后窗口
+  // 缩放永远不再触发重测（症状：拖小窗口动作被截断，划一下鼠标才收进「更多」），
+  // 故用 ref 回调随节点重挂观察器；窗口 resize 监听再兜一层
+  const actionsRowRoRef = useRef<ResizeObserver | null>(null);
+  const measureRowRef = useRef<HTMLDivElement | null>(null);
+  const attachActionsRow = useCallback((node: HTMLDivElement | null) => {
+    actionsRowRef.current = node;
+    actionsRowRoRef.current?.disconnect();
+    actionsRowRoRef.current = null;
+    if (node) {
+      const ro = new ResizeObserver(() => setOcrTick((t) => t + 1));
+      ro.observe(node);
+      actionsRowRoRef.current = ro;
     }
-  };
-  const verifyMenuGrow = (expected: number, attempt = 0) => {
-    const gen = ++menuVerifyGenRef.current;
-    const t0 = performance.now();
-    const tick = () => {
-      if (gen !== menuVerifyGenRef.current) return; // 已被更新的校验接管
-      if (Math.abs(window.innerHeight - expected) <= 1) return; // 落位 ✓
-      if (performance.now() - t0 < 500) {
-        requestAnimationFrame(tick);
-        return;
-      }
-      if (attempt >= 2) {
-        invoke("ui_debug_log", {
-          msg: `[menu-grow] 未落位 inner=${window.innerHeight.toFixed(1)} expected=${expected.toFixed(1)}`,
-        }).catch(() => undefined);
-        return;
-      }
-      invoke("ui_debug_log", {
-        msg: `[menu-grow] 重试${attempt + 1} inner=${window.innerHeight.toFixed(1)} expected=${expected.toFixed(1)}`,
-      }).catch(() => undefined);
-      invoke("set_result_menu_grow", { grow: menuGrowRef.current }).catch(() => undefined);
-      verifyMenuGrow(expected, attempt + 1);
-    };
-    requestAnimationFrame(tick);
-  };
+  }, []);
 
-  // 解冻主路径：窗口尺寸落位（resize 确认）后恢复结果区弹性——
-  // 此刻弹性高度恰等于冻结值，解除动作不产生任何可见变化
   useEffect(() => {
-    if (!IS_OCR) return;
-    const onResize = () => {
-      if (!menuFrozenRef.current) return;
-      if (Math.abs(window.innerHeight - menuTargetHRef.current) > 1) return;
-      forceUnfreezeMenu();
-    };
+    const onResize = () => setOcrTick((t) => t + 1);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  // 行侧横向 chips 定位（§B.5.3）：右缘距触发胶囊左缘 6px、与胶囊垂直居中；
+  // 限宽 = 胶囊左缘 − 面板左缘 − 14px（左呼吸 8 + 缝 6），超限换行、行右对齐；
+  // 不压动作行（限位 = 面板高 − 行高 31.5 − 呼吸）、不顶出面板上缘。
+  // 胶囊堆是底部锚定——面板高度一变，胶囊相对面板顶部就会移位，chips 必须跟着
+  // 重摆，故除状态依赖外还挂面板 RO + 窗口 resize（抽成函数供多处触发）
+  const placeRailChips = () => {
+    if (!IS_OCR || !menu?.startsWith("pmenu:") || ocrOverflow <= 0) return;
+    const panel = ocrPanelRef.current;
+    const chips = railChipsRef.current;
+    if (!panel || !chips) return;
+    const pill = panel.querySelector<HTMLElement>(`.rail [data-pill="${menu.slice(6)}"]`);
+    if (!pill) return;
+    const pn = panel.getBoundingClientRect();
+    const pr = pill.getBoundingClientRect();
+    chips.style.maxWidth = Math.max(120, pr.left - pn.left - 14) + "px";
+    const ch = chips.offsetHeight;
+    chips.style.right = pn.right - pr.left + 6 + "px";
+    let top = pr.top - pn.top + pr.height / 2 - ch / 2;
+    const maxBottom = pn.height - 44;
+    if (top + ch > maxBottom) top = maxBottom - ch;
+    if (top < 8) top = 8;
+    chips.style.top = top + "px";
+    chips.style.left = "";
+    chips.style.bottom = "";
+  };
+
+  // ⌄ 槽位子菜单摆位（§B.5.3 同规则）：左缘对齐触发槽位（越界右缘钳回内容区）、
+  // 底边距动作行上缘 8px；限宽换行向上生长，限高内滚兜底
+  const placeMenuSlotChips = () => {
+    if (!IS_OCR) return;
+    if (menu !== "translate" && menu !== "search" && menu !== "obsidian") return;
+    const panel = ocrPanelRef.current;
+    const slot = panel?.querySelector<HTMLElement>(".ocr-menu-slot") ?? null;
+    const trigSlot =
+      panel
+        ?.querySelector(`.ocr-actions [data-trig="${menu}"]`)
+        ?.closest<HTMLElement>(".action-slot") ?? null;
+    const row = actionsRowRef.current;
+    if (!panel || !slot || !trigSlot || !row) return;
+    const pn = panel.getBoundingClientRect();
+    const tr = trigSlot.getBoundingClientRect();
+    const rr = row.getBoundingClientRect();
+    slot.style.maxWidth = Math.max(160, pn.width - 26) + "px";
+    slot.style.maxHeight = Math.max(120, rr.top - pn.top - 16) + "px";
+    const cw = slot.offsetWidth;
+    const ch = slot.offsetHeight;
+    let left = tr.left - pn.left;
+    left = Math.min(Math.max(13, left), Math.max(13, pn.width - 13 - cw));
+    slot.style.left = left + "px";
+    slot.style.top = Math.max(8, rr.top - pn.top - 8 - ch) + "px";
+    slot.style.right = "";
+    slot.style.bottom = "";
+  };
+
   useLayoutEffect(() => {
-    if (!IS_OCR || phase.kind !== "ocr") return;
-    const main = ocrMainRef.current;
-    const slot = menuSlotRef.current;
-    const scroll = ocrBodyRef.current;
-    if (!main || !slot) return;
-
-    if (menu === null) {
-      // 收起：只要有待收回的生长量就必须下发 grow=0（此时冻结多半已随
-      // 展开落位解除——不能以冻结与否作为守卫，否则窗口永远缩不回去）
-      if (menuGrowRef.current === 0 && !menuFrozenRef.current) return;
-      menuGrowRef.current = 0;
-      menuTargetHRef.current = menuBaseHRef.current;
-      invoke("set_result_menu_grow", { grow: 0 })
-        .then(() => verifyMenuGrow(menuTargetHRef.current))
-        .catch((e) => {
-          invoke("ui_debug_log", { msg: `[menu-grow] invoke 失败: ${String(e)}` }).catch(
-            () => undefined,
-          );
-        });
-      return;
-    }
-
-    if (!menuFrozenRef.current && scroll) {
-      // 结果区存在时冻结它（只缩不涨的弹性区是唯一会被菜单挤压的元素）；
-      // 无结果区（如文本识别尚未执行动作）则没有可挤压元素，无需冻结
-      menuBaseHRef.current = window.innerHeight;
-      const h = scroll.getBoundingClientRect().height; // 先读：当前视觉高度
-      scroll.style.flex = "0 0 auto"; // 后写：按读到的高度冻结
-      scroll.style.height = `${Math.ceil(h)}px`;
-      menuFrozenRef.current = true;
-    }
-    const mainRect = main.getBoundingClientRect();
-    const slotRect = slot.getBoundingClientRect();
-    const grow = Math.max(0, Math.ceil(slotRect.bottom + 3 - mainRect.bottom));
-    if (grow === menuGrowRef.current) return;
-    menuGrowRef.current = grow;
-    menuTargetHRef.current = menuBaseHRef.current + grow;
-    const expected = menuTargetHRef.current;
-    invoke("set_result_menu_grow", { grow })
-      .then(() => {
-        invoke("ui_debug_log", {
-          msg: `[menu-grow] 已下发 grow=${grow} base=${menuBaseHRef.current.toFixed(1)} expected=${expected.toFixed(1)}`,
-        }).catch(() => undefined);
-        verifyMenuGrow(expected);
-        // 超时兜底：resize 事件缺失/竞态时，冻结最多存活 400ms
-        if (menuUnfreezeTimerRef.current !== null) {
-          window.clearTimeout(menuUnfreezeTimerRef.current);
-        }
-        menuUnfreezeTimerRef.current = window.setTimeout(() => {
-          menuUnfreezeTimerRef.current = null;
-          if (menuFrozenRef.current) forceUnfreezeMenu();
-        }, 400);
-      })
-      .catch((e) => {
-        // 不再静默吞错：命令未注册/参数错误等都必须在日志里现形
-        invoke("ui_debug_log", { msg: `[menu-grow] invoke 失败: ${String(e)}` }).catch(
-          () => undefined,
-        );
-      });
-  }, [menu, phase]);
+    if (!IS_OCR || menu === null) return;
+    if (menu.startsWith("pmenu:")) subLeftAtRef.current = null; // 子菜单重新展开：划出计时作废
+    placeRailChips();
+    placeMenuSlotChips();
+    const placeAll = () => {
+      placeRailChips();
+      placeMenuSlotChips();
+    };
+    const panel = ocrPanelRef.current;
+    const ro = panel ? new ResizeObserver(placeAll) : null;
+    if (panel && ro) ro.observe(panel);
+    window.addEventListener("resize", placeAll);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", placeAll);
+    };
+  }, [menu, phase, ocrOverflow, ocrStick]);
 
   // 分离卡布局：窗口 = 胶囊与已展开二级卡片的并集 + 四周 FLOAT_PAD 透明留白。
   // 二级卡片锚在触发点左缘/左下向右生长，贴屏幕右缘翻转为右对齐触发点；
@@ -1523,7 +1622,7 @@ export default function App() {
           trig.closest<HTMLElement>(".action-slot") ?? trig.closest<HTMLElement>(".pitem") ?? trig;
         const tr = item.getBoundingClientRect();
         if (menu.startsWith("pmenu:") && panel) {
-          // 竖排菜单的行内二级 = 行侧弹出（NSMenu 心智）：默认从面板右缘向右弹，
+          // 行内二级 = 行侧弹出（NSMenu 心智）：默认从面板右缘向右弹，
           // 窗口右缘放不下则向左弹回面板左缘（面板贴右缘翻转后必走此支）。
           // 起算点必须用面板边缘而非行矩形——行两侧内缩着面板 padding，
           // 按行算会把 CARD_GAP 吃掉、二级与面板贴死甚至叠 1px。
@@ -1534,14 +1633,22 @@ export default function App() {
           const panelL = base.x;
           const panelR = base.x + (pr.right - pr.left);
           const rowT = base.y + (tr.top - pr.top);
-          let x = panelR + CARD_GAP;
+          const isChips = drop.classList.contains("hchips"); // 固定小集合（Obsidian 目标）用横排 chips
+          const gap = isChips ? 6 : CARD_GAP;
+          let x = panelR + gap;
+          let mirrored = false;
           if (barScreen && scr && barScreen.x + x + w > scr.right - 8) {
-            x = panelL - w - CARD_GAP;
+            x = panelL - gap - w;
+            mirrored = true;
           }
+          // 方向示能（§B.2.4）：行侧触发符跟随实际弹出方向 ›/‹
+          const trigBtn = document.querySelector<HTMLElement>(`[data-trig="${menu}"]`);
+          if (trigBtn) trigBtn.dataset.flip = mirrored ? "1" : "0";
+          // chips 与所在行垂直居中；竖排菜单保持行顶对齐
           cards.push({
             el: drop,
             x,
-            y: rowT,
+            y: isChips ? rowT + tr.height / 2 - h / 2 : rowT,
             w,
             h,
           });
@@ -2304,9 +2411,15 @@ export default function App() {
   const suppressClickRef = useRef(false);
 
   const onStageMouseDown = (e: ReactMouseEvent) => {
-    // OCR 独立窗口不参与浮动条拖拽
-    if (IS_OCR) return;
     const t = e.target as HTMLElement;
+    // 结果窗：点浮层与动作行之外收起展开中的浮层（与胶囊条同规则）；
+    // 不参与浮动条拖拽（结果窗拖拽走 onOcrPanelDown 一条链）
+    if (IS_OCR) {
+      if (menu !== null && !t.closest(".pop") && !t.closest(".ocr-actions")) {
+        setMenu(null);
+      }
+      return;
+    }
     // 点空白（胶囊与浮层之外的留白/缝隙）收起二级浮层；点窗口外才整条消失
     // （窗口矩形含留白，Rust 侧 rect_contains 会抑制这区域的 dismiss）
     if (menu !== null && !t.closest(".bar") && !t.closest(".pop")) {
@@ -2365,6 +2478,65 @@ export default function App() {
     // 残留的计时会让二级浮层在动作执行后「自己弹开」
     dwellRef.current = null;
     fn();
+  };
+
+  // 动作行槽位渲染：真实行与溢出测算行共用同一构型（测算行 interactive=false，
+  // 不挂交互、不参与 hover 定位，仅用于逐项量宽——宽度与真实槽位一致）
+  const renderRowSlot = (a: (typeof rowActions)[number], interactive: boolean) => {
+    const active = phase.kind === "ocr" ? phase.actionId : null;
+    return (
+      <span key={a.id} className="action-slot">
+      <button
+        type="button"
+        className={`action sm ${active === a.id ? "active" : ""}`}
+        onClick={
+          interactive
+            ? guarded(() => {
+                setMenu(null); // 切换/执行动作即收起已展开的子菜单（选择器只属于当前动作）
+                if (a.id === "translate") setUsedTranslate(null);
+                if (a.id === "search") setUsedEngine(null);
+                runAction(a.id);
+              })
+            : undefined
+        }
+      >
+        <span className="ic">{iconOf(a.id, a.icon)}</span>
+        <span>{a.label}</span>
+      </button>
+      {(a.id === "translate" || a.id === "search" || a.id === "obsidian") &&
+        (a.id === "translate"
+          ? enabledTranslates.length > 1
+          : a.id === "obsidian"
+            ? true
+            : enabledEngines.length > 1) && (
+        <button
+          type="button"
+          className="chev"
+          data-trig={interactive ? a.id : undefined}
+          aria-label={
+            a.id === "translate"
+              ? "更多翻译服务"
+              : a.id === "obsidian"
+                ? "存入目标"
+                : "更多搜索引擎"
+          }
+          onClick={
+            interactive
+              ? guarded(() =>
+                  setMenu((m) => (m === a.id ? null : (a.id as "search" | "translate" | "obsidian"))),
+                )
+              : undefined
+          }
+        >
+          <ChevronDown
+            size={13}
+            strokeWidth={2}
+            className={`chev-svg ${interactive && menu === a.id ? "open" : ""}`}
+          />
+        </button>
+      )}
+      </span>
+    );
   };
 
   return (
@@ -2475,19 +2647,17 @@ export default function App() {
                     <button
                       className={`pchev ${menu === `pmenu:${e.id}` ? "open" : ""}`}
                       data-trig={`pmenu:${e.id}`}
-                      aria-label={e.id === "translate" ? "更多翻译服务" : "更多搜索引擎"}
+                      aria-label={e.id === "translate" ? "更多翻译服务" : e.id === "obsidian" ? "存入目标" : "更多搜索引擎"}
                       onClick={guarded(() =>
                       setMenu((m) =>
                         // 二级收起 = 回到父级（面板保持展开），置 null 会把收纳面板一起收掉
-                        m === `pmenu:${e.id}` ? "overflow" : (`pmenu:${e.id}` as "pmenu:translate" | "pmenu:search"),
+                        m === `pmenu:${e.id}` ? "overflow" : (`pmenu:${e.id}` as "pmenu:translate" | "pmenu:search" | "pmenu:obsidian"),
                       ),
                     )}
                   >
-                    <ChevronDown
-                      size={12}
-                      strokeWidth={2}
-                      className={`chev-svg ${menu === `pmenu:${e.id}` ? "open" : ""}`}
-                    />
+                    {/* 行侧子菜单方向示能（§B.2.4）：› 指向实际弹出方向，
+                        贴屏幕右缘翻左弹时由布局 effect 置 data-flip 旋转成 ‹ */}
+                    <ChevronRight size={13} strokeWidth={2} />
                   </button>
                 )}
               </span>
@@ -2496,7 +2666,8 @@ export default function App() {
         </div>
       )}
 
-      {/* 窄单列浮出菜单：胶囊动作 ⌄ 与收纳面板项 ⌄ 共用同一形式（全局统一）。
+      {/* 窄单列浮出菜单：胶囊动作 ⌄ 与收纳面板项 ⌄ 共用同一形式（全局统一）——
+          行侧级联与 ⌄ 下开同一形态，弹向按屏幕空间自动翻转。
           Windows 分离卡：渲染在独立窗口（floating-menu），不在此渲染 */}
       {!IS_OCR && !POPS_EXTERNAL && !!menu && menu !== "overflow" && menu !== "search" && menu !== "translate" && (
         (() => {
@@ -2663,6 +2834,7 @@ export default function App() {
       {phase.kind === "ocr" && (
         <div
           className="panel"
+          ref={ocrPanelRef}
           onMouseDown={IS_OCR ? onOcrPanelDown : undefined}
         >
           <header className={`panel-head ${IS_OCR ? "grab" : ""}`}>
@@ -2747,7 +2919,7 @@ export default function App() {
               </button>
             </span>
           </header>
-          <div className="ocr-main" ref={ocrMainRef}>
+          <div className="ocr-main">
             {/* 原文区两种模式（class 切换由 CSS flex 过渡出动画）：
                 原文模式（!actionId）：撑满面板全量展示，超长滚动；
                 结果模式（actionId）：折叠 3 行，可展开至 220px，让位结果区。
@@ -2827,61 +2999,45 @@ export default function App() {
               </div>
             )}
             {/* 动作行：常规流内布局排在结果区之后、面板最底部（不随结果滚动）。
+                单行不折行（overflow:hidden），放不下的尾部动作收进行尾「更多 ⌃」，
+                点开在菜单槽位以 chips 呈现——窄窗不挤成多行。
                 AI 动作（翻译/解释/总结 + 用户的自定义动作）结果内嵌滚动区；搜索为本地动作，
                 用识别文本直接打开默认引擎——对识别出的书名/术语等尤其实用 */}
-            <div className="ocr-actions">
-              {registry.filter((a) => {
-                // 与胶囊同一套闸：开关 + 配置可用性（服务列表/默认模型/vault）
-                if (actions[a.id] === false) return false;
-                if (a.id === "obsidian") return Boolean(obsidianCfg?.vaultPath);
-                if (a.id === "translate") return enabledTranslates.length > 0;
-                if (a.id === "search") return enabledEngines.length > 0;
-                return a.kind === "ai" && hasUsableModel;
-              }).map((a) => (
-                <span key={a.id} className="action-slot">
-                  <button
-                    className={`action sm ${phase.actionId === a.id ? "active" : ""}`}
-                    onClick={guarded(() => {
-                      setMenu(null); // 切换/执行动作即收起已展开的子菜单（选择器只属于当前动作）
-                      if (a.id === "translate") setUsedTranslate(null); // 主按钮走默认服务
-                      if (a.id === "search") setUsedEngine(null);
-                      runAction(a.id);
-                    })}
-                  >
-                    <span className="ic">{iconOf(a.id, a.icon)}</span>
-                    <span>{a.label}</span>
+            <div className="ocr-actions" ref={attachActionsRow}>
+              {/* 溢出测算行：全量动作的隐形副本，覆在真实行上逐项量宽 */}
+              <div className="ocr-measure" ref={measureRowRef} aria-hidden="true">
+                {rowActions.map((a) => renderRowSlot(a, false))}
+                <span className="action-slot">
+                  <button type="button" className="action more" tabIndex={-1}>
+                    <ChevronDown size={13} strokeWidth={2} />
+                    <b>{ocrOverflow}</b>
                   </button>
-                  {(a.id === "translate" || a.id === "search" || a.id === "obsidian") &&
-                    (a.id === "translate"
-                      ? enabledTranslates.length > 1
-                      : a.id === "obsidian"
-                        ? true
-                        : enabledEngines.length > 1) && (
-                      <button
-                        className="chev"
-                        data-trig={a.id}
-                        aria-label={
-                          a.id === "translate"
-                            ? "更多翻译服务"
-                            : a.id === "obsidian"
-                              ? "存入目标"
-                              : "更多搜索引擎"
-                        }
-                        onClick={guarded(() =>
-                          setMenu((m) =>
-                            m === a.id ? null : (a.id as "search" | "translate" | "obsidian"),
-                          ),
-                        )}
-                      >
-                        <ChevronDown
-                          size={13}
-                          strokeWidth={2}
-                          className={`chev-svg ${menu === a.id ? "open" : ""}`}
-                        />
-                      </button>
-                    )}
                 </span>
-              ))}
+              </div>
+              {rowActions.slice(0, rowActions.length - ocrOverflow).map((a) => renderRowSlot(a, true))}
+              {/* 溢出收纳钮：hover 驻留自动展开（data-trig 接入 §B.2 驻留机制，
+                  与胶囊条同款），点按切换；命中区经 .more-slot 外扩更好命中 */}
+              {ocrOverflow > 0 && (
+                <span className="action-slot more-slot">
+                  <button
+                    className={`action more ${menu === "overflow" || menu?.startsWith("pmenu:") ? "open" : ""}`}
+                    data-trig="overflow"
+                    aria-label={`还有 ${ocrOverflow} 个动作`}
+                    onClick={guarded(() =>
+                      setMenu((m) =>
+                        m === "overflow" || m?.startsWith("pmenu:") ? null : "overflow",
+                      ),
+                    )}
+                  >
+                    <ChevronDown
+                      size={13}
+                      strokeWidth={2}
+                      className={`chev-svg ${menu === "overflow" || menu?.startsWith("pmenu:") ? "open" : ""}`}
+                    />
+                    <b>{ocrOverflow}</b>
+                  </button>
+                </span>
+              )}
               {/* 回到底部：悬浮于结果区右下、动作行上方（流式 + 用户上翻时出现） */}
               {phase.streaming && !ocrStick && (
                 <button
@@ -2893,51 +3049,160 @@ export default function App() {
                 </button>
               )}
             </div>
-            {/* 二级菜单槽位：常规流内紧跟动作行（正下方），是 footer 的一部分。
-                展开时结果区短暂冻结定高 + 窗口向下生长菜单高度——
-                主菜单/内容零位移；选择服务后保持展开，再点 ⌄ 才收起 */}
-            <div className="ocr-menu-slot" ref={menuSlotRef}>
-              {menu === "translate" && enabledTranslates.length > 1 && (
-                <div className="chips">
-                  {enabledTranslates.map((s) => (
+          </div>
+          {/* ⌄ 槽位子菜单（§B.5.3 行 ⌄ 同规则）：绝对定位浮层——锚在动作行上方，
+              左缘对齐触发槽位（定位 effect 摆位）、底边距行上缘 8px；限宽换行
+              向上生长、限高内滚；临时遮盖正文属浮层语义。窗口生长机制
+              （RESULT_MENU_GROW + 冻结/解冻）随之退役——尺寸模型回到
+              「只由拖动/预设改变」。chips 跟面板配色，悬停/选中只变文字色 */}
+          <div className="ocr-menu-slot">
+            {menu === "translate" && enabledTranslates.length > 1 && (
+              <>
+                {enabledTranslates.map((s) => (
+                  <button
+                    key={s.id}
+                    className={`chip ${(usedTranslate ?? defaultTranslate?.id) === s.id ? "primary" : ""}`}
+                    onClick={guarded(() => {
+                      setUsedTranslate(s.id); // 点击哪个哪个选中
+                      setMenu(null);
+                      runAction("translate", s.id);
+                    })}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </>
+            )}
+            {menu === "search" && enabledEngines.length > 1 && (
+              <>
+                {enabledEngines.map((e) => (
+                  <button
+                    key={e.name}
+                    className={`chip ${(usedEngine ?? defaultEngine?.name) === e.name ? "primary" : ""}`}
+                    onClick={guarded(() => {
+                      setUsedEngine(e.name); // 点击哪个哪个选中
+                      setMenu(null);
+                      openEngine(e, phase.text);
+                    })}
+                  >
+                    {e.name}
+                  </button>
+                ))}
+              </>
+            )}
+            {menu === "obsidian" && (
+              <>
+                {(
+                  [
+                    ["note", "笔记"],
+                    ["task", "任务"],
+                    ["card", "卡片"],
+                  ] as Array<[string, string]>
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    className={`chip ${key === "note" ? "primary" : ""}`}
+                    onClick={guarded(() => {
+                      setMenu(null);
+                      runAction("obsidian", undefined, undefined, key);
+                    })}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+          {/* 溢出收纳浮层：竖排胶囊堆（§B.5.2 定稿）——无容器卡，每颗胶囊
+              独立浮层（实底+发丝+投影，CSS .rail），堆内右对齐成列，右缘贴
+              内容区、底边让出「回到底部」带；带子操作的胶囊尾部 ‹ 指向横向
+              chips 的弹出方向。DOM 挂在 .panel 下：.ocr-actions（单行收纳
+              裁切）与 .ocr-main（菜单生长兜底）都 overflow:hidden，向上出界
+              必被裁切，面板是第一个不裁切的定位锚。点胶囊执行并收起 */}
+          {(menu === "overflow" || menu?.startsWith("pmenu:")) && ocrOverflow > 0 && (
+            <div className={`pop overflow rail ${phase.streaming && !ocrStick ? "rail-lift" : ""}`}>
+              {rowActions.slice(rowActions.length - ocrOverflow).map((a) => (
+                <span
+                  key={a.id}
+                  className={`pitem ${menu === `pmenu:${a.id}` ? "open" : ""}`}
+                  data-pill={a.id}
+                >
+                  <button
+                    className="action"
+                    onClick={guarded(() => {
+                      setMenu(null);
+                      if (a.id === "translate") setUsedTranslate(null);
+                      if (a.id === "search") setUsedEngine(null);
+                      runAction(a.id);
+                    })}
+                  >
+                    <span className="ic">{iconOf(a.id, a.icon)}</span>
+                    <span>{a.label}</span>
+                  </button>
+                  {entryHasMenu(a.id) && (
                     <button
-                      key={s.id}
-                      className={`chip ${(usedTranslate ?? defaultTranslate?.id) === s.id ? "primary" : ""}`}
-                      onClick={guarded(() => {
-                        setUsedTranslate(s.id); // 点击哪个哪个选中
-                        runAction("translate", s.id);
-                      })}
+                      className={`pchev ${menu === `pmenu:${a.id}` ? "open" : ""}`}
+                      data-trig={`pmenu:${a.id}`}
+                      aria-label={
+                        a.id === "translate"
+                          ? "更多翻译服务"
+                          : a.id === "search"
+                            ? "更多搜索引擎"
+                            : "存入目标"
+                      }
+                      onClick={guarded(() =>
+                        setMenu((m) =>
+                          m === `pmenu:${a.id}`
+                            ? "overflow"
+                            : (`pmenu:${a.id}` as "pmenu:translate" | "pmenu:search" | "pmenu:obsidian"),
+                        ),
+                      )}
                     >
-                      {s.label}
+                      {/* ‹ 指向 chips 实际弹出方向（左侧级联，§B.5.3） */}
+                      <ChevronLeft size={14} strokeWidth={2} />
                     </button>
-                  ))}
-                </div>
-              )}
-              {menu === "search" && enabledEngines.length > 1 && (
-                <div className="chips">
-                  {enabledEngines.map((e) => (
-                    <button
-                      key={e.name}
-                      className={`chip ${(usedEngine ?? defaultEngine?.name) === e.name ? "primary" : ""}`}
-                      onClick={guarded(() => {
-                        setUsedEngine(e.name); // 点击哪个哪个选中
-                        openEngine(e, phase.text);
-                      })}
-                    >
-                      {e.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {menu === "obsidian" && (
-                <div className="chips">
-                  {(
-                    [
-                      ["note", "笔记"],
-                      ["task", "任务"],
-                      ["card", "卡片"],
-                    ] as Array<[string, string]>
-                  ).map(([key, label]) => (
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+          {/* 子菜单：横向 chips 行侧级联（§B.5.3）——独立浮层无容器，定位
+              effect 摆到触发胶囊左侧（右缘距 6px、垂直居中）；限宽换行、
+              行右对齐；点 chip 执行并收起全部。带 .pop 类：纳入「点外收起」
+              的浮层判定，避免 mousedown 收起导致 click 丢失 */}
+          {menu?.startsWith("pmenu:") && ocrOverflow > 0 && (
+            <div className="pop hchips" ref={railChipsRef}>
+              {menu === "pmenu:translate" &&
+                enabledTranslates.map((s) => (
+                  <button
+                    key={s.id}
+                    className={`chip ${(usedTranslate ?? defaultTranslate?.id) === s.id ? "primary" : ""}`}
+                    onClick={guarded(() => {
+                      setUsedTranslate(s.id);
+                      setMenu(null);
+                      runAction("translate", s.id);
+                    })}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              {menu === "pmenu:search" &&
+                enabledEngines.map((e) => (
+                  <button
+                    key={e.name}
+                    className={`chip ${(usedEngine ?? defaultEngine?.name) === e.name ? "primary" : ""}`}
+                    onClick={guarded(() => {
+                      setUsedEngine(e.name);
+                      setMenu(null);
+                      openEngine(e, phase.text);
+                    })}
+                  >
+                    {e.name}
+                  </button>
+                ))}
+              {menu === "pmenu:obsidian" &&
+                ([["note", "笔记"], ["task", "任务"], ["card", "卡片"]] as Array<[string, string]>).map(
+                  ([key, label]) => (
                     <button
                       key={key}
                       className={`chip ${key === "note" ? "primary" : ""}`}
@@ -2948,11 +3213,10 @@ export default function App() {
                     >
                       {label}
                     </button>
-                  ))}
-                </div>
-              )}
+                  ),
+                )}
             </div>
-          </div>
+          )}
           {IS_OCR && (
             <>
               <div className="resize-handle" onMouseDown={startResultResize} />
