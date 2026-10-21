@@ -546,9 +546,14 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
                     // （EXC_BREAKPOINT，crashDueToApplicationCallingMainThreadOnlyWebKitAPIFromBackgroundThread）。
                     // worker 层的「自身进程」过滤在查询之后，救不了已发出的查询
                     debug_log("mouse-up：选区在自身窗口内，跳过取词");
-                } else if down.map_or(false, |(dx, dy)| drag_starts_on_control(dx, dy)) {
+                } else if down.map_or(false, |(dx, dy)| drag_starts_on_control(dx, dy))
+                    && !control_drag_gained_selection(&down_baseline)
+                {
                     // 拖拽起点在非文本表面上（控件/可选中元素）：滚动、调参、拖放、
-                    // 换位等手势，非选词——整链跳过，不再付轻推+查询的成本
+                    // 换位等手势，非选词——整链跳过，不再付轻推+查询的成本。
+                    // 例外＝差分应答放行（control_drag_gained_selection）：起点在
+                    // 控件上但手势真的拉出了新选区（网页表格内拖选/双击），
+                    // 落入下方正常防抖+查询链路（AX 查询的应答证据闸再复核）
                     debug_log("mouse-up：拖拽起点是非文本表面（控件/可选中元素），跳过");
                 } else if in_finder_file_context() {
                     // Finder 文件交互（拖动移动 / 双击打开）形态上与拖选/双击选词完全一致，
@@ -1097,6 +1102,27 @@ fn drag_starts_on_control(x: f64, y: f64) -> bool {
         }
         CFRelease(sys as *mut c_void);
         hit
+    }
+}
+
+/// 控件表面手势的差分放行（A.3.2 非文本表面闸的例外）：拖拽起点命中控件/
+/// 可选中元素，但松手后屏幕上真的出现了按下时不存在的文本选区——差分
+/// 应答证据成立，这是"起点落在可选中元素上、却拉出了真选区"的文本拖选
+/// （实证：网页表格的 AXCell→AXRow 内拖选/双击，被行项族角色表连坐）。
+/// 复用按下基线 down_baseline（容器差分同款语义）：应答 ≠ 基线 ⇒ 采信；
+/// 相同 ⇒ 遗留选区背书 ⇒ 拒绝；基线缺失（静音期/查询失败/聚焦在自身）
+/// 或复核查询失败 = 拒绝——证据不足永远倾向拦截（误报代价大于漏报）。
+/// 放行后落入正常防抖+查询链路，AX 查询的应答证据闸会再复核一次
+fn control_drag_gained_selection(baseline: &Option<(i32, String)>) -> bool {
+    let Some((_, base)) = baseline else {
+        return false;
+    };
+    match selection_baseline() {
+        Some((_, now)) if !now.is_empty() && now != *base => {
+            debug_log("控件表面手势内出现新选区（差分应答成立），放行取词");
+            true
+        }
+        _ => false,
     }
 }
 
