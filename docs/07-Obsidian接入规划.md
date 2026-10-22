@@ -1,6 +1,6 @@
 # 07 · Obsidian 接入规划
 
-> v1.0 · 2026-09-25 · 状态：已立项（用户定为最高优先级），未开始实现。
+> v1.1 · 2026-09-25 立项 · 状态：Phase 1 已交付（v0.1.9，交互更名 v0.1.13）；Phase 2 即划即存、Phase 3 知识卡增强未做。已交付部分按实现回写，未做的 Phase 2/3 规划保留原貌。
 > 依据：用户决策（战场认知纠正——划词在浏览器内天然可用，网页剪藏是能力面延伸）+ Obsidian 社区场景调研（主流组合 = Daily Notes + Calendar + Dataview + Tasks + QuickAdd）+ Obsidian Web Clipper 模板配置模型基准。
 > 实现时照本文件执行；与本文件冲突的新想法先改本文件再动代码。
 
@@ -16,9 +16,9 @@
 
 ### 0.2 Vault 与路径配置
 
-- **Vault 目录**：设置页目录选择器选择一次（交互先例 = app_picker 的系统面板模式）；存入 settings。
+- **Vault 目录**：设置页目录选择器选择一次（实现 = 普通 rfd 文件夹对话框，与 app_picker 同款）；存入 settings。
 - **路径解析**：所有目标文件 = vault 相对路径；写入 = `vault_path + 相对路径`。
-- **与 Obsidian Daily Notes 核心插件的互认**：日记文件命名默认 `yyyy-MM-DD.md`——与 Obsidian Daily Notes/Periodic Notes 插件的默认约定一致，**我们追加的文件就是用户真实的日记**（关键互操作点）。
+- **与 Obsidian Daily Notes 核心插件的互认**：日记文件命名默认 `yyyy-MM-DD`（`.md` 后缀由 TS 补上）——与 Obsidian Daily Notes/Periodic Notes 插件的默认约定一致，**我们追加的文件就是用户真实的日记**（关键互操作点）。
 
 ### 0.3 Advanced URI 探测（零 API 升级路径）
 
@@ -29,33 +29,36 @@
 | 变量 | 含义 | 来源 |
 |---|---|---|
 | `{text}` | 选中文本 / 识别文字 | 捕获链路 |
-| `{content}` | AI 动作输出（解释/总结/翻译结果） | AI 链路 |
 | `{source}` | 来源应用名 / 页面标题 | 窗口标题（零成本） |
 | `{date}` / `{time}` | 当前日期 / 时间 | 系统时钟 |
-| `{due}` | 解析出的截止日期 | NSDataDetector（仅任务场景） |
+| `{due}` / `{dueTag}` | 解析出的截止日期 / `📅 日期` 占位（无日期塌缩为空） | NSDataDetector（仅任务场景） |
+
+> **交付修订（v0.1.9）**：规划中的 `{content}`（AI 动作输出独立变量）未做——实际机制是 **`{text}` 择优填充**：结果窗语境已有 AI 输出时存 AI 输出，胶囊语境存原文（floating/App.tsx 的 obsidian 分支）。
 
 模板在设置页以文本框编辑，**所见即所发**（交互先例 = Prompt 设置页）。日期解析复用 entities.rs 的 NSDataDetector 链路（DateHit）。
 
 ### 0.5 送达原则（不变）
 
-**无状态一次性送达**：逐条即写即完，不建收藏箱、不做同步队列、不落第二份状态。写入失败 → toast 错误 + 内容保留在剪贴板兜底。
+**无状态一次性送达**：逐条即写即完，不建收藏箱、不做同步队列、不落第二份状态。写入失败 = 全局 toast 报错，不静默（规划中的剪贴板兜底未做——保持无状态，失败即失败）。
 
 ### 0.6 设置契约
 
-settings 新增 `obsidian` 配置块（settings.rs 与 types.ts **两处同步**，契约纪律）：
+settings 的 `obsidian` 配置块（settings.rs 与 types.ts **两处同步**，契约纪律）。**交付形态为平铺字段**（规划的嵌套 `templates` 对象未采用），以 types.ts / settings.rs 的 `ObsidianConfig` 为准：
 
 ```ts
 obsidian: {
-  vaultPath: string;        // vault 根目录（空 = 未配置，相关动作不出现）
+  vaultPath: string;        // vault 根目录（空 = 未配置，动作不出现）
   dailyFolder: string;      // 日记子目录（默认 ""，即 vault 根）
-  dailyFileName: string;    // 默认 "yyyy-MM-DD"
+  dailyFileName: string;    // 日记文件名格式（默认 "yyyy-MM-DD"，.md 由 TS 补）
   taskFile: string;         // 任务目标文件（默认空 = 当日日记）
   cardFolder: string;       // 知识卡目录（默认 "Cards"）
-  templates: { excerpt: string; task: string; card: string };  // 三套预设模板，变量见 0.4
+  excerptTemplate: string;  // 摘录块模板（默认 `- **{time}** · 来源：{source}\n  > {text}`）
+  taskTemplate: string;     // 任务行模板（默认 `- [ ] {text} {dueTag}`）
+  cardTemplate: string;     // 知识卡内容模板（默认同摘录块）
 }
 ```
 
-设置页新增「Obsidian」卡：vault 目录选择 + 日记目录 + 三套模板编辑（所见即所发）。未配置 vault 时，「存入 Obsidian」类动作不出现（与未配 Key 时 AI 动作置灰同款交互）。
+设置页是完整独立「Obsidian」页（主导航一栏，非设置卡）：vault 目录选择/清除、日记子目录与文件名格式、任务/卡片目标路径、三套模板编辑（各带「恢复默认」，所见即所发）。未配置 vault 时，「Obsidian」动作不出现（与未配 Key 时 AI 动作置灰同款交互）。
 
 ## 1. 每日笔记追加（默认场景，最高频）
 
@@ -65,8 +68,8 @@ Daily Notes + Calendar 是 Obsidian 最主流的工作流（Calendar 曾是最�
 
 ### 触发
 
-- 胶囊动作「存入 Obsidian」（配置 vault 后作为常驻动作出现，可开关/排序）；
-- 结果窗 footer「存入 Obsidian」按钮（翻译/解释/总结/识图的结果均可送）；
+- 胶囊动作「Obsidian」（v0.1.13 由「存入 Obsidian」更名；配置 vault 后作为常驻动作出现，可开关/排序）——**⌄ 子菜单三目标：笔记 / 任务 / 卡片**，笔记为默认；
+- 结果窗 footer 同一「Obsidian」动作（翻译/解释/总结/识图的结果均可送，结果窗语境优先存 AI 输出）；
 - 识图结果同链路（截图文字直接落日记）。
 
 ### 行为规格
@@ -74,7 +77,7 @@ Daily Notes + Calendar 是 Obsidian 最主流的工作流（Calendar 曾是最�
 1. 用户划词/识图得到文字 → 胶囊出现「存入 Obsidian」；
 2. 点击 → 按摘录块模板格式化 → **追加到当日日记文件末尾**（文件不存在则创建）；
 3. Obsidian 监视器自动刷新 → 内容出现在用户的日记里；
-4. 微确认：胶囊按钮文字短暂变为「已存入 ✓」（复用 flash 机制）。
+4. 微确认：全局 toast「已存入 …」（交付修订：原规划的按钮 flash 翻案——从收纳面板发起时面板先收起，flash 挂在已卸载按钮上等于无提示）。
 
 追加块默认模板：
 
@@ -86,7 +89,7 @@ Daily Notes + Calendar 是 Obsidian 最主流的工作流（Calendar 曾是最�
 ### 依赖与实现
 
 - 纯 `std::fs` 追加写入（O_APPEND 语义，末尾追加）；UTF-8；无锁（追加冲突概率极低，可接受）；
-- 新增 Rust 命令 `obsidian_append(path: String, content: String) -> bool`（路径越界校验：必须位于 vault 内，防路径逃逸）。
+- Rust 命令 `obsidian_append(app, rel_path: String, content: String) -> Result<(), String>`（obsidian.rs）：`rel_path` 为 **vault 相对路径**，vault 由 Rust 侧从 settings 解析；`safe_join` 拒绝 `..` 逃逸与绝对路径注入；文件不存在则连同父目录一起创建；已有内容时先补一个空行分隔块；内容非 LF 结尾自动补换行。
 
 ### 配置
 
@@ -135,7 +138,7 @@ Tasks 插件 + 日记待办是 Obsidian 第二大工作流（Tasks 是社区必�
 
 ### 触发
 
-划选含日期的待办文字（如"周五前把报告发我"）→ 胶囊/结果窗出现「加入任务」动作（与「加入日历」并列的出口动作——两者共享 NSDataDetector 日期解析）。
+交付形态（v0.1.9）：无独立「加入任务」动作——任务是「Obsidian」动作 ⌄ 子菜单的第二目标（笔记/任务/卡片三选一），并非「加入日历」的并列出口。不依赖先检出日期才显示动作：点「任务」时才跑 detect_dates（µs 级，用时重检），选中文本无日期时 `{dueTag}` 塌缩为空。
 
 ### 行为规格
 
@@ -164,44 +167,30 @@ Tasks 插件 + 日记待办是 Obsidian 第二大工作流（Tasks 是社区必�
 
 Zettelkasten 文献笔记（literature note：标题=概念、引用块=原文、正文=讲解）+ AI 总结的组合——**"AI 动作 × Obsidian 接入"的独有能力**：单靠 Obsidian 插件没有 AI，单靠 AI 工具没有 vault 落地。
 
-### 触发
+### 交付形态（v0.1.9，按实现回写）
 
-划选概念/段落 → 「解释」或「总结」→ 结果窗 footer 出现「存为知识卡」→ 一键新建笔记。
+无独立「存为知识卡」按钮、无 `obsidian_write_note` 命令——卡片是「Obsidian」动作 ⌄ 子菜单的第三目标（胶囊与结果窗 footer 同款入口）。
 
-### 行为规格
+1. **一卡一文件**：写入 `cardFolder`（默认 `Cards/`），文件名 = 选中文本首行清理（剔除非法文件名字符、压缩空白）后截 20 字；空选区回退「卡片 {date}{time}」时间戳命名；
+2. **正文全部由 TS 用用户可编辑的 `cardTemplate` 渲染**（默认与摘录块同款：`- **{time}** · 来源：{source}\n  > {text}`），Rust 不拼装任何内容；
+3. **同名卡再次保存 = 追加进旧文件**（`obsidian_append` 空行分隔）——同一概念多次保存聚合一卡；Obsidian 自动索引，双链 `[[]]` 可直接引用该卡。
 
-新建笔记到卡片目录，结构：
-
-```markdown
----
-title: 费米估算
-source: 预览
-created: 2026-09-25
-tags:
-  - 知识卡
----
-
-> 原文引用块（选中文本）
-
-AI 解释/总结正文……
-```
-
-- 文件名：`{date} {标题}.md`（标题取选中文本首行截断）；冲突 → 追加 `-2` 序号；
-- Obsidian 自动索引 → 双链 `[[]]` 可直接引用该卡。
+原规划的 frontmatter（title/source/created/tags）、冲突 `-2` 序号、默认标签均**未做**（追加语义天然规避覆盖；frontmatter 留给 Phase 3 增强）。
 
 ### 依赖与实现
 
-- `obsidian_write_note(dir: String, name: String, content: String) -> bool`（新建文件，冲突序号，路径越界校验）；
-- frontmatter 由 Rust 拼装（模板固化在代码，v1 不开放自定义 frontmatter 模板）。
+- 复用 `obsidian_append`（一卡一文件只是 rel_path 落在卡片目录，无独立写文件命令）；
+- 模板渲染在 TS 侧，变量见 0.4。
 
 ### 配置
 
-卡片目录（默认 `Cards/`）；标签（默认 `知识卡`）。
+卡片目录 `cardFolder`（默认 `Cards/`）；卡片内容模板 `cardTemplate`（设置页可编辑 + 恢复默认）。
 
 ### 边界
 
 - 图片/表格不进入知识卡（v1 纯文本）；
-- 需已配置模型服务（AI 动作前置条件，与现有 AI 动作一致）。
+- 不依赖模型服务：结果窗语境有 AI 输出存输出，胶囊语境直接存原文（择优机制见 0.4）；
+- 文件名冲突不新建 `-2` 序号文件——同名即聚合（追加进旧文件）。
 
 ## 5. 网页剪藏（选区 / 识图 / AI 链）
 
@@ -226,18 +215,18 @@ AI 解释/总结正文……
 | OWC 概念 | 拾趣对应 | 状态 |
 |---|---|---|
 | Template triggers（URL 模式） | 来源应用规则 | v2 再议 |
-| Note name（{{title}} 变量） | 知识卡文件名模板 | ✅ 功能 4 |
+| Note name（{{title}} 变量） | 知识卡文件名模板 | 未做（文件名 = 首行截 20 字，不可模板化） |
 | Note location / Vault | vault + 卡片目录 | ✅ 基座 0.2 |
-| Properties（frontmatter 键值） | 知识卡 frontmatter（固化模板） | ✅ 功能 4 |
+| Properties（frontmatter 键值） | 知识卡 frontmatter（固化模板） | 未做 |
 | Note content（模板正文） | 摘录块/任务/知识卡模板 | ✅ 0.4 |
 
 ## 7. 实施顺序
 
-| 阶段 | 交付 |
-|---|---|
-| **Phase 1（MVP）** | 基座（vault 目录选择 + 文件直写命令 + 设置卡）+ 每日笔记追加（摘录块）+ 胶囊/结果窗动作接入 |
-| **Phase 2** | 即划即存模式 + 任务写入 |
-| **Phase 3** | AI 知识卡 + Advanced URI 探测升级 |
+| 阶段 | 交付 | 状态 |
+|---|---|---|
+| **Phase 1（MVP）** | 基座（vault 目录选择 + 文件直写命令 + 设置卡）+ 每日笔记追加（摘录块）+ 胶囊/结果窗动作接入 | ✅ 已交付（v0.1.9；动作更名「Obsidian」v0.1.13；「设置卡」实为独立设置页，见 0.6） |
+| **Phase 2** | 即划即存模式 + 任务写入 | 任务写入已随 v0.1.9 交付（Obsidian ⌄ 子菜单「任务」，见 §3）；即划即存模式未做（规划原貌保留） |
+| **Phase 3** | AI 知识卡 + Advanced URI 探测升级 | 知识卡简化形态已随 v0.1.9 交付（⌄ 子菜单「卡片」，见 §4 回写）；frontmatter 等增强与 Advanced URI 探测未做 |
 
 ## 8. 不做清单
 
