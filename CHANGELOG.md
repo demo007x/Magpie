@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- 本文件仅在发版时依据 docs/release/release-vX.Y.Z.md 的已勾选条目生成版本节，开发阶段勿改 -->
 
+## [0.1.16] - 2026-10-22
+
+### Added
+
+- Seven new machine-translation providers beyond Baidu, DeepL and AI translation: Google Translate, Microsoft Translator (Azure), Youdao, Tencent Cloud MT, Alibaba Cloud MT, Volcengine Translate and Caiyun Xiaoyi. Each is added on the Translate settings page via "添加服务" — pick the provider, fill its credentials, done; it then shows up in the floating bar menu and the result window like the built-ins. A provider can be paused anytime without deleting its configuration (handy when a monthly quota runs out), and existing Baidu/DeepL credentials migrate automatically — no re-entry needed.
+- Model-service setup now starts from a preset list — DeepSeek, Doubao, Zhipu, Kimi, Qwen, Xiaomi MiMo, SiliconFlow, OpenAI, xAI and OpenRouter — that fills in the name, service address and API form automatically: paste the key and confirm the model name. The OpenAI Responses API is now supported as a service form alongside Chat Completions, switchable on every service card. A custom entry keeps the fill-everything path for anything else.
+
+### Changed
+
+- Secondary menus now open on hover: resting the pointer on an action with a chevron — in the floating bar, in the overflow panel's rows, or in the result window's action row — expands its menu without a click. Sweeping past other actions while a menu is open switches instantly, clicks keep working exactly as before, and the menu tucks itself away shortly after the pointer leaves.
+- The result window's action row stays on a single line at narrow widths: actions that no longer fit collapse into a "更多" button at the end of the row, opening as a floating stack of pills above the row's end. Pills with options (translate service, search engine, Obsidian target) expand a horizontal chip row beside them; the stack's size never changes with its submenu.
+- The floating bar's overflow panel rows now point before they pop: a row with a side submenu shows a › chevron toward where the submenu will open (‹ when mirrored at the screen's right edge), and Obsidian's three targets (笔记/任务/卡片) open as a horizontal chip row beside their row.
+- The result window's floating menus (⌄ submenus, the overflow pill stack and its row-side chip rows) render as inverted pills — ink fill with light text in the light theme and the inverse in the dark theme — so they stay clearly separated from the result text they temporarily cover; hovering lights a chip up in the brand indigo.
+- Result-window submenus now open and close more smoothly: a menu appears in one motion instead of popping in item by item, and it fades out briefly when dismissed or switched to another instead of vanishing. Menus still close instantly when an action runs.
+- The 划词 (actions) settings page now saves automatically: action toggles, drag-reordering and custom-action edits persist the moment they happen — the page-level "保存更改" button is gone. Other pages keep their save button.
+
+### Fixed
+
+- Fixed text selection inside web-page tables not summoning the floating bar, on drag or double-click: a drag that starts on a table row now counts when it really produces a text selection, while dragging rows or list items themselves still doesn't.
+- The floating bar no longer shows an action whose backing services are all disabled: the Translate action disappears when every translation service is toggled off, Search disappears when every engine is off, and the AI actions (解释/总结 and custom ones) hide while the default model service is missing its key or model. The result window's action row follows the same rules.
+- Fixed clicking 钉图 (pin to screen) in the result window freezing the whole app on Windows: every window stopped responding — dragging included — and the pinned image never appeared. The pin window now shows up right away and the rest of the app keeps working while it loads.
+- Fixed the floating bar and its popup cards showing as sharp-cornered rectangles on Windows machines where the system does not round borderless windows (for example Windows on ARM): the cards draw on a transparent background again, so their rounded corners render on every Windows form factor.
+- Fixed the result window keeping an opaque, square-cornered backdrop outside of resize drags: the corners return to rounded the moment the drag ends.
+- Fixed the OCR/selection result window clipping the translation to a sliver when the service menu was opened while the result was still streaming: the result area always returns to the full window height once the menu closes.
+- Fixed custom AI actions losing typed characters or saving an older prompt than what was on screen: rapid typing and Chinese IME composition no longer silently drop edits. The same hardening covers model-service fields, prompt overrides, search engines and translation credentials.
+
 ## [0.1.15] - 2026-10-17
 
 - Windows: the main window no longer stays on "Loading…" forever. App windows are now created only after all shared state is ready, so very early settings requests (WebView2 can serve pages faster than the backend finishes startup) can no longer fail; the settings page also retries a failed load instead of swallowing it.
