@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- 本文件仅在发版时依据 docs/release/release-vX.Y.Z.md 的已勾选条目生成版本节，开发阶段勿改 -->
 
+## [0.1.17] - 2026-10-22
+
+### Fixed
+
+- Fixed clicking an option in the result window's ⌄ submenus (search engines, translation services, Obsidian targets) doing nothing: the click-outside dismiss swallowed the press before it could reach the option. Picking an option now runs its action and closes the menu.
+
 ## [0.1.16] - 2026-10-22
 
 ### Added

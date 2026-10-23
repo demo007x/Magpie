@@ -2455,7 +2455,15 @@ export default function App() {
     // 结果窗：点浮层与动作行之外收起展开中的浮层（与胶囊条同规则）；
     // 不参与浮动条拖拽（结果窗拖拽走 onOcrPanelDown 一条链）
     if (IS_OCR) {
-      if (menu !== null && !t.closest(".pop") && !t.closest(".ocr-actions")) {
+      // .ocr-menu-slot 同样豁免：点子菜单 chip 是要执行动作的点击，mousedown
+      // 若抢先收起，click 会落在退场态（pointer-events:none）容器上丢失——
+      // 表现为「点了没反应」；chip 的 click 自己负责执行并收起（与 .pop 同理）
+      if (
+        menu !== null &&
+        !t.closest(".pop") &&
+        !t.closest(".ocr-actions") &&
+        !t.closest(".ocr-menu-slot")
+      ) {
         switchMenu(null);
       }
       return;
