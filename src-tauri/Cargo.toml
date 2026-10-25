@@ -36,6 +36,7 @@ sha1 = "0.10"
 hmac = "0.12"
 arboard = "3"
 rfd = "0.15"
+tauri-plugin-deep-link = "2"
 
 # 非 macOS 日期实体：本地规则层（正则 + 本地时区日历运算）。
 # macOS 走 NSDataDetector，零日期依赖；两端同一 DateHit 契约

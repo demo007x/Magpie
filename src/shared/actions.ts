@@ -35,7 +35,7 @@ export function actionRegistry(custom: CustomAction[] = []): ActionDef[] {
   ];
 }
 
-export type AiActionId = "translate" | "explain" | "summarize";
+export type AiActionId = "translate" | "explain" | "summarize" | "extract";
 
 // 内置默认提示词（系统内置，用户只读参考；自定义值存 settings.actionPrompts，恢复默认 = 删除覆盖项）。
 // 每条自包含——最终发送的 system 就是这一整段，不存在拼接出去的隐藏指令，
@@ -81,6 +81,22 @@ export const DEFAULT_PROMPTS: Record<AiActionId, string> = {
 每条一行，控制在 30 字以内，写结论本身而不是「文章谈了……」这类元描述。
 原文中的关键数字、结论、限定条件（时间、范围、例外）必须保留，不要为了简洁丢掉。
 内容过于零散或不含有效信息时，不要强行归纳，直接说明并请用户提供更完整的文本。`,
+
+  // 智能提取（「提取信息」面板）：{date} 占位符在发送前由 aiExtract.buildExtractPrompt
+  // 替换为当天日期（含星期）——模型不知道「今天」，相对时间换算需要基准
+  extract: `你是信息提取器。从用户选中的文本中提取结构化信息，只输出一个 JSON 对象，除此之外不输出任何内容。
+
+今天是 {date}，解析日期时间以此为基准。
+
+提取规则：
+- 用户消息开头的「来源页面：…」行只是辅助上下文（供理解事件背景），不要把它计入 urls 或任何组——只有选中正文里出现的链接才算
+- events（日历事件）：文本中含日期或时间的事项，每个独立活动/阶段各一条。title 只写活动或阶段的简短名称（如「作品征集」「Coffee Talk」，尽量不超过 20 字），禁止把整段原文抄作 title；原文没有可辨识的名称时省略 title。日期区间拆成 start 与 end（如「征集 10.12—10.31」→ start 为今年-10-12、end 为今年-10-31）。时间段必须挂靠到就近的日期（如「10月31日 10:00-19:00」→ 同一天的 10:00 与 19:00，不得解析成今天或明天）。原文没写具体时间的用纯日期格式 YYYY-MM-DD（全天），禁止编造 12:00 之类的时间；有明确时间的用 YYYY-MM-DDTHH:mm。end 可省略。
+- places（地点）：现实可导航的地名、场所、商圈、场馆，按原文照抄。
+- urls / emails / tels / codes：文本中出现的链接、邮箱、电话号码、数字验证码，一律原文照抄，不补全、不改写。验证码只收明确用作口令/校验码的 4-8 位数字；年份、编号（如 #001）、日期时间的数字碎片都不是验证码。
+- 拿不准的宁可不收；某类没有就给空数组。
+
+输出格式（键固定）：
+{"events":[{"title":"...","start":"YYYY-MM-DD 或 YYYY-MM-DDTHH:mm","end":"可选，格式同 start"}],"places":[],"urls":[],"emails":[],"tels":[],"codes":[]}`,
 };
 
 export const AI_ACTION_IDS = Object.keys(DEFAULT_PROMPTS) as AiActionId[];

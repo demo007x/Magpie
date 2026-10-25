@@ -595,6 +595,19 @@ input[type="radio"] {
   padding-left: 26px;
 }
 
+/* 提取方式分段控件：节标题下、卡外一行——控件 + 尾随小字注释 */
+.mode-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px 10px;
+}
+
+.mode-note {
+  font-size: 12px;
+  color: var(--sec);
+}
+
 /* ---- 搜索引擎列表 ---- */
 .eng-row {
   display: flex;
@@ -1069,6 +1082,15 @@ input[type="radio"] {
   transform: translateX(13px);
 }
 
+/* 禁用态（如智能提取未配置模型服务）：整组变淡、恢复默认光标 */
+.switch:has(input:disabled) {
+  opacity: 0.45;
+}
+
+.switch input:disabled {
+  cursor: default;
+}
+
 /* ---- 分段选择器（外观：跟随系统/亮色/暗色）----
    macOS 风格：发丝线外壳 + 选中段 accent-soft 底 + 白色凸起块 */
 .seg {
@@ -1096,6 +1118,16 @@ input[type="radio"] {
 
 .seg button:hover {
   color: var(--text);
+}
+
+/* 禁用段（如 AI 理解未配置模型服务）：不变色不响应，明确不可点 */
+.seg button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.seg button:disabled:hover {
+  color: var(--sec);
 }
 
 /* 双行 seg（结果窗口尺寸档位）：档名 + 具体像素——档位名抽象，

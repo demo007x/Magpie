@@ -18,12 +18,63 @@ const SCHEME_URL_RE = /https?:\/\/[^\s"'<>（）【】「」『』，。；：�
 // 独立 4-8 位数字（验证码候选）
 const CODE_RE = /(?<!\d)\d{4,8}(?!\d)/g;
 const YEAR_RE = /^(?:19|20)\d{2}$/; // 年份不是验证码
+
+// ---- 验证码语境三分规则（2026-10-24 用户定稿）----
+// 真实验证码几乎总伴随语境标记（「验证码/校验码/code/OTP」）；脱离语境的数字
+// 是 pid/端口/金额/编号。识别三分：① 选区就是数字本身（精准选中，意图明确）；
+// ② 选区极短（≤16 字符，如「【美团】582914」，无标记也是刻意选择）；
+// ③ 更长文本必须有语境关键词，且数字距关键词 ≤32 字符。
+const CODE_KEYWORD_RE =
+  /验证码|校验码|驗證碼|动态码|动态密码|口令|(?<![a-z])code(?![a-z])|(?<![a-z])otp(?![a-z])|passcode|one[\s-]?time/gi;
+const CODE_STANDALONE_RE = /^\d{4,8}$/;
+const CODE_SHORT_MAX = 16;
+const CODE_PROXIMITY = 32;
+
+function codeKeywordPositions(t: string): number[] {
+  return [...t.matchAll(CODE_KEYWORD_RE)].map((m) => m.index ?? 0);
+}
+
+/** 句子跨度（。！？!?\n 分隔）：关键词与数字须同句——「验证码 1111 已发送。工单号
+ *  77054」里 77054 距关键词仅 15 字符，仅靠距离过滤会误收 */
+function codeSentenceSpans(t: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  let start = 0;
+  for (let i = 0; i < t.length; i++) {
+    if (/[。！？!?\n]/.test(t[i])) {
+      spans.push([start, i]);
+      start = i + 1;
+    }
+  }
+  spans.push([start, t.length]);
+  return spans;
+}
+
+function codeAccepted(t: string, pos: number, kws: number[], spans: Array<[number, number]>): boolean {
+  if (t.length <= CODE_SHORT_MAX || CODE_STANDALONE_RE.test(t)) return true; // ①②
+  return kws.some(
+    (q) =>
+      Math.abs(pos - q) <= CODE_PROXIMITY && // ③ 语境邻近
+      spans.some(([a, b]) => q >= a && q < b && pos >= a && pos < b), // 且同句
+  );
+}
 /** 中国手机号 / 400 热线 / 座机（可选 +86/86 国际前缀，可选分机 -1234）。单值提取 */
 const TEL_CN_RE =
   /(?<!\d)(?:\+?86)?(?:1[3-9]\d{9}|400-?\d{3}-?\d{4}|0\d{2,3}-?\d{7,8})(?:-\d{1,6})?(?!\d)/;
 /** 同上（全局）：多值提取 */
 const TEL_CN_ALL_RE =
   /(?<!\d)(?:\+?86)?(?:1[3-9]\d{9}|400-?\d{3}-?\d{4}|0\d{2,3}-?\d{7,8})(?:-\d{1,6})?(?!\d)/g;
+
+// 日期/时间/编号类数字片段：其覆盖区间内的数字不产出验证码候选
+// （"10月31日 10:00-19:00 北京#001" 的编号与日期时间碎片曾漏进验证码，2026-10-23）
+const NUMERIC_CONTEXT_RES: RegExp[] = [
+  /#\d+/g, // #001 编号
+  /\d{1,2}\s*[:：]\s*\d{2}(?:\s*[:：]\s*\d{2})?/g, // 10:00 / 19:00:30
+  /\d{4}\s*[年.\-/]\s*\d{1,2}(?:\s*[月.\-/]\s*\d{1,2}\s*日?)?/g, // 2026.10.12 / 2026年10月
+  /\d{1,2}\s*月\s*\d{1,2}\s*[日号]?/g, // 10月31日
+];
+/** 日期对（10.31 / 12-25）：两段均在 1-31 才视作日期片段——
+ *  不做语义校验会把「折扣 88.5」「版本 2.0」也当成日期区间保护掉 */
+const DATE_PAIR_RE = /\d{1,2}\s*[.\-/]\s*\d{1,2}/g;
 
 const TRAIL_PUNCT_RE = /[.,;:!?、。，；：！？…"'’”]+$/;
 
@@ -102,19 +153,36 @@ export function extractEmails(raw: string): string[] {
   return cap(dedupe(raw.trim().match(EMAIL_ALL_RE) ?? []));
 }
 
-/** 提取验证码：首个非年份的 4-8 位独立数字（长文本不触发） */
+/** 提取验证码：首个非年份的 4-8 位独立数字，按语境三分规则过滤（见 codeAccepted） */
 export function extractCode(raw: string): string | null {
   const t = raw.trim();
   if (!t || t.length > 200) return null;
-  const candidates = t.match(CODE_RE) ?? [];
-  return candidates.find((c) => !YEAR_RE.test(c)) ?? null;
+  const kws = codeKeywordPositions(t);
+  const spans = codeSentenceSpans(t);
+  const shortCtx = t.length <= CODE_SHORT_MAX || CODE_STANDALONE_RE.test(t);
+  if (!shortCtx && kws.length === 0) return null; // 长文本且无语境：整段放弃
+  for (const m of t.matchAll(CODE_RE)) {
+    if (YEAR_RE.test(m[0])) continue;
+    if (codeAccepted(t, m.index ?? 0, kws, spans)) return m[0];
+  }
+  return null;
 }
 
-/** 提取全部验证码（排除年份，去重保序，上限 20） */
+/** 提取全部验证码（排除年份，去重保序，上限 20；语境三分规则同 extractCode） */
 export function extractCodes(raw: string): string[] {
   const t = raw.trim();
   if (!t || t.length > 200) return [];
-  return cap(dedupe((t.match(CODE_RE) ?? []).filter((c) => !YEAR_RE.test(c))));
+  const kws = codeKeywordPositions(t);
+  const spans = codeSentenceSpans(t);
+  const shortCtx = t.length <= CODE_SHORT_MAX || CODE_STANDALONE_RE.test(t);
+  if (!shortCtx && kws.length === 0) return [];
+  return cap(
+    dedupe(
+      [...t.matchAll(CODE_RE)]
+        .filter((m) => !YEAR_RE.test(m[0]) && codeAccepted(t, m.index ?? 0, kws, spans))
+        .map((m) => m[0]),
+    ),
+  );
 }
 
 /** 提取电话号码（手机/座机，含分机）；无 = null */
@@ -160,8 +228,8 @@ function normKey(kind: "tel" | "email" | "url", s: string): string {
 }
 
 /** 一次性提取全部实体（各组归一化去重、保序、上限 20）。
- * 验证码使用「保护区间」规则：URL/邮箱/电话已命中的文本区间内不再产出验证码候选
- *（如座机 0532-83661100 的区号段/本地段不再被拆成验证码）。 */
+ * 验证码使用「保护区间」规则：URL/邮箱/电话及日期时间/编号片段已覆盖的
+ * 文本区间内不再产出验证码候选（如座机区号段、"10.31" 的碎片不再被拆成验证码）。 */
 export function extractAll(raw: string): Extracted {
   let t = raw.trim();
   // 输入截断至 8KB：超长选区（整篇文章）提取无意义，同时封死
@@ -192,13 +260,30 @@ export function extractAll(raw: string): Extracted {
     protectedRanges.push([m.index ?? 0, (m.index ?? 0) + m[0].length]);
   }
 
+  // 日期/时间/编号片段同样入保护区间：其内部数字是语义碎片，不是验证码
+  for (const re of NUMERIC_CONTEXT_RES) {
+    for (const m of t.matchAll(re)) {
+      protectedRanges.push([m.index ?? 0, (m.index ?? 0) + m[0].length]);
+    }
+  }
+  for (const m of t.matchAll(DATE_PAIR_RE)) {
+    const [a, b] = m[0].split(/[.\-/]/).map((s) => parseInt(s, 10));
+    if (a >= 1 && a <= 31 && b >= 1 && b <= 31) {
+      protectedRanges.push([m.index ?? 0, (m.index ?? 0) + m[0].length]);
+    }
+  }
+
   const codes: string[] = [];
+  // 语境三分规则同 extractCode：长文本中脱离关键词的数字（pid/端口/金额）不是验证码
+  const codeKws = codeKeywordPositions(t);
+  const codeSpans = codeSentenceSpans(t);
   for (const m of t.matchAll(CODE_RE)) {
     const s = m.index ?? 0;
     const e = s + m[0].length;
     // 与电话/邮箱/URL 区间重叠 → 是其组成部分（区号/本地段等），不是验证码
     if (protectedRanges.some(([ps, pe]) => s < pe && e > ps)) continue;
     if (YEAR_RE.test(m[0])) continue;
+    if (!codeAccepted(t, s, codeKws, codeSpans)) continue;
     codes.push(m[0]);
   }
 

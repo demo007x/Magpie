@@ -137,6 +137,9 @@ export interface Settings {
   resultWindowPos?: [number, number] | null;
   /** 结果窗口尺寸记忆 */
   resultWindowSize?: [number, number] | null;
+  /** 智能提取：「提取信息」面板中日期/地点等语义信息优先由 AI 理解（需已配置
+   *  默认模型服务）；关闭或未配置时走系统识别。默认开 */
+  smartExtract: boolean;
 }
 
 export interface ChatMessage {

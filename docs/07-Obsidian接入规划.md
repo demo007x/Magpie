@@ -35,7 +35,7 @@
 
 > **交付修订（v0.1.9）**：规划中的 `{content}`（AI 动作输出独立变量）未做——实际机制是 **`{text}` 择优填充**：结果窗语境已有 AI 输出时存 AI 输出，胶囊语境存原文（floating/App.tsx 的 obsidian 分支）。
 
-模板在设置页以文本框编辑，**所见即所发**（交互先例 = Prompt 设置页）。日期解析复用 entities.rs 的 NSDataDetector 链路（DateHit）。
+模板在设置页以文本框编辑，**所见即所发**（交互先例 = Prompt 设置页）。日期解析复用 entities/dates.rs 的 NSDataDetector 链路（DateHit）。
 
 ### 0.5 送达原则（不变）
 

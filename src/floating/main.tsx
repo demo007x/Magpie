@@ -33,6 +33,9 @@ const WIN_LABEL = (() => {
   }
 })();
 const IS_POP = WIN_LABEL === "floating-panel" || WIN_LABEL === "floating-menu";
+// 窗口标签挂根类：CSS 按窗口作用域写规则（如深色材质只给条窗挂 vibrancy 透亮层，
+// 结果窗保持不透明阅读面），不误伤其他窗口
+document.documentElement.classList.add(`w-${WIN_LABEL}`);
 
 // 主题根类：App 与弹层窗口（floating-panel/menu）共用同一外观设置——弹层窗口
 // 若不挂主题类会跟系统偏好走（系统浅色 + 应用深色 → 深色胶囊条旁出白卡片错配）；

@@ -127,6 +127,14 @@ Data flow: platform capture (macOS: CGEventTap + AX · Windows: low-level mouse 
 - API keys are stored in plaintext in local `settings.json` (moving to the system keychain in M2) and are sent only to the LLM / translation endpoints you configure
 - No telemetry, no accounts
 
+## Feedback
+
+Run into a problem or have an idea? Scan the QR code (Feishu form, no account needed) or [open it directly](https://tvxjr8zl48.feishu.cn/share/base/form/shrcnF78Kl495G3iUVz8iWvnA6e). The in-app panel (**设置 › 关于 › 反馈问题**) copies your report together with basic diagnostics (version / OS / permission states — never keys or personal data) so you can just paste and submit. Developers may prefer [GitHub Issues](https://github.com/demo007x/Magpie/issues).
+
+<p>
+  <img src="docs/images/feedback-qrcode.png" width="160" alt="Feedback form QR code (Feishu)" />
+</p>
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full, self-contained roadmap. Top priorities (M2): **clip-to-collection** into Notion / Obsidian / flomo / Apple Notes (context-rich structured delivery — custom AI actions shipped in v0.1.6), follow-up Q&A in the result window, AI search & Q&A, context-aware selection, and moving API keys to the system keychain. Windows capture (UIA backend) shipped in v0.1.14. Mid-term (M3) converges built-ins, custom actions, integrations, and workflows into one unified action model; long-term (M4) adds hosted models for zero configuration.

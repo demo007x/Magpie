@@ -8,6 +8,15 @@
      必须用 inset box-shadow 而非 border——border 会挤占内容盒，破坏
      「测量内容尺寸 → 窗口尺寸」的恒等关系（bar 折行、高度跳变） */
   --edge: rgba(0, 0, 0, 0.10);
+  /* 卡片表面 = 背景 + 边缘信号，一条结构规则、主题只换值（2026-10-25 定稿）：
+     暗色曾另起一套结构规则（渐变/高光/暗边/发丝/颗粒），历次「只坏在暗色」
+     的问题（残影/双线/黑中灰）全部出自这条独立分支——收敛为 token 后暗色
+     与亮色共用同一结构，此类漂移在结构上不可能再发生。
+     边缘信号 = none（2026-10-25 用户定稿：不通过边线体现高级感——发丝线在
+     对比壁纸上读作「描边圈」，两个主题一律零线条）；轮廓感由面板与背景的
+     亮度对比 + 原生 NSWindow shadow 表达 */
+  --surface: #ffffff;
+  --surface-edge: none;
   --sep: rgba(0, 0, 0, 0.12);
   --text: #1c1c24;
   --sec: #85858f;
@@ -69,6 +78,13 @@
     --ink-text: #1c1c24;
     --ink-accent: #5e5ce6;
     }
+
+  /* 表面 token：not(.theme-light) 特异度 (0,2,0)——须压过 html.win 的
+     物理像素发丝 token（0,1,0），否则 Windows 暗色会重新长出边线 */
+  :root:not(.theme-light) {
+    --surface: linear-gradient(180deg, #34343c 0%, #2b2b31 100%);
+    --surface-edge: none;
+  }
 }
 
 /* ---- 用户强制外观（设置页：亮色/暗色/跟随系统）----
@@ -79,6 +95,8 @@
   --surf: #ffffff;
   --menu-bg: #ffffff;
   --edge: rgba(0, 0, 0, 0.10);
+  --surface: #ffffff;
+  --surface-edge: none;
   --sep: rgba(0, 0, 0, 0.12);
   --text: #1c1c24;
   --sec: #85858f;
@@ -105,6 +123,8 @@
   --surf: #282828;
   --menu-bg: #282828;
   --edge: rgba(255, 255, 255, 0.10);
+  --surface: linear-gradient(180deg, #34343c 0%, #2b2b31 100%);
+  --surface-edge: none;
     --sep: rgba(255, 255, 255, 0.16);
   --text: #ededf4;
   --sec: #9a9aa8;
@@ -172,14 +192,16 @@ body,
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 2px;
-  background: var(--surf);
-  /* 圆角 8px = 内部按钮悬停底 6px + 容器 padding 2px（同心圆角原则）。
-     曾用 12px：在 ~31px 高的矮工具条上占比 39%，读作准药丸形 */
+  padding: 3px 4px;
+  background: var(--surface);
+  /* 圆角 8px 沿用 demo B+；内边距从 demo 参数（5px 6px，条高 36px）收紧为
+     3px 4px（条高 32px）——2026-10-25 用户反馈：悬浮胶囊不应占据过多空间、
+     遮挡正文阅读，压尺寸只压空气不压字号（13px 保持） */
   border-radius: 8px;
-  /* 悬浮感由 NSWindow 原生 shadow 承担（shadow:true，macOS 按内容 alpha 形状画影子，
-     自动贴合圆角与亮暗主题）；本文件只保留 inset 发丝描边做边缘定义 */
-  box-shadow: inset 0 0 0 0.5px var(--edge); /* 发丝 = 0.5px：Retina @2x 上恰好 1 物理像素，与系统分隔线同规格；1px 会渲染成 2 物理像素显粗 */
+  /* 悬浮感不依赖阴影：条窗原生 shadow 已关（main.rs，2026-10-25 用户定稿
+     零边缘信号——白胶囊贴深色壁纸时阴影读作黑环）；边缘信号 = --surface-edge
+     （主题 token，见文件头） */
+  box-shadow: var(--surface-edge);
   user-select: none; /* 胶囊条是纯操作面：禁止选中文本（防点击/拖拽时出现选中高亮） */
   -webkit-user-select: none;
   cursor: default;
@@ -210,7 +232,7 @@ body,
 .chev {
   width: 16px;
   height: 26px;
-  margin-left: -5px; /* 贴近动作文字（吃掉按钮右 padding），保留命中区 */
+  margin-left: -4px; /* 贴近动作文字（吃掉按钮右 padding 6px 的大半），保留命中区 */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -222,6 +244,9 @@ body,
 }
 
 .chev:hover {
+  /* ⌄ 是动作项的二级入口（展开服务菜单），不与主按钮的实底 hover 同级：
+     浅灰 tint + 箭头转正文色（2026-10-25 用户定稿「执行的入口实底，展开的
+     入口浅灰」；曾随 hover 统一改实底，层级乱） */
   background: var(--hov);
   color: var(--text);
 }
@@ -242,9 +267,9 @@ body,
   position: absolute;
   z-index: 10;
   display: flex;
-  background: var(--surf);
+  background: var(--surface);
   border-radius: 8px; /* 与胶囊同档（同心圆角，见 .bar）；二者视觉相连，圆角必须同步 */
-  box-shadow: inset 0 0 0 0.5px var(--edge); /* 发丝 = 0.5px：Retina @2x 上恰好 1 物理像素，与系统分隔线同规格；1px 会渲染成 2 物理像素显粗 */
+  box-shadow: var(--surface-edge);
   padding: 2px;
   white-space: nowrap;
   /* 只做淡入不做位移：入场动画期间的 transform 会污染
@@ -277,8 +302,9 @@ body,
   max-width: 220px;
   max-height: 264px;
   overflow-y: auto;
-  background: var(--menu-bg);
-  padding: 4px; /* 底色与胶囊同（用户反馈一致优先）；与胶囊的区隔靠竖排行结构 + 更大内边距 */
+  /* 底色继承 .pop 的 --surface（与胶囊同色，用户反馈一致优先）；
+     与胶囊的区隔靠竖排行结构 + 更大内边距 */
+  padding: 3px;
 }
 
 /* 收纳面板项：主体点击 = 默认服务执行，⌄ 才弹换渠道/引擎菜单。
@@ -316,6 +342,7 @@ body,
 }
 
 .pchev:hover {
+  /* 与 .chev:hover 同语言（展开入口浅灰 tint） */
   background: var(--hov);
   color: var(--text);
 }
@@ -335,7 +362,8 @@ body,
   transform: rotate(180deg);
 }
 
-/* ⌃N 展开中：触发钮整体点亮，明示面板从属（箭头旋转由 chev-svg.open 负责） */
+/* ⌃N 展开中：触发钮整体点亮，明示面板从属（箭头旋转由 chev-svg.open 负责）。
+   悬停仍走统一实底 hover（下方 :is 规则），不与展开态叠加 */
 .action.more.open {
   color: var(--accent);
   background: var(--accent-soft);
@@ -353,18 +381,25 @@ body,
   margin-left: 1px;
 }
 
-.action.more:hover b {
-  color: var(--text);
+/* 徽标不再单独配 hover 色：随整钮统一实底 hover 转白（与其他动作一致，
+   2026-10-25 用户反馈不一致）；置于 .open 规则之后，展开中被悬停时也归一 */
+.action.more:is(:hover, .syn-hover) {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.action.more:is(:hover, .syn-hover) b {
+  color: var(--on-accent);
 }
 
 /* 窄单列浮出菜单：胶囊动作 ⌄ 与面板项 ⌄ 共用（二级形式全局统一）。
-   宽度 = 最长项自然宽度（max-content），不设 min-width——短项菜单不该被撑宽 */
+   宽度 = 最长项自然宽度（max-content），不设 min-width——短项菜单不该被撑宽
+   （2026-10-25 用户重申；曾照搬 demo 的 min-width: 128px，已回收） */
 .pop.menu {
   flex-direction: column;
   gap: 1px;
   width: max-content;
-  padding: 4px;
-  background: var(--menu-bg); /* 与收纳面板同一菜单语言、同底色 */
+  padding: 3px; /* 底色继承 .pop 的 --surface（与收纳面板同一菜单语言、同底色） */
 }
 
 .mitem {
@@ -375,48 +410,24 @@ body,
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 12px;
-  padding: 5px 8px 5px 5px;
-  border-radius: 7px;
+  font-size: 13px;
+  /* 左 2px：菜单项无图标，文字贴近卡缘（原生菜单同款紧凑左距，
+   总 inset = 卡 3px + 项 2px = 5px；2026-10-25 用户两轮反馈收紧） */
+  padding: 4px 8px 4px 2px;
+  border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
   text-align: left;
 }
 
-.mitem:hover {
-  background: var(--hov);
-}
-
-/* 相邻菜单项之间的分割线：横向短发丝线画在 1px gap 里，左右内缩不顶到卡边 */
-.mitem + .mitem {
-  position: relative;
-}
-
-.mitem + .mitem::before {
-  content: "";
-  position: absolute;
-  left: 6px;
-  right: 6px;
-  top: -1px;
-  height: 1px; /* 1px 而非 0.5px：半像素线在分数坐标下会被抗锯齿稀释到不可见 */
-  background: var(--line);
-}
-
-.mitem .dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: transparent;
-  flex: 0 0 auto;
-}
-
-.mitem.on {
-  color: var(--accent-strong);
-  font-weight: 590;
-}
-
-.mitem.on .dot {
+/* hover = 品牌色实底 + 白字（2026-10-25 定稿，与结果窗 chips/胶囊堆的浮层
+   hover 语言一致、原生 macOS 菜单行同形态）：蓝字在深底上对比 ~4:1 发闷，
+   实底白字 7:1+，「亮」由填充给。非 key 窗口原生 :hover 不生效，合成 hover
+   （.syn-hover，App.tsx hover://move 驱动）与原生 hover 同样式 */
+.mitem:hover,
+.mitem.syn-hover {
   background: var(--accent);
+  color: var(--on-accent);
 }
 
 .action {
@@ -424,8 +435,8 @@ body,
   align-items: center;
   gap: 4px;
   height: 26px;
-  padding: 0 7px;
-  font-size: 12px;
+  padding: 0 6px;
+  font-size: 13px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -440,29 +451,27 @@ body,
 
 .action .ic {
   display: inline-flex;
-  color: var(--sec);
+  /* 图标跟文字同色（demo B+：图标不是次要信息，灰一档会读作「灰」），
+     hover/选中的变色由 .action 的 color 经 inherit 传导 */
+  color: inherit;
   transition: color 120ms;
 }
 
-.action:hover {
-  /* hover 只变色不铺底：小面积胶囊上更安静精致（按下时才有 tint 反馈） */
-  background: transparent;
-  color: var(--accent);
-}
-
-/* 合成 hover（syn-hover）：非 key 窗口收不到 mouseMoved、WebKit 只给活动页面
-   渲染 :hover——hover 反馈由 hover://move 驱动的 JS 合成（见 App.tsx），
-   样式与 :hover 保持一致 */
+.action:hover,
 .action.syn-hover {
-  color: var(--accent);
-}
-
-.action:hover .ic {
-  color: var(--accent);
+  /* hover = 品牌色实底 + 白字（2026-10-25 定稿）：与二级菜单/结果窗 chips/
+     胶囊堆的浮层 hover 语言统一（原生控制中心按钮同形态）——蓝字在深底上
+     对比 ~4:1 发闷，实底白字 7:1+，「亮」由填充给（旧定稿「只变色不铺底」
+     翻案）。合成 hover（syn-hover）：非 key 窗口收不到 mouseMoved、WebKit
+     只给活动页面渲染 :hover——反馈由 hover://move 驱动的 JS 合成（见 App.tsx），
+     样式必须与 :hover 保持一致 */
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .action:active {
-  background: var(--press);
+  /* 按下 = hover 实底压暗（压回灰色会闪） */
+  filter: brightness(0.88);
 }
 
 /* 尺寸手柄：右下角斜向（nwse）、底边纵向（ns） */
@@ -493,10 +502,8 @@ body,
   background: transparent;
 }
 
-.stage.suppress-hover .action .ic,
-.stage.suppress-hover .action:hover .ic {
-  color: var(--sec);
-}
+/* .action .ic 已 inherit 文字色：suppress-hover 压住 .action 的 color 即可，
+   图标随之回落 --text，无需单独覆盖 */
 
 .stage.suppress-hover .chip.primary {
   color: var(--accent-strong);
@@ -651,7 +658,8 @@ body,
   margin: 8px;
   background: var(--surf);
   border-radius: 12px;
-  box-shadow: inset 0 0 0 0.5px var(--edge); /* 发丝 = 0.5px：Retina @2x 上恰好 1 物理像素，与系统分隔线同规格；1px 会渲染成 2 物理像素显粗 */
+  /* 边缘信号 = --surface-edge（2026-10-25 两主题均 none，用户定稿零边线） */
+  box-shadow: var(--surface-edge);
 }
 
 .panel-head {
@@ -778,6 +786,13 @@ body,
 
 .extract-group:not(:first-child) {
   margin-top: 10px;
+}
+
+/* AI 语义提取进行中的占位提示（确定性组已先渲染，语义组随后补齐） */
+.extract-loading {
+  padding: 8px 2px 4px;
+  font-size: 12px;
+  color: var(--sec);
 }
 
 /* 组计数徽标：随分组标签同行，弱化样式（灰底灰字）只作辅助信息 */
@@ -1296,6 +1311,10 @@ body,
 .pin {
   position: relative;
   width: max-content;
+  /* 12px 透明出血（toast .stage 同款）：给图片的 CSS 投影留渲染空间——
+     窗口=图片精确尺寸时投影被窗口边界整个裁掉，钉图呈「裸贴」无悬浮感
+     （2026-10-25 用户反馈太满）。与 PAD 常量同步（PinView.tsx / pin.rs） */
+  padding: 12px;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
 }
 
@@ -1304,7 +1323,7 @@ body,
   border-radius: 8px;
   /* 发丝线描边：浅色截图在浅色壁纸上边缘会融进背景，一圈 hairline 勾出轮廓 */
   border: 0.5px solid var(--line);
-  /* 双层投影：近距小投影定形 + 远距大投影定悬浮景深（macOS 浮层惯例） */
+  /* 双层投影（近距定形 + 远距悬浮），渲染在 12px 出血内 */
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.22);
   -webkit-user-select: none;
   user-select: none;
@@ -1316,8 +1335,8 @@ body,
    比实心底遮挡感低、又保住图标对比度；saturate 防透出的颜色发灰 */
 .pin-tools {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 18px; /* 出血 12 + 原内距 6：工具条贴图片右上角（出血加入后同位移） */
+  right: 18px;
   display: flex;
   gap: 2px;
   padding: 3px;
@@ -1569,7 +1588,7 @@ html.win .panel,
 html.win .pop {
   margin: 0;
   border-radius: calc(8px / var(--dpr, 1));
-  box-shadow: inset 0 0 0 calc(1px / var(--dpr, 1)) var(--edge);
+  box-shadow: var(--surface-edge);
 }
 
 /* 行侧子菜单容器（.hchips）是透明容器、无容器卡（§B.5.3）——上面 html.win .pop
@@ -1580,3 +1599,19 @@ html.win .pop.hchips {
   border-radius: 0;
   box-shadow: none;
 }
+
+/* ---- 深色材质（2026-10-25 定稿：token 化，无独立结构规则）----
+   历史教训存档：本文件曾叠放四段互相冲突的「材质体系」块（CSS 模拟 B+ /
+   vibrancy B+ / 处方一 elevated / A 哑光），后又衍生暗色独立结构规则
+   （渐变/高光/暗边/发丝/颗粒）——亮色一套、暗色另一套，历次「只坏在暗色」
+   的问题（残影/白+黑双线/黑中灰）全部出自暗色分支，且改版时多处同文
+   （强制暗色块 + 跟随系统暗色块）漏改其一就「没改彻底」。2026-10-25 收敛：
+   表面与边缘收敛为 --surface / --surface-edge 两个 token（定义在文件头
+   主题 token 区），亮暗共用同一条结构规则（.bar/.pop 的 background/
+   box-shadow），主题只换值——此类漂移在结构上不可能再发生。
+   暗色 token 值 = elevated 提亮面（#34343c→#2b2b31，Spotlight 式）+ 零
+   边缘线条；悬浮感全部由原生 NSWindow shadow 承担（FLOAT_PAD=8，main.rs）。
+   ⚠️ 颗粒层（4.5% fractalNoise，mix-blend-mode: overlay）不再恢复：blend
+   mode 在 WKWebView 透明窗上触发合成器残帧（wry#1848 同类，macOS 26 实测）。
+   ⚠️ vibrancy 材质（material.rs）2026-10-25 停用（ENABLED=false）：
+   menu 材质基色致「黑中有灰」，重开条件见该文件头注释。 */

@@ -82,11 +82,10 @@ body,
      数值与 Rust 侧 resize_toast 的宽度上限协调 */
   width: max-content;
   max-width: 420px;
-  /* 高度下限 53px = 两行文案的自然高度（主行 18.2 + gap 1 + 次行 16.8 +
-     padding 16 + 边框 1）：单行垂直居中、两行恰好填满，底边位置确定。
-     实在太长的文案折行后超过 53 也没关系——量尺寸回调会随内容放大窗口，
-     底边随之变化但滚入停留位钉的是顶缘 */
-  min-height: 53px;
+  /* 高度随内容：单行 ≈36px（主行 18.2 + padding 16 + 边框 1）。
+     曾设 min-height: 53px（两行文案的下限，让「识别中→失败」换装不跳高）——
+   单行提示被撑到两行高，读作空胖（2026-10-25 用户反馈太高）；换装跳高
+   由 toast-swap 内容过渡吸收，窗口尺寸随之自适应（量尺寸回调） */
   padding: 8px 14px;
   background: var(--surf);
   border: 0.5px solid var(--line);

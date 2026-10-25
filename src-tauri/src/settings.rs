@@ -328,6 +328,10 @@ pub struct Settings {
     /// 应用外观："auto"（跟随系统，默认）| "light" | "dark"
     #[serde(default)]
     pub appearance: String,
+    /// 智能提取：「提取信息」面板中日期/地点等语义信息优先由 AI 理解
+    ///（需已配置默认模型服务）；关闭或未配置时走系统识别（NSDataDetector/NLTagger）
+    #[serde(default = "default_true")]
+    pub smart_extract: bool,
 }
 
 fn default_true() -> bool {
@@ -388,6 +392,7 @@ impl Default for Settings {
             result_window_size: None,
             result_window_pinned: true,
             appearance: default_appearance(),
+            smart_extract: true,
         }
     }
 }

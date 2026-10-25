@@ -23,6 +23,11 @@ use crate::ocr;
 /// 钉图上限：防止误操作连按撑爆窗口资源
 const MAX_PINS: usize = 8;
 
+/// 钉图四周透明出血（逻辑 px）：给图片投影留渲染空间——窗口=图片精确尺寸时
+/// CSS 投影被窗口边界裁掉、钉图呈「裸贴」（2026-10-25 用户反馈）。
+/// 与 PinView.tsx 的 PAD、floating.css .pin 的 padding 三处同步
+const PIN_PAD: f64 = 12.0;
+
 /// 待渲染/进行中钉图的元数据（按窗口 label 存取）
 struct PinData {
     /// 图片 data URL（CSP img-src 含 data:，直接进 <img>）
@@ -44,7 +49,9 @@ fn with_pins<T>(f: impl FnOnce(&mut HashMap<String, PinData>) -> T) -> Option<T>
     Some(f(map))
 }
 
-/// OCR 面板「钉图」：取走 pending 里的截图原图（所有权移交），钉回屏幕。
+/// OCR 面板「钉图」：复制 pending 里的截图原图（不消费——同一识别结果可
+/// 反复钉/多颗钉），钉回屏幕。每颗钉持有自己的临时文件副本，关闭时只删
+/// 自己的副本，原图生命周期归 OCR_IMAGE（新识别替换时删除）。
 /// 锚点取 OCR 面板左上角——钉图贴面板上方出现。
 ///
 /// 必须是 async command：同步 command 跑在主线程的 IPC 派发内，而 build()
@@ -68,7 +75,7 @@ fn pin_from_ocr_inner(window: &WebviewWindow) -> Result<(), String> {
     if window.label() != "ocr" {
         return Err("仅识别面板可钉图".into());
     }
-    let Some(path) = crate::floating::ocr_take_image() else {
+    let Some(path) = crate::floating::ocr_peek_image() else {
         return Err("截图原图已不存在，请重新识别".into());
     };
     let bytes = std::fs::read(&path).map_err(|e| format!("读取截图失败: {e}"))?;
@@ -79,12 +86,12 @@ fn pin_from_ocr_inner(window: &WebviewWindow) -> Result<(), String> {
         .outer_position()
         .map(|p| (p.x as f64 / scale, p.y as f64 / scale))
         .unwrap_or((0.0, 0.0));
-    create_pin_window(window.app_handle(), path, url, anchor)
+    create_pin_window(window.app_handle(), bytes, url, anchor)
 }
 
 fn create_pin_window(
     app: &AppHandle,
-    path: PathBuf,
+    bytes: Vec<u8>,
     url: String,
     anchor: (f64, f64),
 ) -> Result<(), String> {
@@ -93,12 +100,16 @@ fn create_pin_window(
     }
     let n = PIN_SEQ.fetch_add(1, Ordering::Relaxed);
     let label = format!("pin-{n}");
+    // 每颗钉一份文件副本（pin_copy_image / pin_to_ocr 读它）：互不影响原图
+    // 与其他钉图，关闭钉图只删自己的副本
+    let pin_path = std::env::temp_dir().join(format!("magpie-pin-{n}.png"));
+    std::fs::write(&pin_path, &bytes).map_err(|e| format!("写入钉图文件失败: {e}"))?;
     with_pins(|m| {
         m.insert(
             label.clone(),
             PinData {
                 url,
-                path,
+                path: pin_path,
                 anchor,
             },
         );
@@ -176,8 +187,13 @@ pub fn pin_window_ready(window: WebviewWindow, width: f64, height: f64) -> Resul
         return Ok(());
     }
     let scale = window.scale_factor().unwrap_or(2.0);
-    let lw = (width / scale).max(48.0);
-    let lh = (height / scale).max(36.0);
+    // 窗口尺寸 = 图片逻辑尺寸 + 四周出血（投影渲染空间，见 PIN_PAD）。
+    // 尺寸与位置都吸附到物理像素网格：@2x 屏上落在半像素边界（如 x=123.5）
+    // 会让图片每个像素横跨两个物理像素，WebKit 对整图双线性插值——钉图
+    // 比原文区「糊」的根因（2026-10-25 用户反馈；同 floating::snap_pos 教训）
+    let to_grid = |v: f64| (v * scale).round() / scale;
+    let lw = to_grid((width / scale).max(48.0) + 2.0 * PIN_PAD);
+    let lh = to_grid((height / scale).max(36.0) + 2.0 * PIN_PAD);
     let anchor = with_pins(|m| m.get(window.label()).map(|d| d.anchor)).flatten();
     window
         .set_size(LogicalSize::new(lw, lh))
@@ -193,6 +209,7 @@ pub fn pin_window_ready(window: WebviewWindow, width: f64, height: f64) -> Resul
             ay + 12.0
         };
         let ny = ny.clamp(m_t, (m_b - lh).max(m_t));
+        let (nx, ny) = crate::floating::snap_pos(&window, nx, ny);
         window
             .set_position(tauri::LogicalPosition::new(nx, ny))
             .map_err(|e| e.to_string())?;
@@ -217,6 +234,9 @@ pub fn resize_pin(
     let w = width.max(48.0);
     let h = height.max(36.0);
     let scale = window.scale_factor().unwrap_or(2.0);
+    // 尺寸吸附物理像素网格（半像素尺寸同样引发整图插值模糊，见 pin_window_ready）
+    let to_grid = |v: f64| (v * scale).round() / scale;
+    let (w, h) = (to_grid(w), to_grid(h));
     // 旧尺寸（物理像素换算逻辑）：用于锚点补偿计算，需在 set_size 前读取
     let (old_w, old_h) = window
         .inner_size()
@@ -237,6 +257,7 @@ pub fn resize_pin(
         nx = nx.clamp(m_l, (m_r - w).max(m_l));
         ny = ny.clamp(m_t, (m_b - h).max(m_t));
         if (nx - pos.x as f64 / scale).abs() > 0.5 || (ny - pos.y as f64 / scale).abs() > 0.5 {
+            let (nx, ny) = crate::floating::snap_pos(&window, nx, ny);
             let _ = window.set_position(tauri::LogicalPosition::new(nx, ny));
         }
     }

@@ -10,7 +10,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ChevronDown } from "lucide-react";
-import { iconOf } from "./App";
+import { iconOf } from "./icons";
 
 /** 收纳面板行（App.tsx 的 restEntries 投影） */
 interface OverflowItem {

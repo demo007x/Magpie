@@ -21,33 +21,25 @@ import remarkGfm from "remark-gfm";
 const mdComponents: Components = {
   img: ({ src, alt }) => (src ? <a href={src}>{alt || src}</a> : null),
 };
+import { ChevronDown, ChevronLeft, ChevronRight, ImagePlus, Pin, PinOff, ScanSearch } from "lucide-react";
+import PinView from "./PinView";
+import { CheckIcon, CloseIcon, CopyIcon, iconOf } from "./icons";
 import {
-  AlignLeft,
-  CalendarDays,
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ClipboardCheck,
-  Copy,
-  ExternalLink,
-  ImagePlus,
-  Languages,
-  Lightbulb,
-  Mail,
-  MapPin,
-  NotebookPen,
-  Phone,
-  Pin,
-  PinOff,
-  ScanSearch,
-  Search,
-  Sparkles,
-  X,
-} from "lucide-react";
+  detectAndOpenCalendar,
+  eventLabel,
+  formatDateLabel,
+  openEventInCalendar,
+  openInCalendar,
+  type DateHit,
+} from "./calendar";
 import { actionPrompt, actionRegistry, isContextAction } from "../shared/actions";
-import { customIconNode } from "../shared/icons";
 import { aiChat } from "../shared/ai";
+import {
+  buildExtractPrompt,
+  parseAiExtract,
+  type AiExtractResult,
+  type AiEventItem,
+} from "../shared/aiExtract";
 import { TRANSLATE_SERVICES, translateMissingReason, translateService } from "../shared/translate";
 import {
   extractAll,
@@ -112,57 +104,6 @@ function dominantGroup(groups: ExtractGroups): string {
   return best;
 }
 
-// ---------- 日期实体（加入日历场景动作） ----------
-// 识别在 Rust 侧（NSDataDetector，系统级/离线/确定性，entities.rs）；
-// TS 只负责格式化展示与 .ics 时间串计算（JS 原生 Date 处理本地时区）
-
-/** Rust detect_dates 的日期命中（entities.rs DateHit，camelCase） */
-interface DateHit {
-  unix: number;
-  duration: number;
-  start: number;
-  len: number;
-}
-
-/** 命中的展示标签："10月1日 周四 15:00"；零点视为全天（不带时间） */
-function formatDateLabel(h: DateHit): string {
-  const d = new Date(h.unix * 1000);
-  const base = `${d.getMonth() + 1}月${d.getDate()}日 周${"日一二三四五六"[d.getDay()]}`;
-  if (d.getHours() === 0 && d.getMinutes() === 0) return base;
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${base} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-/** 日期命中 → 本地 .ics 交给系统日历（预填事件）。标题取选中文本前 40 字 */
-function openInCalendar(hit: DateHit, title: string, onDone?: (ok: boolean) => void): void {
-  const d = new Date(hit.unix * 1000);
-  const allDay = d.getHours() === 0 && d.getMinutes() === 0;
-  const p = (n: number) => String(n).padStart(2, "0");
-  const dt = (x: Date) =>
-    `${x.getFullYear()}${p(x.getMonth() + 1)}${p(x.getDate())}T${p(x.getHours())}${p(x.getMinutes())}00`;
-  const durMs = (hit.duration > 0 ? hit.duration : 3600) * 1000;
-  const start = allDay ? `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}` : dt(d);
-  const endDate = new Date(d.getTime() + (allDay ? 86400000 : durMs));
-  const end = allDay
-    ? `${endDate.getFullYear()}${p(endDate.getMonth() + 1)}${p(endDate.getDate())}`
-    : dt(endDate);
-  invoke("open_in_calendar", { start, end, title: title.slice(0, 40), allDay })
-    .then((ok) => onDone?.(ok === true))
-    .catch(() => onDone?.(false));
-}
-
-/** 面板行点击：从文本重检测（µs 级）并按展示标签匹配命中，打开日历。
- *  OCR 窗口侧不保存命中列表——重新检测比跨窗口传状态简单 */
-function detectAndOpenCalendar(text: string, label: string, onDone?: (ok: boolean) => void): void {
-  invoke<DateHit[]>("detect_dates", { text })
-    .then((hits) => {
-      const hit = (hits ?? []).find((h) => formatDateLabel(h) === label);
-      if (hit) openInCalendar(hit, text, onDone);
-      else onDone?.(false);
-    })
-    .catch(() => onDone?.(false));
-}
-
 /** URL 展示：域名正文字色、路径弱化灰，并列多条时一眼分辨站点。
  * 超长 URL（如贴图床/markdown 图片链接）中段省略：保目录头 + 尾段（文件名），
  * hash 类文件名的差异在开头，故尾段超长时掐中段保留开头；
@@ -200,32 +141,7 @@ function renderUrl(item: string): React.ReactNode {
   );
 }
 
-// ---- 图标（lucide-react 图标库，统一 15px / 1.75 描边，随文字色）----
-// 导出给 pops.tsx（分离卡的弹层窗口是哑渲染端，图标语言必须一致）
-export const ICONS: Record<string, React.ReactNode> = {
-  copy: <Copy size={14} strokeWidth={1.75} />,
-  search: <Search size={14} strokeWidth={1.75} />,
-  translate: <Languages size={14} strokeWidth={1.75} />,
-  explain: <Lightbulb size={14} strokeWidth={1.75} />,
-  summarize: <AlignLeft size={14} strokeWidth={1.75} />,
-  link: <ExternalLink size={14} strokeWidth={1.75} />,
-  email: <Mail size={14} strokeWidth={1.75} />,
-  code: <ClipboardCheck size={14} strokeWidth={1.75} />,
-  tel: <Phone size={14} strokeWidth={1.75} />,
-  date: <CalendarDays size={14} strokeWidth={1.75} />,
-  obsidian: <NotebookPen size={14} strokeWidth={1.75} />,
-  addr: <MapPin size={14} strokeWidth={1.75} />,
-  __extract: <ScanSearch size={14} strokeWidth={1.75} />,
-  // 自定义动作共用一枚图标：用户自己起的名字已经是辨识度，不做图标选择器
-  __custom: <Sparkles size={14} strokeWidth={1.75} />,
-};
-// 自定义动作带 icon（lucide 名，shared/icons.tsx）时优先用之；未设置/查不到
-// 回落内置表，再回落默认 Sparkles
-export const iconOf = (id: string, icon?: string) =>
-  customIconNode(icon, 14) ?? ICONS[id] ?? ICONS.__custom;
-const CopyIcon = <Copy size={13} strokeWidth={1.75} />;
-const CheckIcon = <Check size={13} strokeWidth={2} className="ok" />;
-const CloseIcon = <X size={13} strokeWidth={1.75} />;
+// 图标表/工具钮图标已拆至 ./icons（pops.tsx 与 App 共用）
 
 // 状态机：Bar（胶囊） → Result（流式面板）/ Extract（多值列表）；dismiss/新选区回收
 type Phase =
@@ -238,6 +154,15 @@ type Phase =
     groups: ExtractGroups;
     /** 原始选中文本：日期实体异步合并、「加入日历」行点击时重检测用 */
     text?: string;
+    /** AI 语义提取的结构化事件（非空时日期组按此渲染，点击直接写日历，不再重检测） */
+    events?: AiEventItem[];
+    /** AI 提取进行中：日期/地点的确定性识别暂缓兜底，等 AI 结果定夺 */
+    aiPending?: boolean;
+    /** 确定性日期/地点识别已回填过（含回填为空），防止 effect 重复拉取 */
+    deterministicLoaded?: boolean;
+    /** 选区来源页面 URL（浏览器地址栏，面板打开时现查）：提交 AI 的来源上下文，
+     * 写日历时优先于选区内提取的链接（活动页往往链接不在选区文本里） */
+    sourceUrl?: string;
   }
   | {
     /** OCR 识图取字：合并面板（文本可见 + 动作内嵌 + 结果流式）。
@@ -260,11 +185,18 @@ const resultCache = new Map<string, { output: string; at: number }>();
 const CACHE_TTL = 5 * 60_000;
 const CACHE_CAP = 50;
 
-// 分离卡几何常量（与 floating.rs 的 FLOAT_PAD / floating.css 的 .bar margin 一致）：
-// FLOAT_PAD = 卡片四周透明留白（卡片边缘不得压窗口边界）；CARD_GAP = 胶囊与二级卡片的缝。
-// Windows 一卡一窗：窗口即卡片，留白归零（出血会原样透出桌面）
+// 分离卡几何常量（与 floating/mod.rs 的 FLOAT_PAD / floating.css 的 .bar margin 一致）：
+// FLOAT_PAD = 卡片四周透明留白。macOS 8px：原生 NSWindow shadow 按内容 alpha
+// 轮廓画影，需要透明出血作渲染空间；Windows 分离卡零出血——任何留白都会原样
+// 透出桌面成「透明圈」（docs/03 §B.1.1）。
+// CARD_GAP = 胶囊与二级卡片的缝。
 const FLOAT_PAD = IS_WIN_LIKE ? 0 : 8;
 const CARD_GAP = 3;
+
+// vibrancy 材质总开关（与 src-tauri floating/material.rs 的 ENABLED 同步）：
+// 2026-10-25 停用——menu 材质基色导致「黑中有灰」，定稿回退不透明哑光 + 细节层。
+// 重开需与本开关、bar.rs 两处 apply、CSS 半透明墨度节三处一起翻
+const MATERIAL_ENABLED = false;
 
 // hover 驻留展开：光标在「带 ⌄ 的动作项」上停留满 OPEN 才展开二级浮层
 // （快速路过不开）；离开胶囊∪浮层满 CLOSE 后自动收起（跨窗口缝隙、
@@ -336,158 +268,12 @@ interface PendingView {
   hasImage: boolean;
   imagePath: string | null;
   run: { id: string; service: string | null } | null;
+  pid: number;
 }
 
 // ---- 钉图视图：无边框置顶窗口内渲染截图 ----
 // 交互：图片即拖拽区（data-tauri-drag-region 系统级拖动）；滚轮缩放；
 // 悬停工具条（识别文字 / 复制图片 / 关闭）；Esc 关闭。
-function PinView() {
-  const [data, setData] = useState<{ url: string; scale: number } | null>(null);
-  const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const [copied, setCopied] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const copiedTimer = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    invoke<{ url: string; scale: number }>("pin_get_data")
-      .then(setData)
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") invoke("close_pin").catch(() => undefined);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  const logical = nat ? { w: (nat.w * zoom) / data!.scale, h: (nat.h * zoom) / data!.scale } : null;
-
-  // 缩放锚点：光标在窗口内的相对位置（0..1）——缩放时该点保持不动。
-  // 首帧 resize（naturalWidth 上报）时为 0,0 = 左上角，尺寸不变无影响
-  const zoomAnchorRef = useRef({ fx: 0, fy: 0 });
-
-  // 缩放（含首帧）后同步窗口尺寸；Rust 侧按锚点补偿位置并做屏内钳制
-  useEffect(() => {
-    if (logical) {
-      invoke("resize_pin", {
-        width: logical.w,
-        height: logical.h,
-        fx: zoomAnchorRef.current.fx,
-        fy: zoomAnchorRef.current.fy,
-      }).catch(() => undefined);
-    }
-  }, [logical?.w, logical?.h]);
-
-  // 图片加载完成 → 报告像素尺寸（Rust 换算逻辑尺寸、就近放置并显示）
-  const onImgLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const el = e.currentTarget;
-    setNat({ w: el.naturalWidth, h: el.naturalHeight });
-    invoke("pin_window_ready", { width: el.naturalWidth, height: el.naturalHeight }).catch(
-      () => undefined,
-    );
-  };
-
-  const onWheel = (e: React.WheelEvent) => {
-    // 页面本身不可滚动（overflow hidden），滚轮纯粹驱动缩放。
-    // 按 deltaY 连续映射（指数曲线）：鼠标一档 ≈×0.9，触控板微滑微缩，
-    // 不再用固定步进——触控板连发事件也不会「唰一下」缩过头
-    const rect = e.currentTarget.getBoundingClientRect();
-    zoomAnchorRef.current = {
-      fx: e.clientX / rect.width,
-      fy: e.clientY / rect.height,
-    };
-    const factor = Math.min(1.15, Math.max(0.87, Math.exp(-e.deltaY * 0.0009)));
-    setZoom((z) => Math.min(5, Math.max(0.25, z * factor)));
-  };
-
-  // ---- 自定义拖拽：不用系统拖动（无法钳制边界），位移换算成窗口目标位置，
-  //      由 Rust 侧 move_pin 钳制在屏幕内后落位 ----
-  const dragRef = useRef<{ sx: number; sy: number; wx: number; wy: number } | null>(null);
-
-  const onPinDragStart = (e: ReactMouseEvent) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    invoke<{ x: number; y: number }>("pin_window_pos")
-      .then((p) => {
-        if (!p) return;
-        dragRef.current = { sx: e.screenX, sy: e.screenY, wx: p.x, wy: p.y };
-      })
-      .catch(() => undefined);
-  };
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      const d = dragRef.current;
-      if (!d) return;
-      invoke("move_pin", {
-        x: d.wx + (e.screenX - d.sx),
-        y: d.wy + (e.screenY - d.sy),
-      }).catch(() => undefined);
-    };
-    const onUp = () => {
-      dragRef.current = null;
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, []);
-
-  const copyImage = () => {
-    invoke("pin_copy_image").then(
-      () => {
-        setCopied(true);
-        if (copiedTimer.current) window.clearTimeout(copiedTimer.current);
-        copiedTimer.current = window.setTimeout(() => setCopied(false), 1200);
-      },
-      () => undefined,
-    );
-  };
-
-  const recognize = () => {
-    if (busy) return;
-    setBusy(true);
-    // 失败静默：按钮回到可点状态即可重试（提示类 UI 已按产品要求全部摘除）
-    invoke("pin_to_ocr").finally(() => setBusy(false));
-  };
-
-  if (!data) return null;
-  return (
-    <div className="pin" onWheel={onWheel}>
-      {/* 先渲染 img 才有 onLoad；nat 就绪前不给尺寸（避免循环依赖导致空白） */}
-      <img
-        src={data.url}
-        draggable={false}
-        style={logical ? { width: logical.w, height: logical.h } : undefined}
-        onLoad={onImgLoad}
-        onMouseDown={onPinDragStart}
-        alt=""
-      />
-      <div className="pin-tools">
-        <button
-          className="tool"
-          aria-label="识别文字"
-          disabled={busy}
-          onClick={recognize}
-        >
-          <ScanSearch size={13} strokeWidth={1.75} />
-        </button>
-        <button className="tool" aria-label="复制图片" onClick={copyImage}>
-          {copied ? CheckIcon : CopyIcon}
-        </button>
-        <button className="tool" aria-label="关闭" onClick={() => invoke("close_pin").catch(() => undefined)}>
-          {CloseIcon}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // 识别原文（可编辑）：OCR 可能识别错字，错字会静默传导给后续动作——
 // 允许在原地用 contentEditable 纯文本修正，onInput 同步回 phase.text。
 // DOM 回写仅在文本「外部变化」（新识别/重置）时发生：用户输入引发的重渲染里
@@ -646,6 +432,8 @@ export default function App() {
   // 状态——常驻动作存活性与动作开关的最新值经 ref 每次渲染刷新
   const barLiveRef = useRef(true);
   const actionsRef = useRef(actions);
+  // AI 提取的运行令牌：新一次提取使旧流的回调失效（防止陈旧结果覆盖新面板）
+  const aiExtractRunRef = useRef(0);
   const menuPopRef = useRef<HTMLDivElement | null>(null);
   // 钉图失败的反馈（图标变红 + title 显示具体原因，直到下次重试）
   const [pinErr, setPinErr] = useState<string | null>(null);
@@ -783,9 +571,14 @@ export default function App() {
   const sourceRef = useRef<HTMLDivElement | null>(null);
   // 选中发生时来源应用的进程路径（captured 事件带上），供摘录模板 {source} 使用
   const sourceAppRef = useRef("");
+  // 选区来源进程 pid（captured 事件携带）：pageurl 反查页面 URL 用，
+  // 比 AXFocusedApplication 可靠（点击瞬间系统焦点处于不定状态）
+  const sourcePidRef = useRef(0);
   const [sourceOverflow, setSourceOverflow] = useState(false);
   // 上次下发的窗口位置目标（去重：尺寸与位置都没变就不重复调 resize）
   const lastPosKeyRef = useRef("");
+  // 上次下发的材质签名（去重：窗口没动、卡片也没变就不重复同步材质视图）
+  const lastMaterialSigRef = useRef("");
 
   const loadSettings = () => {
     invoke<Settings>("get_settings")
@@ -843,30 +636,133 @@ export default function App() {
   }, [text]);
 
   // OCR 窗口：提取面板的日期/地点组异步补齐（划词导流的多实体面板在此渲染）。
-  // 只在两组都为空时拉取——合并后 effect 重入会提前返回，不会循环
+  // AI 提取进行中（aiPending）暂缓——等 AI 定夺后只补 AI 没覆盖到的组；
+  // deterministicLoaded 标记保证每组至多回填一次（含回填为空），effect 重入不循环
   useEffect(() => {
     if (!IS_OCR || phase.kind !== "extract" || !phase.text) return;
-    if (phase.groups.date.length > 0 || phase.groups.addr.length > 0) return;
+    if (phase.aiPending || phase.deterministicLoaded) return;
+    const needDate = phase.groups.date.length === 0;
+    const needAddr = phase.groups.addr.length === 0;
+    if (!needDate && !needAddr) return;
     const t = phase.text;
     Promise.all([
-      invoke<DateHit[]>("detect_dates", { text: t }).catch(() => []),
-      invoke<string[]>("detect_places", { text: t }).catch(() => []),
+      needDate
+        ? invoke<DateHit[]>("detect_dates", { text: t }).catch(() => [])
+        : Promise.resolve(null),
+      needAddr
+        ? invoke<string[]>("detect_places", { text: t }).catch(() => [])
+        : Promise.resolve(null),
     ]).then(([dates, places]) => {
-      if (!dates?.length && !places?.length) return;
-      setPhase((p) =>
-        p.kind === "extract" && p.text === t
-          ? {
-              ...p,
-              groups: {
-                ...p.groups,
-                date: (dates ?? []).map(formatDateLabel),
-                addr: places ?? [],
-              },
-            }
-          : p,
-      );
+      setPhase((p) => {
+        if (p.kind !== "extract" || p.text !== t || p.deterministicLoaded) return p;
+        return {
+          ...p,
+          deterministicLoaded: true,
+          groups: {
+            ...p.groups,
+            date: dates ? dates.map(formatDateLabel) : p.groups.date,
+            addr: places ?? p.groups.addr,
+          },
+        };
+      });
     });
   }, [phase]);
+
+  // 「提取信息」面板入口：正则组（链接/邮箱/电话/验证码）立即出结果；
+  // 已配置模型且智能提取开启时，日期/地点等语义信息优先走 AI（区间合并、
+  // 裸时间挂靠日期、阶段名作标题），AI 返回的各组经校验后覆盖对应组，
+  // AI 失败/零结果则落空，由上面的 effect 用系统识别（NSDataDetector/NLTagger）兜底。
+  // 设置现读而非用 ref 镜像：窗口创建即打开面板时 loadSettings 可能尚未回包，
+  // 读默认值会误判「未配置 AI」而静默跳过智能路径
+  // sourcePid：划词导流的来源进程（pending 携带；截屏 OCR 为 0，无页面 URL 可查）
+  const showExtractPanel = (rawText: string, sourcePid = 0) => {
+    void (async () => {
+      // 来源页面 URL 与设置并行现查（按 pid 直连来源进程 AX，见 pageurl.rs）
+      const [s, pageUrl] = await Promise.all([
+        invoke<Settings>("get_settings").catch(() => null),
+        invoke<string | null>("frontmost_web_url", { pid: sourcePid }).catch(() => null),
+      ]);
+      const sourceUrl = pageUrl ?? undefined;
+      const useAi = Boolean(
+        s &&
+          s.smartExtract !== false &&
+          (s.providers ?? []).some(
+            (p) =>
+              p.id === s.defaultProviderId && p.apiKey.trim() !== "" && p.model.trim() !== "",
+          ),
+      );
+      const all = extractAll(rawText);
+      const groups: ExtractGroups = {
+        tel: all.tels,
+        email: all.emails,
+        link: all.urls,
+        code: all.codes,
+        date: [],
+        addr: [],
+      };
+      setPhase((p) => {
+        // 等待设置期间来了新选区/新面板：不覆盖
+        if (p.kind === "extract" && p.text && p.text !== rawText) return p;
+        return {
+          kind: "extract",
+          actionId: dominantGroup(groups),
+          label: "提取结果",
+          groups,
+          text: rawText,
+          sourceUrl,
+          aiPending: useAi || undefined,
+        };
+      });
+      if (!useAi) return;
+      const runId = ++aiExtractRunRef.current;
+      let buf = "";
+      let settled = false;
+      const finish = (res: AiExtractResult | null) => {
+        if (settled || aiExtractRunRef.current !== runId) return;
+        settled = true;
+        window.clearTimeout(timer);
+        setPhase((p) => {
+          if (p.kind !== "extract" || p.text !== rawText) return p;
+          const next = { ...p, aiPending: undefined };
+          if (!res) return next;
+          const g = { ...p.groups };
+          if (res.urls.length > 0) g.link = res.urls;
+          if (res.emails.length > 0) g.email = res.emails;
+          if (res.tels.length > 0) g.tel = res.tels;
+          if (res.codes.length > 0) g.code = res.codes;
+          if (res.places.length > 0) g.addr = res.places;
+          if (res.events.length > 0) {
+            next.events = res.events;
+            g.date = res.events.map(eventLabel);
+          }
+          next.groups = g;
+          return next;
+        });
+      };
+      const timer = window.setTimeout(() => finish(null), 30_000);
+      aiChat(
+        [
+          { role: "system", content: buildExtractPrompt(s?.actionPrompts) },
+          // 来源页面 URL 一并提交：链接往往只在浏览器地址栏而不在选区文本里，
+          // AI 可将其计入 urls 组/事件上下文（输出仍须过正则原文校验才采纳）
+          {
+            role: "user",
+            content: sourceUrl
+              ? `来源页面：${sourceUrl}\n\n${rawText.slice(0, 4000)}`
+              : rawText.slice(0, 4000),
+          },
+        ],
+        null,
+        {
+          onDelta: (c) => {
+            buf += c;
+          },
+          onDone: () => finish(parseAiExtract(buf, rawText)),
+          onError: () => finish(null),
+        },
+      );
+    })();
+  };
 
   const extracted = useMemo(() => {
     const all = extractAll(text);
@@ -987,6 +883,7 @@ export default function App() {
             text: text,
             actionId: "__extract",
             service: null,
+            pid: sourcePidRef.current,
           }).catch(() => undefined);
           invoke("hide_floating_bar").catch(() => undefined);
           setPhase({ kind: "bar" });
@@ -1024,19 +921,69 @@ export default function App() {
         : null;
   const pmenuGhost = !(menu !== null && menu.startsWith("pmenu:")) && pmenuVal !== null;
 
+  // ---- vibrancy 材质同步（macOS 条窗专属，Rust 侧见 floating/material.rs）----
+  // 每张卡片（胶囊 + 已展开二级浮层）一个材质视图，缝隙/留白无视图 = 真实桌面。
+  // 矩形随 show/resize 命令同趟上报——Rust 在同一命令内先落窗口尺寸再摆材质
+  // （主线程队列 FIFO 保证顺序）；曾分两条命令，材质按旧窗口高度换算 y 翻转，
+  // resize 一落地视图全部错位悬空（「残影圆角矩形」根因）。
+  // syncMaterial 只服务主题切换（尺寸不变，仅刷新材质明暗）
+  const materialActive = MATERIAL_ENABLED && !IS_WIN_LIKE && !IS_OCR && !IS_PIN;
+  const materialDark = () => {
+    const root = document.documentElement;
+    return (
+      root.classList.contains("theme-dark") ||
+      (!root.classList.contains("theme-light") &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches)
+    );
+  };
+  const materialCards = () => {
+    const cards: { x: number; y: number; w: number; h: number }[] = [];
+    const bar = barRef.current;
+    if (!bar) return cards;
+    const rect = (el: HTMLElement) => {
+      const b = el.getBoundingClientRect();
+      return { x: b.x, y: b.y, w: b.width, h: b.height };
+    };
+    cards.push(rect(bar));
+    if (overflowRef.current) cards.push(rect(overflowRef.current));
+    if (menuPopRef.current) cards.push(rect(menuPopRef.current));
+    return cards;
+  };
+  const syncMaterial = () => {
+    if (!materialActive || !barRef.current) return;
+    invoke("update_floating_material", { cards: materialCards(), dark: materialDark() }).catch(
+      () => undefined,
+    );
+  };
+
   useEffect(() => {
     loadSettings();
-    invoke("ui_debug_log", { msg: "floating webview 就绪" }).catch(() => undefined);
+    // 主题诊断：appearance=auto 时亮暗由 webview 的 prefers-color-scheme 决定，
+    // 真机出现过「系统亮色下胶囊呈暗色材质」的异常——此日志输出 webview 实际
+    // 感知的亮暗、根类与胶囊条计算背景（排查完可删）
+    const diagBar = document.querySelector<HTMLElement>(".bar");
+    const diag = diagBar
+      ? ` | classes="${document.documentElement.className}" mediaDark=${window.matchMedia(
+          "(prefers-color-scheme: dark)",
+        ).matches} barBg=${getComputedStyle(diagBar).backgroundImage}/${getComputedStyle(diagBar).backgroundColor}`
+      : "";
+    invoke("ui_debug_log", { msg: `floating webview 就绪${diag}` }).catch(() => undefined);
     // 用户强制外观（亮/暗）：html 挂 theme class 切 CSS 变量；
     // 广播早于挂载会漏听，启动时主动读一次设置
     const applyTheme = (t: string) => {
       document.documentElement.classList.toggle("theme-light", t === "light");
       document.documentElement.classList.toggle("theme-dark", t === "dark");
+      syncMaterial(); // 材质视图的明暗（appearance）跟随主题
     };
     invoke<{ appearance?: string }>("get_settings")
       .then((s) => applyTheme(s.appearance ?? "auto"))
       .catch(() => undefined);
     listen<string>("theme://appearance", (e) => applyTheme(e.payload)).catch(() => undefined);
+    // 跟随系统模式时系统亮暗切换不发 theme://appearance——材质明暗自听媒体查询
+    // （组件与窗口同生命周期，监听无需摘除）
+    window
+      .matchMedia("(prefers-color-scheme: dark)")
+      .addEventListener("change", syncMaterial);
     // OCR 独立窗口：取走 Rust 侧存好的识别文本（推送可能早于 webview 挂载）
     if (IS_OCR) {
       invoke<PendingView | null>("ocr_take_pending")
@@ -1060,23 +1007,9 @@ export default function App() {
             expanded: false,
           });
           if (p.run?.id === "__extract") {
-            // 提取信息：结果窗口本地从文本计算分组（日期组异步补齐，见 extract effect）
-            const all = extractAll(p.text);
-            const groups: ExtractGroups = {
-              tel: all.tels,
-              email: all.emails,
-              link: all.urls,
-              code: all.codes,
-              date: [],
-              addr: [],
-            };
-            setPhase({
-              kind: "extract",
-              actionId: dominantGroup(groups),
-              label: "提取结果",
-              groups,
-              text: p.text,
-            });
+            // 提取信息：结果窗口本地从文本计算分组（日期/地点组异步补齐；
+            // 智能提取开启时 AI 语义结果优先，见 showExtractPanel）
+            showExtractPanel(p.text, p.pid);
           } else {
             setPhase({
               kind: "ocr",
@@ -1116,7 +1049,7 @@ export default function App() {
     // then 里检查 cancelled：已清理则立即自行解绑。
     let listenCancelled = false;
 
-    listen<{ text: string; x: number; y: number; app?: string }>("selection://captured", (e) => {
+    listen<{ text: string; x: number; y: number; app?: string; pid?: number }>("selection://captured", (e) => {
       // 钉图窗口与划词流无关：忽略广播（防止误触发浮动条弹出/窗口移动）
       if (IS_PIN) return;
       // app=ocr 是 OCR/结果流的内部合成事件（len=0、坐标 -1），由下方 OCR 分支消费；
@@ -1161,22 +1094,7 @@ export default function App() {
               expanded: false,
             });
             if (p.run?.id === "__extract") {
-              const all = extractAll(p.text);
-              const groups: ExtractGroups = {
-                tel: all.tels,
-                email: all.emails,
-                link: all.urls,
-                code: all.codes,
-                date: [],
-                addr: [],
-              };
-              setPhase({
-                kind: "extract",
-                actionId: dominantGroup(groups),
-                label: "提取结果",
-                groups,
-                text: p.text,
-              });
+              showExtractPanel(p.text, p.pid);
             } else {
               setPhase({
                 kind: "ocr",
@@ -1218,6 +1136,7 @@ export default function App() {
       synHoverRef.current?.classList.remove("syn-hover");
       synHoverRef.current = null;
       sourceAppRef.current = e.payload.app ?? "";
+      sourcePidRef.current = e.payload.pid ?? 0;
       setPending({ x: e.payload.x, y: e.payload.y });
       // 屏幕矩形：二级浮层贴边翻转的判定基准（跨屏拖动后由拖拽结束回读刷新）
       invoke<ScreenRect>("screen_rect_at", { x: e.payload.x, y: e.payload.y })
@@ -1386,16 +1305,23 @@ export default function App() {
       }
       const btn =
         el?.closest<HTMLElement>(".action") ??
+        // 二级菜单项（.mitem）与主胶囊按钮同受非 key 窗口 hover 失效影响，
+        // 同走合成 hover（原生 :hover 在窗口被点击激活前不渲染）
+        el?.closest<HTMLElement>(".mitem") ??
         // 光标落在 ⌄ 上时点亮同项主按钮：⌄ 太小，单独反馈没有「这一项悬停」感
         (el?.closest<HTMLElement>(".chev")?.closest<HTMLElement>(".action-slot") ??
           el?.closest<HTMLElement>(".pchev")?.closest<HTMLElement>(".pitem")
         )?.querySelector<HTMLElement>(".action") ?? null;
       if (btn !== synHoverRef.current) {
-        // 诊断：仅在 hover 目标变化（进入/离开动作）时记录——稳态移动 60Hz
-        // 逐事件记录会每秒刷数十行，淹没真正有用的日志
-        invoke("ui_debug_log", {
-          msg: `SYN ${btn ? `进入 ${(btn.textContent ?? "?").slice(0, 6)}` : "离开动作"}`,
-        }).catch(() => undefined);
+        // 诊断（仅 dev）：hover 目标变化时记录；release 落盘日志会刷屏，不记
+        if (import.meta.env.DEV) {
+          const hitDesc = btn
+            ? `进入 ${(btn.textContent ?? "?").slice(0, 6)} <${btn.tagName.toLowerCase()} ${btn.className.split(" ")[0]}>`
+            : "离开动作";
+          invoke("ui_debug_log", {
+            msg: `SYN ${hitDesc} @(${cx.toFixed(0)},${cy.toFixed(0)}) el=${el?.tagName.toLowerCase() ?? "null"}.${(el?.className ?? "").toString().split(" ")[0]}`,
+          }).catch(() => undefined);
+        }
         synHoverRef.current?.classList.remove("syn-hover");
         if (btn) btn.classList.add("syn-hover");
         synHoverRef.current = btn;
@@ -1717,6 +1643,12 @@ export default function App() {
       c.el.style.top = `${c.y + FLOAT_PAD}px`;
     }
 
+    // 卡片矩形已落定：随窗口落位命令同趟上送材质摆位（macOS；Windows 传 null
+    // 走 Rust 空操作）。读 getBoundingClientRect 会同步 flush 布局，此处矩形即终值
+    const materialPayload = materialActive
+      ? { cards: materialCards(), dark: materialDark() }
+      : { cards: null, dark: false };
+
     // 窗口目标位置：保持胶囊屏幕坐标不变；面板贴屏底放不下时整窗上移
     let wx: number | null = null;
     let wy: number | null = null;
@@ -1733,9 +1665,32 @@ export default function App() {
     };
     const sizeKey = `${tw}x${th}`;
     const posKey = wx == null || wy == null ? "anchor" : `${Math.round(wx)}:${Math.round(wy)}`;
+    // 材质签名：卡片矩形/明暗任一变化都要跟上材质视图。窗口尺寸/位置不变时
+    // resize 不触发（如搜索⌄→翻译⌄切换，两菜单宽高几乎一致）——材质视图会
+    // 留在旧菜单位置成灰色空面板、新菜单背后反而无材质，此分支补独立同步
+    const materialSig = materialActive
+      ? JSON.stringify([materialPayload.cards, materialPayload.dark])
+      : "";
     if (pending) {
       lastSizeRef.current = sizeKey;
-      invoke<WindowPos>("show_floating_bar", { x: pending.x, y: pending.y, width: tw, height: th })
+      lastMaterialSigRef.current = materialSig;
+      // 显示时诊断（排查「亮色系统下胶囊呈暗材质」）：此刻的 CSS 背景/亮暗感知
+      const diagBar = barRef.current;
+      if (diagBar) {
+        const cs = getComputedStyle(diagBar);
+        invoke("ui_debug_log", {
+          msg: `show: classes="${document.documentElement.className}" mediaDark=${window.matchMedia(
+            "(prefers-color-scheme: dark)",
+          ).matches} barBg=${cs.backgroundImage}/${cs.backgroundColor} cards=${materialPayload.cards?.length ?? 0} dark=${materialPayload.dark}`,
+        }).catch(() => undefined);
+      }
+      invoke<WindowPos>("show_floating_bar", {
+        x: pending.x,
+        y: pending.y,
+        width: tw,
+        height: th,
+        ...materialPayload,
+      })
         .then((pos) => {
           if (capturedAtRef.current > 0) {
             invoke("ui_debug_log", {
@@ -1750,9 +1705,13 @@ export default function App() {
     } else if (sizeKey !== lastSizeRef.current || posKey !== lastPosKeyRef.current) {
       lastSizeRef.current = sizeKey;
       lastPosKeyRef.current = posKey;
-      invoke<WindowPos>("resize_floating", { width: tw, height: th, x: wx, y: wy })
+      lastMaterialSigRef.current = materialSig;
+      invoke<WindowPos>("resize_floating", { width: tw, height: th, x: wx, y: wy, ...materialPayload })
         .then(settle)
         .catch(() => undefined);
+    } else if (materialSig !== lastMaterialSigRef.current) {
+      lastMaterialSigRef.current = materialSig;
+      syncMaterial();
     }
   }, [phase, pending, menu, flashId, dateHits, placeHits]);
 
@@ -2003,7 +1962,12 @@ export default function App() {
       if (id === "date") {
         const hit = dateHits[0];
         if (!hit) return;
-        openInCalendar(hit, t, (ok) => flash(id, ok ? "已打开日历" : "打开失败"));
+        // 胶囊直出也要页面 URL（按选区来源 pid 现查，与提取面板同规则）
+        invoke<string | null>("frontmost_web_url", { pid: sourcePidRef.current })
+          .catch(() => null)
+          .then((pageUrl) =>
+            openInCalendar(hit, t, (ok) => flash(id, ok ? "已打开日历" : "打开失败"), pageUrl ?? undefined),
+          );
         return;
       }
 
@@ -2154,6 +2118,7 @@ export default function App() {
             text: source,
             actionId: id,
             service: svc,
+            pid: sourcePidRef.current,
           }).catch(() => undefined);
           invoke("hide_floating_bar").catch(() => undefined);
           setPhase({ kind: "bar" });
@@ -2219,6 +2184,7 @@ export default function App() {
         text: source,
         actionId: id,
         service: pushedSvc,
+        pid: sourcePidRef.current,
       }).catch(() => undefined);
       invoke("hide_floating_bar").catch(() => undefined);
       setPhase({ kind: "bar" });
@@ -2722,7 +2688,7 @@ export default function App() {
       {!IS_OCR && !POPS_EXTERNAL && !!menu && menu !== "overflow" && menu !== "search" && menu !== "translate" && (
         (() => {
           const kind = menu.split(":")[1] as "translate" | "search" | "obsidian";
-          // 存入 Obsidian 的目标菜单：主按钮 = 存笔记（默认项打点）。
+          // 存入 Obsidian 的目标菜单：主按钮 = 存笔记。
           // 项名只写目标名词——菜单挂在「存入 Obsidian」的 ⌄ 下，"存入"动词不必逐行重复
           const items =
             kind === "obsidian"
@@ -2734,13 +2700,14 @@ export default function App() {
               : kind === "translate"
                 ? enabledTranslates.map((s) => ({ key: s.id, label: s.label }))
                 : enabledEngines.map((en) => ({ key: en.name, label: en.name }));
-          const cur = kind === "obsidian" ? "note" : kind === "translate" ? defaultTranslate?.id : defaultEngine?.name;
+          // 不标记默认项（2026-10-25 用户定稿）：二级菜单是「选一个执行」的
+          // 平面列表，默认服务已由胶囊上的服务名表达，菜单内再高亮一条是噪音
           return (
             <div className="pop menu" ref={menuPopRef}>
               {items.map((it) => (
                 <button
                   key={it.key}
-                  className={`mitem ${cur === it.key ? "on" : ""}`}
+                  className="mitem"
                   onClick={guarded(() => {
                     setMenu(null);
                     if (kind === "obsidian") {
@@ -2753,7 +2720,6 @@ export default function App() {
                     }
                   })}
                 >
-                  <span className="dot" />
                   <span>{it.label}</span>
                 </button>
               ))}
@@ -2773,6 +2739,7 @@ export default function App() {
                 <ScanSearch size={14} strokeWidth={1.75} />
               </span>
               {phase.label}
+              {phase.aiPending && <span className="dot" />}
             </span>
             <span className="panel-tools">
               <button
@@ -2801,6 +2768,9 @@ export default function App() {
             {EXTRACT_GROUPS.filter((g) => phase.groups[g.id].length > 0).map((g) => (
               <div key={g.id}>
                 <div className="extract-group">
+                  {/* AI 事件并入「日期」组共用组头（用户反馈 2026-10-24：「事件」是
+                      日历 App 行话、独占唯一组时又像面板主标题——行内容自明 +
+                      行尾「加入日历」按钮已足够可懂，组头保持与其他组同级的提示） */}
                   {g.label}
                   {/* 计数徽标：一眼知道该组提取了几条，不必逐行数 */}
                   <span className="extract-count">{phase.groups[g.id].length}</span>
@@ -2833,9 +2803,17 @@ export default function App() {
                         <button
                           onClick={guarded(() => {
                             if (!phase.text) return;
-                            detectAndOpenCalendar(phase.text, item, (ok) => {
-                              if (!ok) flash("date", "打开失败");
-                            });
+                            // AI 语义事件：结构化数据直接写日历；确定性命中：按标签重检测
+                            const ev = phase.events?.[i];
+                            if (ev) {
+                              openEventInCalendar(ev, phase.text, (ok) => {
+                                if (!ok) flash("date", "打开失败");
+                              }, phase.sourceUrl);
+                            } else {
+                              detectAndOpenCalendar(phase.text, item, (ok) => {
+                                if (!ok) flash("date", "打开失败");
+                              }, phase.sourceUrl);
+                            }
                           })}
                         >
                           日历
@@ -2871,6 +2849,8 @@ export default function App() {
                 ))}
               </div>
             ))}
+            {/* AI 语义提取进行中：确定性组已先出，日期/地点等 AI 定夺后补齐 */}
+            {phase.aiPending && <div className="extract-loading">正在理解所选内容…</div>}
           </div>
           {IS_OCR && (
             <>

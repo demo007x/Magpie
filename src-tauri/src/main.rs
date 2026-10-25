@@ -7,6 +7,7 @@ mod entities;
 mod floating;
 mod obsidian;
 mod ocr;
+mod pageurl;
 mod pin;
 mod settings;
 mod toast;
@@ -362,14 +363,71 @@ fn dev_show_main_window(app: &tauri::AppHandle) {
 #[cfg(not(debug_assertions))]
 fn dev_show_main_window(_app: &tauri::AppHandle) {}
 
+/// 用户日志文件（与 settings.json 同目录）：调试日志此前仅 debug 构建输出，
+/// release 用户报问题时无日志可看——「关于 › 反馈问题 › 复制日志」的数据源。
+/// setup 时解析路径；超过 128KB 裁到尾段 32KB（环形上限防无限增长，32KB
+/// ≈ 数百行，够回放最近操作且粘贴不臃肿）
+static LOG_PATH: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// 追加一行日志（时间戳 = unix 秒）。路径未就绪（早于 setup）时静默丢弃
+pub(crate) fn user_log(msg: &str) {
+    use std::io::Write;
+    let Some(path) = LOG_PATH.get() else { return };
+    if let Ok(md) = std::fs::metadata(path) {
+        if md.len() > 128 * 1024 {
+            if let Ok(bytes) = std::fs::read(path) {
+                let tail = &bytes[bytes.len().saturating_sub(32 * 1024)..];
+                let start = tail.iter().position(|&b| b == b'\n').map(|i| i + 1).unwrap_or(0);
+                let _ = std::fs::write(path, &tail[start..]);
+            }
+        }
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let s = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(f, "[{s}] {msg}");
+    }
+}
+
+/// 把日志文件复制到剪贴板（反馈用：用户粘进表单/Issue）。文件不存在 = 空日志
+#[tauri::command]
+fn copy_debug_log() -> Result<usize, String> {
+    let empty_ok = || {
+        use std::io::Write;
+        if let Some(path) = LOG_PATH.get() {
+            if !path.exists() {
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                    let _ = writeln!(f, "（日志为空：启动后尚未记录任何事件）");
+                }
+            }
+        }
+    };
+    empty_ok();
+    let Some(path) = LOG_PATH.get() else {
+        return Err("日志不可用".into());
+    };
+    let text = std::fs::read_to_string(path).unwrap_or_default();
+    let len = text.chars().count();
+    // 命令跑在异步运行时线程，同步写剪贴板无重入风险
+    let mut clip = arboard::Clipboard::new().map_err(|e| format!("打开剪贴板失败: {e}"))?;
+    clip.set_text(text).map_err(|e| format!("写入剪贴板失败: {e}"))?;
+    Ok(len)
+}
+
 /// TS 侧调试日志通道（仅 debug 构建输出），用于照亮 Rust→TS 事件链路。
 /// 自动带调用窗口的 label——同一日志在 floating/ocr/toast 各实例都会触发，
-/// 不标来源的话重复行无法区分
+/// 不标来源的话重复行无法区分。双写 /tmp/magpie-debug.log（与 capture 的
+/// debug_log 同一文件，[floating]/[ocr] 前缀区分来源）：排查时可直接读文件，
+/// 不必盯 dev 终端
 #[tauri::command]
 fn ui_debug_log(window: tauri::WebviewWindow, msg: String) {
     if cfg!(debug_assertions) {
         eprintln!("[magpie:ui][{}] {msg}", window.label());
     }
+    // release 也落盘（复制日志按钮的数据源）；stderr 只留 debug
+    user_log(&format!("[{}] {}", window.label(), msg));
 }
 
 /// 用系统默认浏览器/邮件客户端打开链接（本地"搜索/打开链接/写邮件"动作用）
@@ -411,6 +469,7 @@ fn main() {
         // 状态必须先于窗口创建就位：Windows 上 webview 加载极快，ocr/floating
         // 窗口一就绪就会 invoke 命令（实测早于 setup 尾部的 manage → panic）
         .manage(floating::FloatingState::default())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -441,6 +500,44 @@ fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
             settings::init(&handle);
+            // 网页唤起（deep link）：magpie://feedback → 打开主窗口的
+            // 「关于 › 反馈问题」（官网/推广页的一键反馈入口）
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let h = handle.clone();
+                handle.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        if url.host_str() == Some("feedback") {
+                            show_main_window(&h);
+                            let _ = h.emit_to("main", "nav://page", "about");
+                        }
+                    }
+                });
+            }
+            // dev 裸二进制未打 Info.plist，手动向 LaunchServices 注册 scheme
+            //（release 由 bundle 的 Info.plist 承担；失败静默）
+            #[cfg(debug_assertions)]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let _ = handle.deep_link().register_all();
+            }
+            // 日志文件路径（与 settings 同目录）就位后 user_log 才开始落盘
+            if let Ok(dir) = handle.path().app_config_dir() {
+                let _ = LOG_PATH.set(dir.join("magpie.log"));
+                user_log(&format!(
+                    "=== 拾趣启动 v{} ===",
+                    handle.package_info().version
+                ));
+            }
+            // macOS 条窗关闭原生窗口阴影（2026-10-25 用户定稿：零边缘信号）：
+            // 阴影按内容 alpha 轮廓画——白胶囊贴深色壁纸时读作一圈清晰黑环
+            // （用户多次反馈的「黑边」最终来源，CSS 边线已全删后仍可见）；
+            // 胶囊轮廓只靠面板与背景的亮度对比（demo 边缘策略·处方一完整形态）。
+            // 结果窗/钉图不受影响（大面积阅读面，阴影是必要的深度线索）
+            #[cfg(target_os = "macos")]
+            if let Some(w) = handle.get_webview_window("floating") {
+                let _ = w.set_shadow(false);
+            }
             // 结果面板「钉住」偏好：沿用用户最后一次点钉的选择（默认钉住）
             floating::init_result_pin(&handle);
             app.manage(OcrShortcuts(std::sync::Mutex::new(Vec::new())));
@@ -511,7 +608,12 @@ fn main() {
             // get_webview_window 返回 None 自动跳过
             for label in ["floating", "ocr", "toast", "floating-panel", "floating-menu"] {
                 if let Some(w) = app.get_webview_window(label) {
-                    floating::apply_native_corner_radius(&w, 12.0);
+                    // floating = 8：与 CSS 卡片圆角、vibrancy 材质 radius 三者对齐——
+                    // 原生遮罩 12 > 卡片 8 时，角部 8→12 环带露出材质深色（角部黑块）
+                    floating::apply_native_corner_radius(
+                        &w,
+                        if label == "floating" { 8.0 } else { 12.0 },
+                    );
                 }
             }
 
@@ -617,6 +719,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             ui_debug_log,
+            copy_debug_log,
             open_url,
             translate::baidu_translate,
             translate::deepl_translate,
@@ -632,10 +735,12 @@ fn main() {
             obsidian::obsidian_append,
             entities::detect_places,
             entities::open_in_calendar,
-            floating::show_floating_bar,
-            floating::resize_floating,
-            floating::hide_floating_bar,
-            floating::begin_floating_drag,
+            pageurl::frontmost_web_url,
+            floating::bar::show_floating_bar,
+            floating::bar::resize_floating,
+            floating::bar::hide_floating_bar,
+            floating::bar::begin_floating_drag,
+            floating::material::update_floating_material,
             settings::get_settings,
             settings::save_settings,
             settings::set_appearance,
@@ -644,25 +749,25 @@ fn main() {
             capture::prompt_accessibility,
             capture::request_listen_access,
             capture::request_screen_capture_access,
-            floating::set_ocr_pinned,
+            floating::ocr::set_ocr_pinned,
             update::check_update,
-            floating::ocr_window_mode,
-            floating::ocr_window_pos,
-            floating::ocr_take_pending,
-            floating::ocr_window_ready,
-            floating::hide_ocr_window,
-            floating::push_selection_result,
-            floating::focus_ocr_window,
-            floating::set_result_window_size,
-            floating::apply_result_preset,
+            floating::ocr::ocr_window_mode,
+            floating::ocr::ocr_window_pos,
+            floating::ocr::ocr_take_pending,
+            floating::ocr::ocr_window_ready,
+            floating::ocr::hide_ocr_window,
+            floating::ocr::push_selection_result,
+            floating::ocr::focus_ocr_window,
+            floating::ocr::set_result_window_size,
+            floating::ocr::apply_result_preset,
             set_launch_at_login,
-            floating::persist_result_window_state,
-            floating::screen_rect_at,
-            floating::floating_window_pos,
-            floating::set_floating_pops,
-            floating::pop_ready,
-            floating::floating_pick,
-            floating::move_ocr,
+            floating::ocr::persist_result_window_state,
+            floating::bar::screen_rect_at,
+            floating::bar::floating_window_pos,
+            floating::pops::set_floating_pops,
+            floating::pops::pop_ready,
+            floating::pops::floating_pick,
+            floating::ocr::move_ocr,
             ocr::ocr_region_selected,
             ocr::ocr_region_cancel,
             pin::pin_get_data,

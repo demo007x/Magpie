@@ -94,5 +94,14 @@
       "infoPlist": "Info.plist",
       "signingIdentity": "-"
     }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "magpie"
+        ]
+      }
+    }
   }
 }

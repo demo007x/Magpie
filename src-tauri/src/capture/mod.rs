@@ -122,11 +122,13 @@ impl Drop for CaptureMuteGuard {
     }
 }
 
-/// 捕获链路调试日志（仅 debug 构建输出到 stderr / dev 终端）
+/// 捕获链路调试日志：stderr 仅 debug 构建；文件（magpie.log，与 settings 同
+/// 目录）全构建落盘——release 用户的「复制日志」按钮依赖它
 pub(crate) fn debug_log(msg: impl std::fmt::Display) {
     if cfg!(debug_assertions) {
         eprintln!("[magpie:capture] {msg}");
     }
+    crate::user_log(&format!("[capture] {msg}"));
 }
 
 #[derive(Clone, Serialize)]
@@ -218,7 +220,9 @@ pub fn spawn_worker(app: AppHandle, rx: Receiver<CaptureEvent>) {
                     // 这里再打一遍即每次划词双份刷屏
                     let _ = app.emit(
                         "selection://captured",
-                        json!({ "text": text, "x": x, "y": y, "app": app_path }),
+                        // pid 供智能提取/日历路径反查来源页面 URL（AXFocusedApplication
+                        // 在点击瞬间不稳定，按 pid 直连可靠，见 pageurl.rs）
+                        json!({ "text": text, "x": x, "y": y, "app": app_path, "pid": pid }),
                     );
                     // 新选区：未钉住的 OCR 独立窗口随收起（钉住则保留）
                     floating::dismiss_ocr_if_unpinned(&app);

@@ -23,7 +23,7 @@ pnpm build:debug:app    # debug .app 包（macOS 26 下 dev 裸二进制的托�
                         # Dock 显示 exec 图标——测托盘/程序坞图标必须用 bundle 出的 .app）
 ```
 
-无前端测试框架；Rust 侧有 FFI 烟雾测试（`cargo test`，见 entities.rs）。常规验证 = `pnpm check` + `cargo check` + `cargo build`，交互验证走 `pnpm tauri dev` 真机划词。
+无前端测试框架；Rust 侧有 FFI 烟雾测试（`cargo test`，见 entities/）。常规验证 = `pnpm check` + `cargo check` + `cargo build`，交互验证走 `pnpm tauri dev` 真机划词。
 
 **`web/` 是独立工程（官网）**：有自己的 `package.json` / lockfile / `pnpm-workspace.yaml`，与主应用零共享，单独部署为静态站点。改官网先读 `web/README.md`；在本目录跑 `pnpm` 命令前确认工作目录，否则 pnpm 会跨工作区装依赖、改写主项目的 `pnpm-lock.yaml`。
 
@@ -36,17 +36,17 @@ pnpm build:debug:app    # debug .app 包（macOS 26 下 dev 裸二进制的托�
 Rust 侧 `src-tauri/src/`：
 
 - `capture/` 划词捕获（最高风险模块）：`#[cfg]` 分发 macos/other 后端，两后端同一 `start(tx, debounce_ms)` 签名；Windows 实现进 `capture/windows.rs` 时照此接入，勿在 worker 层加平台分支。
-- `floating.rs` 浮动条窗口定位/尺寸/显隐、`toast.rs` 全局提示、`pin.rs` 钉图窗口（复用 floating.html，按 label 前缀 `pin-` 进入钉图渲染模式）。
+- `floating/` 条窗与结果窗管理（目录模块：bar = 条窗定位/尺寸/显隐/拖拽/hover 合成，ocr = 结果窗/pending 交接/钉住，pops = Windows 分离卡，chrome = 圆角阴影防闪，mod = 共享几何助手）、`toast.rs` 全局提示、`pin.rs` 钉图窗口（复用 floating.html，按 label 前缀 `pin-` 进入钉图渲染模式）。
 - `ocr.rs` + `src/bin/ocr_helper.rs`：框选截图 + Vision 识别**全部隔离在子进程**——AppKit/Vision 的 ObjC 异常或崩溃只杀子进程，主应用不 abort。
-- `entities.rs` 实体出口命令（`detect_dates` = NSDataDetector 日期 / `detect_places` = NLTagger 地名 NER / `open_in_calendar` = .ics 日历预填）：新 FFI 遵循 macos.rs 的手写 msgSend 范式。
+- `entities/` 实体出口命令（`detect_dates` = NSDataDetector 日期 / `detect_places` = NLTagger 地名 NER / `open_in_calendar` = .ics 日历预填；目录模块 dates / places / calendar，`#[tauri::command]` 包装器集中在 mod.rs——generate_handler 按此路径解析宏项，子模块 re-export 不可靠）：新 FFI 遵循 capture/macos/ffi.rs 的手写 msgSend 范式。
 - `settings.rs` JSON 配置 + 黑名单、`ai.rs` OpenAI 协议 SSE 哑管道（无 AI 逻辑）、`app_picker.rs` 系统应用选择、`update.rs` GitHub Releases 更新检测、`main.rs` setup/命令注册/事件分发/托盘。
 
 数据流：CGEventTap(鼠标) → detect 线程(防抖/AX 查询) → `capture::spawn_worker` 过滤(自身PID/黑名单/重复) → emit `selection://captured` → TS `show_floating_bar` → 用户点动作 → TS `aiChat`(Channel 流式) → Rust `ai_chat` 转发 SSE。
 
 关键非显性设计（改代码前先懂）：
 
-- **AX 常量用 `ax_string()` 构造（CFString），勿用 dlsym / `extern static`**（`capture/macos.rs::ax_consts`）：dlsym 在部分 macOS 版本对这些符号返回 NULL（-25201 错误），`extern static` 能过 check 但链接必败（函数可用 `ApplicationServices` 伞框架链接，常量不行）。
-- **手势误判闸门与应答证据闸（`capture/macos.rs`，勿删勿绕过）**：拖动标签页/滚动条/文件树/Finder 文件等手势与拖选同形，兼容模式 ⌘C 在 Finder（⌘C 写入选中文件名）与 Electron 编辑器家族（空选区 ⌘C 复制当前行）会误捕；AXSelectedText 是状态查询不是手势结果查询，编辑器遗留选区会替从未发生的手势背书。闸门已按"起点表面分类 + 应答角色/锚定/差分证据"成体系，**新增误报场景时扩展这套体系，别再按应用/手势逐个打点**；机制全图见 docs/03 A.3.3。Windows UIA 实现（M2）需对等处理。
+- **AX 常量用 `ax_string()` 构造（CFString），勿用 dlsym / `extern static`**（`capture/macos/ffi.rs::ax_consts`）：dlsym 在部分 macOS 版本对这些符号返回 NULL（-25201 错误），`extern static` 能过 check 但链接必败（函数可用 `ApplicationServices` 伞框架链接，常量不行）。
+- **手势误判闸门与应答证据闸（`capture/macos/query.rs`，勿删勿绕过）**：拖动标签页/滚动条/文件树/Finder 文件等手势与拖选同形，兼容模式 ⌘C 在 Finder（⌘C 写入选中文件名）与 Electron 编辑器家族（空选区 ⌘C 复制当前行）会误捕；AXSelectedText 是状态查询不是手势结果查询，编辑器遗留选区会替从未发生的手势背书。闸门已按"起点表面分类 + 应答角色/锚定/差分证据"成体系，**新增误报场景时扩展这套体系，别再按应用/手势逐个打点**；机制全图见 docs/03 A.3.3。Windows UIA 实现（M2）需对等处理。
 - **AI 传输走 Rust 哑管道而非 WebView 直连**（ADR-03）：BYOK 任意第三方端点大概率无 CORS 头；`ai.rs` 只做协议转发，prompt/动作/agent 全部在 TS 层（`src/shared/actions.ts` 动作注册表：加动作 = 注册对象，Rust 零改动）。
 - **浮动条的 dismiss 逻辑**：普通单击 → `selection://dismiss`；点击浮动条自身用 `floating::rect_contains`（Rust 侧坐标抑制）避免误关——浮动条窗口不抢焦点，点击它不会改变聚焦进程。
 - **浮动条是预建常驻隐藏窗口**（show/hide 而非创建/销毁），定位用鼠标逻辑坐标 + `monitor_bounds` 防出屏钳制（多显示器 DPI 转换都在 `floating.rs`）。
