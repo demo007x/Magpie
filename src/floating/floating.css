@@ -1321,6 +1321,20 @@ body,
   color: var(--accent-strong);
 }
 
+/* 选中动作被悬停：与其它动作同款蓝底白字——本组必须排在 .active 之后，
+   否则 active 的品牌色文字压过 hover 白字 = 品牌底品牌字，文字不可读
+   （2026-10-25 用户反馈） */
+.action.active:hover,
+.action.active.syn-hover {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.action.active:hover .ic,
+.action.active.syn-hover .ic {
+  color: var(--on-accent);
+}
+
 /* ---- 钉图窗口（pin-*）：无边框置顶图片 ---- */
 .pin {
   position: relative;
@@ -1605,24 +1619,23 @@ html.win .pop {
 }
 
 /* DWM 方形阴影已弃用（圆角卡片四角漏影，亮背景灰斑，main.rs 同日翻案）——
-   边缘感由 1px 发丝内描边承担，**正面列举**逐个元素写，不碰透明容器
-   （.pop.overflow.rail / .pop.hchips——用 html.win .pop 通配 + 豁免重置会被
-   :not() 链的特异性压过，「一层矩形透明的底」事故根因）。主题分野：
-   亮色主题全员有边（含透明容器——暗线在亮背景上读得清，治圆弧发糊）；
-   暗色主题只给实心卡片白 14% 细边，透明容器零线条（白描边叠透明容器 =
-   「透明的边框」矩形，2026-10-25 用户反馈不能出现）。不写进
-   --surface-edge token：那是 macOS 共享块（「两个主题一律零线条」，边缘靠
-   NSWindow 原生阴影），Windows 值必须在 html.win 作用域内表达 */
+   边缘感由 1px 发丝内描边承担，**正面列举**有卡面的元素（.bar/.panel/
+   .pop.menu/.pop.overflow 弹层卡）。透明容器（.pop.overflow.rail /
+   .pop.hchips）**任何主题都不描边**（2026-10-25 用户定稿：描边画上去就是
+   「透明的边框」bug）——也不要用 html.win .pop 通配 + 豁免重置：豁免会被
+   :not() 链的特异性压过（同日事故根因）。不写进 --surface-edge token：
+   那是 macOS 共享块（「两个主题一律零线条」，边缘靠 NSWindow 原生阴影），
+   Windows 值必须在 html.win 作用域内表达 */
+/* 胶囊堆容器（.pop.overflow.rail）的 class 含 overflow——必须 :not(.rail)
+   排除，否则亮色发丝会画到透明容器上（描边「还存在」的根因） */
 html.win .bar,
 html.win .panel,
 html.win .pop.menu,
-html.win .pop.overflow,
-html.win .pop.overflow.rail,
-html.win .pop.hchips {
+html.win .pop.overflow:not(.rail) {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
 }
 
-/* 暗色主题：实心卡片白 14% 细边；透明容器零线条（见上） */
+/* 暗色主题：实心卡片白 14% 细边 */
 html.win.theme-dark .bar,
 html.win.theme-dark .panel,
 html.win.theme-dark .pop.menu {
@@ -1636,9 +1649,6 @@ html.win.theme-dark .pop.menu {
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
   }
 }
-
-/* 行侧子菜单容器（.hchips）与胶囊堆容器（.pop.overflow.rail）：透明容器、
-   无容器卡（§B.5.3）。描边主题分野见上：亮色全员有边、暗色透明容器零线条 */
 
 /* ---- 深色材质（2026-10-25 定稿：token 化，无独立结构规则）----
    历史教训存档：本文件曾叠放四段互相冲突的「材质体系」块（CSS 模拟 B+ /
