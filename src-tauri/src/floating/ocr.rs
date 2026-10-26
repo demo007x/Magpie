@@ -10,9 +10,6 @@ use serde_json::json;
 use crate::capture::debug_log;
 use super::{clamp_move_window, show_without_activation, snap_pos, WindowPos};
 use super::bar::{FloatingState, update_hover_feed};
-// 拖拽防透白闪守卫（仅 Windows 实现，调用点均 #[cfg] 门控）
-#[cfg(target_os = "windows")]
-use super::chrome::set_result_window_opaque;
 
 // ---- OCR 独立窗口：钉住状态 + 待显示结果（事件可能早于 webview 就绪，先存后取） ----
 
@@ -357,9 +354,6 @@ pub fn set_result_window_size(window: WebviewWindow, width: f64, height: f64) {
     if window.label() != "ocr" {
         return;
     }
-    // 拖拽缩放进行中：底色临时不透明防透白闪（松手恢复，见 set_result_window_opaque）
-    #[cfg(target_os = "windows")]
-    set_result_window_opaque(&window, true);
     let w = width.clamp(RESULT_MIN_W, RESULT_MAX_W);
     let h = height.clamp(RESULT_MIN_H, RESULT_MAX_H);
     if let Ok(mut sz) = LAST_RESULT_SIZE.lock() {
@@ -392,9 +386,6 @@ pub fn persist_result_window_state(window: WebviewWindow) {
     if window.label() != "ocr" {
         return;
     }
-    // 拖拽结束：恢复透明底色（CSS 圆角重新显形）
-    #[cfg(target_os = "windows")]
-    set_result_window_opaque(&window, false);
     let app = window.app_handle();
     let pos = *LAST_RESULT_POS.lock().unwrap();
     let size = *LAST_RESULT_SIZE.lock().unwrap();
@@ -408,9 +399,6 @@ pub fn persist_result_window_state(window: WebviewWindow) {
 #[tauri::command]
 pub fn hide_ocr_window(window: WebviewWindow) {
     if window.label() == "ocr" {
-        // 兜底：拖拽中直接收窗时也把底色守卫复位
-        #[cfg(target_os = "windows")]
-        set_result_window_opaque(&window, false);
         let app = window.app_handle();
         let pos = *LAST_RESULT_POS.lock().unwrap();
         let size = *LAST_RESULT_SIZE.lock().unwrap();

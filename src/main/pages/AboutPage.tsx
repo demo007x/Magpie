@@ -34,7 +34,7 @@ function updateHint(upd: UpdateInfo | null): string {
     case "failed":
       return "这次没检查成（网络不通或 GitHub 暂时访问不了），下次启动会自动重试。";
     default:
-      return "启动后自动检查一次，发现新版本时在菜单栏下方轻提示；检查只读取公开版本信息，不发送任何本机数据。";
+      return "有新版本时提醒你，不会自动安装。";
   }
 }
 
@@ -49,9 +49,7 @@ export default function AboutPage({ appVersion, upd, checking, runUpdateCheck }:
   return (
     <>
       <h1>关于</h1>
-      <p className="page-hint">
-        查看版本与检查更新。更新检测仅读取 GitHub Releases 的公开版本信息，不发送本机数据。
-      </p>
+      <p className="page-hint">查看版本信息、检查更新与反馈问题。</p>
       <div className="card about-card">
         <img className="mark big" src={markIcon} alt="拾趣" />
         <div className="about-name">拾趣</div>
@@ -86,13 +84,11 @@ export default function AboutPage({ appVersion, upd, checking, runUpdateCheck }:
       <div className="card">
         <div className="row-between">
           <div>
-            <div className="row-sub">
-              遇到问题或有想法，告诉我们。飞书表单人人可填；GitHub Issue 需要账号。
-            </div>
+            <div className="row-sub">遇到问题或有想法，欢迎告诉我们。</div>
           </div>
           <div className="row-ctl">
             <button
-              className="btn sm primary"
+              className="btn sm"
               onClick={() => invoke("open_url", { url: FEEDBACK_FORM_URL }).catch(() => undefined)}
             >
               飞书反馈

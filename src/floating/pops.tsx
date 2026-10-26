@@ -54,7 +54,8 @@ export default function PopCard() {
     };
   }, []);
 
-  // 渲染完成即量卡片尺寸回传：窗口 = 卡片（零出血），Rust 据此定位显示。
+  // 渲染完成即量卡片尺寸回传（offsetWidth/Height 不含出血 margin，即卡片
+  // 本体尺寸）：Rust 据此加 FLOAT_PAD 定位显示（窗口 = 卡片 + 2×PAD）。
   // 内容刷新（实体渐进出现/设置实时推送）会再次触发，Rust 端锚点不变、原地重定位
   useLayoutEffect(() => {
     if (!data) return;

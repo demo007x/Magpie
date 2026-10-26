@@ -185,12 +185,14 @@ const resultCache = new Map<string, { output: string; at: number }>();
 const CACHE_TTL = 5 * 60_000;
 const CACHE_CAP = 50;
 
-// 分离卡几何常量（与 floating/mod.rs 的 FLOAT_PAD / floating.css 的 .bar margin 一致）：
-// FLOAT_PAD = 卡片四周透明留白。macOS 8px：原生 NSWindow shadow 按内容 alpha
-// 轮廓画影，需要透明出血作渲染空间；Windows 分离卡零出血——任何留白都会原样
-// 透出桌面成「透明圈」（docs/03 §B.1.1）。
+// 分离卡几何常量（与 floating/mod.rs 的 FLOAT_PAD / floating.css html.win 的
+// margin 一致）：FLOAT_PAD = 卡片四周透明留白，双平台统一 8px。macOS：原生
+// NSWindow shadow 按内容 alpha 轮廓画影，需要透明出血作渲染空间；Windows：
+// 出血区画 CSS 轻投影承担悬浮感（2026-10-26 恢复出血——零出血时胶囊在
+// Windows 没有任何深度信号；历史「透明圈」根因是 toast 的影太淡而非出血
+// 本身，见 floating.css html.win 块注释与 docs/03 §B.1.1）。
 // CARD_GAP = 胶囊与二级卡片的缝。
-const FLOAT_PAD = IS_WIN_LIKE ? 0 : 8;
+const FLOAT_PAD = 8;
 const CARD_GAP = 3;
 
 // vibrancy 材质总开关（与 src-tauri floating/material.rs 的 ENABLED 同步）：
@@ -2301,7 +2303,11 @@ export default function App() {
     if (menu !== null && menu.startsWith("pmenu:")) return;
     const trigX = (id: string): number | null => {
       const el = document.querySelector<HTMLElement>(`[data-trig="${id}"]`);
-      return el ? Math.round(el.getBoundingClientRect().left) : null;
+      if (!el) return null;
+      // 锚「整个动作项」左缘（用户定稿 2026-10-26：子菜单展开到对应主菜单
+      // 正下方），而非尾部 16px 的 ⌄ 按钮——否则子菜单右偏一个图标位
+      const slot = el.closest<HTMLElement>(".action-slot");
+      return Math.round((slot ?? el).getBoundingClientRect().left);
     };
     if (menu === null) {
       invoke("set_floating_pops", { target: "none", data: {}, trigX: null, rowY: null }).catch(

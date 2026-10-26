@@ -89,6 +89,7 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let home_item = MenuItem::with_id(app, "home", "主页面", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "settings", "功能设置", true, None::<&str>)?;
     let github_item = MenuItem::with_id(app, "github", "GitHub 仓库", true, None::<&str>)?;
+    let feedback_item = MenuItem::with_id(app, "feedback", "反馈问题", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "退出应用", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
@@ -102,6 +103,7 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         &home_item,
         &settings_item,
         &github_item,
+        &feedback_item,
         &sep2,
         &quit_item,
     ])
@@ -617,16 +619,17 @@ fn main() {
                 }
             }
 
-            // Windows：方案甲「一卡一窗」——每张卡是一扇零出血窗口，窗口矩形 =
-            // 卡片矩形。tao 的无边框阴影以 WM_NCCALCSIZE 内缩客户区一圈换阴影
-            // （窗口矩形 ≠ 卡片矩形，带子透出桌面成毛边）——一律 set_shadow(false)。
-            // DWM 方形阴影（apply_frame_shadow）也已弃用：投影跟窗口矩形走，而
-            // 卡片是 CSS 圆角，四角处阴影从圆弧外侧漏出，亮背景上呈灰斑
-            // （2026-10-25 用户反馈「毛刺」）；边缘感改由 CSS 发丝描边承担
-            // （floating.css html.win 的 --edge 内描边）。不可聚焦
-            // （WS_EX_NOACTIVATE，对位 macOS orderFrontRegardless）：划词弹出
-            // 浮动条不抢焦点，目标应用保持选区高亮。点击/滚轮不受影响；
-            // 排除 snap（遮罩要收 Esc 键盘）与 pin（Esc 关闭需键盘）
+            // Windows：方案甲「一卡一窗 + 出血投影」——每张卡一扇窗口，
+            // 窗口 = 卡片 + 四周 FLOAT_PAD(8px) 出血，CSS 轻投影画在出血区
+            // （floating.css html.win 块，2026-10-26 恢复出血）。
+            // tao 的无边框阴影仍必须关：它以 WM_NCCALCSIZE 内缩客户区一圈换
+            // 阴影（窗口矩形 ≠ 卡片矩形，带子透出桌面成毛边）。DWM 方形阴影
+            // （apply_frame_shadow）也已弃用：投影跟窗口矩形走，而卡片是
+            // CSS 圆角，四角处阴影从圆弧外侧漏出，亮背景上呈灰斑
+            // （2026-10-25 用户反馈「毛刺」；配方存档 chrome.rs）。
+            // 不可聚焦（WS_EX_NOACTIVATE，对位 macOS orderFrontRegardless）：
+            // 划词弹出浮动条不抢焦点，目标应用保持选区高亮。点击/滚轮不受
+            // 影响；排除 snap（遮罩要收 Esc 键盘）与 pin（Esc 关闭需键盘）
             #[cfg(target_os = "windows")]
             for label in ["floating", "floating-panel", "floating-menu", "ocr", "toast"] {
                 if let Some(w) = app.get_webview_window(label) {
@@ -679,6 +682,13 @@ fn main() {
                     "file_ocr" => start_file_ocr_flow(app.clone()),
                     "github" => {
                         let _ = open_url("https://github.com/demo007x/Magpie".into());
+                    }
+                    "feedback" => {
+                        // 与设置 › 关于 的「飞书反馈」同源（AboutPage.tsx FEEDBACK_FORM_URL）
+                        let _ = open_url(
+                            "https://tvxjr8zl48.feishu.cn/share/base/form/shrcnF78Kl495G3iUVz8iWvnA6e"
+                                .into(),
+                        );
                     }
                     "quit" => app.exit(0),
                     _ => {}

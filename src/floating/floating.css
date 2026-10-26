@@ -198,9 +198,9 @@ body,
      3px 4px（条高 32px）——2026-10-25 用户反馈：悬浮胶囊不应占据过多空间、
      遮挡正文阅读，压尺寸只压空气不压字号（13px 保持） */
   border-radius: 8px;
-  /* 悬浮感不依赖阴影：条窗原生 shadow 已关（main.rs，2026-10-25 用户定稿
-     零边缘信号——白胶囊贴深色壁纸时阴影读作黑环）；边缘信号 = --surface-edge
-     （主题 token，见文件头） */
+  /* macOS 沿用零阴影定稿（2026-10-25：条窗原生 shadow 关，白胶囊贴深色
+     壁纸时阴影读作黑环；边缘信号 = --surface-edge 主题 token，见文件头）。
+     Windows 的悬浮感由 html.win 块承担（出血 + 双层轻投影），覆盖本值 */
   box-shadow: var(--surface-edge);
   user-select: none; /* 胶囊条是纯操作面：禁止选中文本（防点击/拖拽时出现选中高亮） */
   -webkit-user-select: none;
@@ -1273,6 +1273,17 @@ body,
   color: var(--on-accent);
 }
 
+/* 行侧子菜单容器：透明盒不拦截指针——盒子的缝隙/边距虽不可见，但会盖住
+   相邻胶囊堆 pill 的 hover/click（2026-10-26 用户反馈：悬停只在 pill 下
+   边缘生效）；交互全部交给 chip 自身，容器空白区穿透到下层 */
+html.win .hchips {
+  pointer-events: none;
+}
+
+html.win .hchips .chip {
+  pointer-events: auto;
+}
+
 .hchips .chip:active {
   filter: brightness(0.88);
 }
@@ -1596,11 +1607,13 @@ body,
 }
 
 /* ---- Windows 悬浮层（html.win 根类，见 main.tsx）----
-   方案甲「一卡一窗」（与 floating.rs 分离卡注释同源）：胶囊 / 收纳面板 /
-   窄单列菜单各是一扇零出血窗口（floating / floating-panel / floating-menu），
-   窗口矩形 = 卡片矩形——DWM 矩形阴影恰好贴合卡片。此前「整窗一卡」时
-   窗口比卡片大，出血与卡间缝原样透出桌面成「透明圈」，即透明圈反复出现
-   的根因；分离卡后卡间缝是真实桌面，点击穿透、由钩子按缝外点击 dismiss。
+   方案甲「一卡一窗 + 出血投影」（2026-10-26 定稿）：胶囊 / 收纳面板 / 窄单列
+   菜单 / 结果面板各是一扇窗口，窗口 = 卡片 + 四周 8px 透明出血（FLOAT_PAD，
+   与 floating/mod.rs、App.tsx 三处一致），CSS 轻投影画在出血区——卡片从
+   「贴纸」变悬浮。历史归因更正：零出血时代「任何留白透出桌面成透明圈」
+   的根因是 toast 的影太淡（0.16/0.1 读不出深度只余一圈晕），不是出血本身
+   ——钉图 12px 出血 + 双层投影同期在 Windows 真机实证后翻案。卡间缝仍是
+   真实桌面，点击穿透、由钩子按缝外点击 dismiss。
    圆角对齐 DWM 物理半径（系统约 8 物理像素）：CSS 弧若大于 DWM 弧，角部
    会出现「CSS 半透明弧 vs 系统裁切弧」的双层抗锯齿毛刺，收到 ≤DWM 后可见
    角恒由系统合成器裁出；发丝描边取 1 物理像素——0.5px 在分数缩放（1.25/1.5）
@@ -1614,39 +1627,55 @@ html.win .stage {
 html.win .bar,
 html.win .panel,
 html.win .pop {
-  margin: 0;
   border-radius: calc(8px / var(--dpr, 1));
 }
 
-/* DWM 方形阴影已弃用（圆角卡片四角漏影，亮背景灰斑，main.rs 同日翻案）——
-   边缘感由 1px 发丝内描边承担，**正面列举**有卡面的元素（.bar/.panel/
-   .pop.menu/.pop.overflow 弹层卡）。透明容器（.pop.overflow.rail /
-   .pop.hchips）**任何主题都不描边**（2026-10-25 用户定稿：描边画上去就是
-   「透明的边框」bug）——也不要用 html.win .pop 通配 + 豁免重置：豁免会被
-   :not() 链的特异性压过（同日事故根因）。不写进 --surface-edge token：
-   那是 macOS 共享块（「两个主题一律零线条」，边缘靠 NSWindow 原生阴影），
-   Windows 值必须在 html.win 作用域内表达 */
-/* 胶囊堆容器（.pop.overflow.rail）的 class 含 overflow——必须 :not(.rail)
-   排除，否则亮色发丝会画到透明容器上（描边「还存在」的根因） */
+/* 出血 = FLOAT_PAD = 8px（三处同步，见 mod.rs）：.bar/.panel 的基础规则
+   本就是 8px margin，这里统一显式写出并为弹层卡补上（.pop 基类无 margin）。
+   **正面列举**有卡面的元素（.bar/.panel/.pop.menu/.pop.overflow 弹层卡）；
+   透明容器（.pop.overflow.rail / .pop.hchips）不吃出血、不描边、不加投影
+   （2026-10-25 用户定稿：描边画上去就是「透明的边框」bug）——也不要用
+   html.win .pop 通配 + 豁免重置：豁免会被 :not() 链的特异性压过（同日
+   事故根因）。胶囊堆容器（.pop.overflow.rail）的 class 含 overflow——
+   必须 :not(.rail) 排除，否则出血 margin 会把透明容器推离定位锚点 */
 html.win .bar,
 html.win .panel,
 html.win .pop.menu,
 html.win .pop.overflow:not(.rail) {
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+  margin: 8px;
 }
 
-/* 暗色主题：实心卡片白 14% 细边 */
+/* 悬浮感 = 双层轻投影（近距定形 + 远距环境）画在出血区 + 1px 发丝内描边。
+   blur 10 的尾部越出 8px 出血被窗口边界裁掉的是近零 alpha，不可见；
+   影强不得落回 toast 的 0.16/0.1 淡影区间——那是「透明圈」的成因 */
+html.win .bar,
+html.win .panel,
+html.win .pop.menu,
+html.win .pop.overflow:not(.rail) {
+  box-shadow:
+    0 3px 10px rgba(0, 0, 0, 0.22),
+    0 1px 3px rgba(0, 0, 0, 0.14),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+}
+
+/* 暗色主题：白 14% 细边 + 加重的投影（暗卡贴暗壁纸，0.22 读不出层次） */
 html.win.theme-dark .bar,
 html.win.theme-dark .panel,
 html.win.theme-dark .pop.menu {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 3px 10px rgba(0, 0, 0, 0.45),
+    0 1px 3px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 @media (prefers-color-scheme: dark) {
   html.win:not(.theme-light):not(.theme-dark) .bar,
   html.win:not(.theme-light):not(.theme-dark) .panel,
   html.win:not(.theme-light):not(.theme-dark) .pop.menu {
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+    box-shadow:
+      0 3px 10px rgba(0, 0, 0, 0.45),
+      0 1px 3px rgba(0, 0, 0, 0.3),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.14);
   }
 }
 

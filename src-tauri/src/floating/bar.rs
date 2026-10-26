@@ -136,8 +136,9 @@ pub fn is_visible(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-/// 点是否落在胶囊卡矩形内（含 pad 边距，不含二级浮层）——
-/// 拖拽起点判定用：按住二级浮层卡拖动不是搬移胶囊
+/// 点是否落在胶囊窗口矩形内（含四周 FLOAT_PAD 出血，另加 pad 边距）——
+/// 拖拽起点判定用：按住二级浮层卡拖动不是搬移胶囊。出血环内的按下也算
+/// 胶囊（拖拽把手外扩 8px），不会误触下层应用的划词
 pub fn capsule_rect_contains(app: &AppHandle, x: f64, y: f64, pad: f64) -> bool {
     app.try_state::<FloatingState>().map_or(false, |s| {
         let r = *s.lock().unwrap();

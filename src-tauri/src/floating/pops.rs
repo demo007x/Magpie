@@ -6,16 +6,17 @@ use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewWi
 use serde_json::json;
 
 use crate::capture::debug_log;
-use super::{snap_pos, show_without_activation, FloatingState, monitor_rect, CARD_GAP};
+use super::{snap_pos, show_without_activation, FloatingState, monitor_rect, CARD_GAP, FLOAT_PAD};
 
-// ---- Windows 分离卡二级浮层（方案甲：一卡一窗）----
+// ---- Windows 分离卡二级浮层（方案甲：一卡一窗 + 出血投影）----
 // macOS 的分离卡靠「同窗多卡 + NSWindow 按 alpha 轮廓画影」成立；Windows 的
-// DWM 阴影跟窗口矩形走，任何出血/卡间缝都会原样透出桌面。对等结构改为：
-// 每张卡就是一扇零出血窗口（floating = 胶囊、floating-panel = 收纳面板、
-// floating-menu = 窄单列菜单），DWM 矩形阴影恰好就是卡片阴影，卡间缝是
-// 真实桌面——点击穿透到下层应用，钩子按缝外点击正常 dismiss，无死区。
-// 弹层窗口是哑渲染端：内容数据与锚点由胶囊窗口经 set_floating_pops 推来，
-// 量得尺寸后经 pop_ready 回传，Rust 负责定位/翻转/钳制/显隐（胶囊像素不动）。
+// DWM 阴影跟窗口矩形走。对等结构：每张卡一扇窗口（floating = 胶囊、
+// floating-panel = 收纳面板、floating-menu = 窄单列菜单），窗口 = 卡片 +
+// 四周 FLOAT_PAD 出血，投影由 CSS 画在出血区（floating.css html.win 块），
+// 卡间缝是真实桌面——点击穿透到下层应用，钩子按缝外点击正常 dismiss，
+// 无死区。弹层窗口是哑渲染端：内容数据与锚点由胶囊窗口经 set_floating_pops
+// 推来，量得卡片尺寸后经 pop_ready 回传，Rust 负责定位/翻转/钳制/显隐
+// （胶囊像素不动）。
 
 /// 二级浮层卡片的落位（逻辑矩形）。存在即可见——hide_pops 会清空
 #[derive(Debug, Clone, Copy)]
@@ -159,7 +160,11 @@ pub fn set_floating_pops(
 }
 
 /// 弹层窗口渲染并量得卡片尺寸后回调：按锚点定位（翻转 + 防出屏钳制）后显示。
-/// 定位基准 = 胶囊卡矩形（窗口即卡片，Windows 零出血）与已落位的面板矩形
+/// width/height = 弹层卡片尺寸（pops.tsx 量 .pop 元素，不含出血 margin）；
+/// 定位基准 = 胶囊卡片矩形（FloatingState 存窗口矩形，卡片 = 窗口内缩
+/// FLOAT_PAD）。本函数全程以卡片坐标参与锚定/存储（PopRect = 卡片矩形，
+/// dismiss/hover/级联锚定都以卡为准），仅最终落位补回出血：窗口 = 卡片 +
+/// 2×FLOAT_PAD，窗口原点 = 卡片原点 − FLOAT_PAD
 #[tauri::command]
 pub fn pop_ready(window: WebviewWindow, width: f64, height: f64) {
     let label = window.label().to_string();
@@ -180,42 +185,54 @@ pub fn pop_ready(window: WebviewWindow, width: f64, height: f64) {
     let w = width.max(60.0);
     let h = height.max(28.0);
     let (m_l, m_t, m_r, m_b) = monitor_rect(&fwin, cx, cy);
-    let clamp_x = |x: f64| x.clamp(m_l + 8.0, (m_r - 8.0 - w).max(m_l + 8.0));
-    let clamp_y = |y: f64| y.clamp(m_t + 8.0, (m_b - 8.0 - h).max(m_t + 8.0));
+    // 钳制/翻转阈值按窗口矩形折算（卡片 + 出血），贴边时出血不越出屏
+    let edge = 8.0 + FLOAT_PAD;
+    let clamp_x = |x: f64| x.clamp(m_l + edge, (m_r - edge - w).max(m_l + edge));
+    let clamp_y = |y: f64| y.clamp(m_t + edge, (m_b - edge - h).max(m_t + edge));
+    // 胶囊窗口矩形 → 卡片矩形
+    let (bx, by, bw, bh) = (
+        cx + FLOAT_PAD,
+        cy + FLOAT_PAD,
+        cw - 2.0 * FLOAT_PAD,
+        ch - 2.0 * FLOAT_PAD,
+    );
 
     let (nx, ny) = {
         let mut s = POPS.lock().unwrap_or_else(|e| e.into_inner());
         if label == "floating-panel" {
-            // 锚在胶囊内触发钮 x 左缘；贴屏幕右缘翻转为右对齐胶囊；
+            // 锚在胶囊内触发钮 x 左缘（trig_x = 触发钮在胶囊窗口视口内的 x，
+            // 窗口坐标系恒成立）；贴屏幕右缘翻转为右对齐胶囊卡片；
             // 胶囊下方放不下翻转到上方（与 macOS 分离卡翻转语义一致）
-            let mut x = cx + s.panel_trig_x.unwrap_or(0.0);
-            if x + w > m_r - 8.0 {
-                x = cx + cw - w;
+            let mut x = bx + s.panel_trig_x.unwrap_or(0.0);
+            if x + w > m_r - edge {
+                x = bx + bw - w;
             }
-            let mut y = cy + ch + CARD_GAP;
-            if y + h > m_b - 8.0 {
-                y = cy - CARD_GAP - h;
+            let mut y = by + bh + CARD_GAP;
+            if y + h > m_b - edge {
+                y = by - CARD_GAP - h;
             }
             let (sx, sy) = snap_pos(&fwin, clamp_x(x), clamp_y(y));
             s.panel = Some(PopRect { x: sx, y: sy, w, h });
             (sx, sy)
         } else {
             // 菜单两种锚点：row_y 存在 = 面板行侧弹出（NSMenu 心智，贴屏幕右缘
-            // 翻回面板左缘）；否则 = 胶囊触发钮下方（chev:*，翻转同面板）
+            // 翻回面板左缘）；否则 = 胶囊触发钮下方（chev:*，翻转同面板）。
+            // row_y 是行在面板窗口视口内的 y（含出血偏移）：全局 y = 面板
+            // 窗口原点（卡片 y − FLOAT_PAD）+ row_y
             let (x, y) = match (s.menu_row_y, s.panel) {
                 (Some(row_y), Some(p)) => {
                     let mut x = p.x + p.w + CARD_GAP;
-                    if x + w > m_r - 8.0 {
+                    if x + w > m_r - edge {
                         x = p.x - w - CARD_GAP;
                     }
-                    (x, p.y + row_y)
+                    (x, p.y - FLOAT_PAD + row_y)
                 }
                 _ => {
-                    let mut x = cx + s.menu_trig_x.unwrap_or(0.0);
-                    if x + w > m_r - 8.0 {
-                        x = cx + cw - w;
+                    let mut x = bx + s.menu_trig_x.unwrap_or(0.0);
+                    if x + w > m_r - edge {
+                        x = bx + bw - w;
                     }
-                    (x, cy + ch + CARD_GAP)
+                    (x, by + bh + CARD_GAP)
                 }
             };
             let (sx, sy) = snap_pos(&fwin, clamp_x(x), clamp_y(y));
@@ -223,8 +240,8 @@ pub fn pop_ready(window: WebviewWindow, width: f64, height: f64) {
             (sx, sy)
         }
     };
-    let _ = window.set_size(LogicalSize::new(w, h));
-    let _ = window.set_position(LogicalPosition::new(nx, ny));
+    let _ = window.set_size(LogicalSize::new(w + 2.0 * FLOAT_PAD, h + 2.0 * FLOAT_PAD));
+    let _ = window.set_position(LogicalPosition::new(nx - FLOAT_PAD, ny - FLOAT_PAD));
     let _ = show_without_activation(&window);
     // 置顶带内提到最上：菜单必须盖过面板（show 的相对次序不保证）
     let _ = window.set_always_on_top(true);

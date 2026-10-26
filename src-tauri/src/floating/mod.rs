@@ -65,18 +65,16 @@ use tauri::WebviewWindow;
 pub const DEFAULT_W: f64 = 328.0;
 pub const DEFAULT_H: f64 = 54.0;
 
-/// 分离卡四周透明留白（窗口边缘到卡片边缘）。卡片圆角/描边必须落在窗口
-/// 内部（CSS 圆角压窗口边界会出毛刺）。
-/// macOS：留白 8px，原生 NSWindow shadow 按内容 alpha 轮廓画影，留白区被
-/// 投影衬住（2026-10-24 恢复：此前「黑边晕」的根因是材质/发丝/影子三个边缘
-/// 信号叠加，CSS 边缘信号收敛后不再复现）。
-/// Windows：方案甲「一卡一窗」——窗口矩形 = 卡片矩形，留白归零
-/// （任何出血都会原样透出桌面成「透明圈」，见 docs/03 §B.1.1）。
-/// 与 src/floating/App.tsx 的 FLOAT_PAD 保持一致。
-#[cfg(target_os = "macos")]
+/// 分离卡四周透明留白（窗口边缘到卡片边缘）。卡片圆角/描边/投影必须落在
+/// 窗口内部（CSS 圆角压窗口边界会出毛刺）。
+/// 双平台统一 8px（2026-10-26 Windows 恢复出血）：macOS 由 NSWindow 按
+/// 内容 alpha 轮廓画影，留白区被投影衬住；Windows 留白区画 CSS 轻投影承担
+/// 悬浮感（floating.css html.win 块）——此前零出血的「透明圈」教训出在
+/// toast 的影太淡（0.16/0.1 读不出深度只余一圈晕），不是出血本身：钉图
+/// 12px 出血 + 双层投影同期在 Windows 真机实证成立。
+/// 与 src/floating/App.tsx 的 FLOAT_PAD、floating.css html.win 的 margin
+/// 三处保持一致。
 pub const FLOAT_PAD: f64 = 8.0;
-#[cfg(not(target_os = "macos"))]
-pub const FLOAT_PAD: f64 = 0.0;
 
 /// 卡间缝：胶囊卡与二级卡片之间的空隙（逻辑坐标）。
 /// 与 src/floating/App.tsx 的 CARD_GAP 保持一致

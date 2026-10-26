@@ -1,8 +1,5 @@
-//! 窗口外观（原生层）：圆角裁切、阴影、防闪不透明底——双平台各自实现。
+//! 窗口外观（原生层）：圆角裁切、阴影——双平台各自实现。
 use tauri::WebviewWindow;
-
-#[cfg(target_os = "windows")]
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// 原生圆角裁切：macOS 走 NSWindow contentView 图层（12px 精确圆角）；
 /// Windows 走 DWM 窗口圆角属性（Win11 22H2+，系统固定约 8px——radius 参数
@@ -60,7 +57,8 @@ pub fn apply_native_corner_radius(win: &WebviewWindow, _radius: f64) {
 /// WM_NCCALCSIZE 内缩客户区）
 /// 【暂存未用】DWM 方形阴影（ExtendFrame 1px 自请）：投影跟窗口矩形走，
 /// 而 CSS 卡片是圆角——四角漏影在亮背景上呈灰斑（2026-10-25 弃用）。
-/// 若做「窗口出血 + CSS 圆角投影」方案可参考此 DWM 配方
+/// 替代方案「窗口出血 + CSS 圆角投影」已落地（2026-10-26，FLOAT_PAD +
+/// floating.css html.win 块），本配方存档备用
 #[cfg(target_os = "windows")]
 #[allow(dead_code)]
 pub fn apply_frame_shadow(win: &WebviewWindow) {
@@ -84,21 +82,15 @@ pub fn apply_frame_shadow(win: &WebviewWindow) {
     }
 }
 
-/// 结果窗拖拽缩放期间的不透明底色守卫（Windows）：拖拽放大时新露出的窗口
-/// 区域在 WebView2 渲染帧跟上前直接透出桌面，呈「透明白闪」（0.1.15 修）。
-/// 但不透明底色常驻会让 CSS 圆角外的四角变实心——在 DWM 不给无边框窗口
-/// 裁圆角的机器上（见 apply_native_corner_radius 注释）卡片 silhouette
-/// 整个变直角。所以底色只在拖拽进行中不透明（直角一闪而过），松手/隐藏
-/// 即恢复全透明，圆角由 CSS 常驻。颜色按窗口当前生效主题取 --surf 同值；
-/// 同值重复设置经 RESULT_OPAQUE 边沿记忆跳过（拖拽 tick 高频调用）
+/// 【已弃用存档】结果窗拖拽缩放期间的不透明底色守卫（Windows）：拖拽放大时
+/// 新露出的窗口区域在 WebView2 渲染帧跟上前透出桌面（「透明白闪」，0.1.15 修）。
+/// 但窗口级背景色无法区分卡片与出血——出血架构（2026-10-26 起，FLOAT_PAD=8）
+/// 下不透明底色会把四周透明出血刷成实色圈。若「透明白闪」重新变得可见，
+/// 需按像素级方案重做（如按指针位置动态 set_ignore_cursor_events 同款思路），
+/// 而不是恢复本守卫
 #[cfg(target_os = "windows")]
-static RESULT_OPAQUE: AtomicBool = AtomicBool::new(false);
-
-#[cfg(target_os = "windows")]
+#[allow(dead_code)]
 pub fn set_result_window_opaque(win: &WebviewWindow, opaque: bool) {
-    if RESULT_OPAQUE.swap(opaque, Ordering::Relaxed) == opaque {
-        return;
-    }
     use tauri::utils::config::Color;
     use tauri::Theme;
 
