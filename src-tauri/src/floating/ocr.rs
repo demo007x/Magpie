@@ -10,6 +10,9 @@ use serde_json::json;
 use crate::capture::debug_log;
 use super::{clamp_move_window, show_without_activation, snap_pos, WindowPos};
 use super::bar::{FloatingState, update_hover_feed};
+// 拖拽防透白闪守卫（仅 Windows 实现，调用点均 #[cfg] 门控）
+#[cfg(target_os = "windows")]
+use super::chrome::set_result_window_opaque;
 
 // ---- OCR 独立窗口：钉住状态 + 待显示结果（事件可能早于 webview 就绪，先存后取） ----
 

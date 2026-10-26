@@ -474,6 +474,18 @@ body,
   filter: brightness(0.88);
 }
 
+/* 暗色主题胶囊文字提亮（用户反馈 2026-10-25）：--text #ededf4 在墨面上
+   偏灰，纯白更脆；图标经 .ic inherit 一并提亮。hover 仍走上面的实心
+   品牌色（白字不变，只有底色在变） */
+:root.theme-dark .bar .action {
+  color: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.theme-light) .bar .action {
+    color: #ffffff;
+  }
+}
+
 /* 尺寸手柄：右下角斜向（nwse）、底边纵向（ns） */
 .resize-handle {
   position: absolute;
@@ -1134,7 +1146,9 @@ body,
   align-items: flex-end;
   gap: 5px;
   background: transparent;
-  border-radius: 0;
+  /* 圆角 8px + box-shadow none：macOS 零线条（容器透明不吃 .pop 基类发丝）；
+     Windows 上容器带 1px 发丝描边（html.win 正例清单特异性更高），描边随圆角走 */
+  border-radius: 8px;
   box-shadow: none;
   padding: 0 12px 12px 0;
   margin: 0 -12px -12px 0;
@@ -1588,17 +1602,43 @@ html.win .panel,
 html.win .pop {
   margin: 0;
   border-radius: calc(8px / var(--dpr, 1));
-  box-shadow: var(--surface-edge);
 }
 
-/* 行侧子菜单容器（.hchips）是透明容器、无容器卡（§B.5.3）——上面 html.win .pop
-   的圆角+发丝是给卡片类浮层的，但特异性 (0,2,0) 压过 .hchips (0,1,0) 的重置，
-   透明容器在 Windows 上会凭空多出一圈边框；按同特异性收掉（macOS 无 .win 根类，
-   .hchips 基础重置本就生效，双平台一致） */
+/* DWM 方形阴影已弃用（圆角卡片四角漏影，亮背景灰斑，main.rs 同日翻案）——
+   边缘感由 1px 发丝内描边承担，**正面列举**逐个元素写，不碰透明容器
+   （.pop.overflow.rail / .pop.hchips——用 html.win .pop 通配 + 豁免重置会被
+   :not() 链的特异性压过，「一层矩形透明的底」事故根因）。主题分野：
+   亮色主题全员有边（含透明容器——暗线在亮背景上读得清，治圆弧发糊）；
+   暗色主题只给实心卡片白 14% 细边，透明容器零线条（白描边叠透明容器 =
+   「透明的边框」矩形，2026-10-25 用户反馈不能出现）。不写进
+   --surface-edge token：那是 macOS 共享块（「两个主题一律零线条」，边缘靠
+   NSWindow 原生阴影），Windows 值必须在 html.win 作用域内表达 */
+html.win .bar,
+html.win .panel,
+html.win .pop.menu,
+html.win .pop.overflow,
+html.win .pop.overflow.rail,
 html.win .pop.hchips {
-  border-radius: 0;
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
 }
+
+/* 暗色主题：实心卡片白 14% 细边；透明容器零线条（见上） */
+html.win.theme-dark .bar,
+html.win.theme-dark .panel,
+html.win.theme-dark .pop.menu {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  html.win:not(.theme-light):not(.theme-dark) .bar,
+  html.win:not(.theme-light):not(.theme-dark) .panel,
+  html.win:not(.theme-light):not(.theme-dark) .pop.menu {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  }
+}
+
+/* 行侧子菜单容器（.hchips）与胶囊堆容器（.pop.overflow.rail）：透明容器、
+   无容器卡（§B.5.3）。描边主题分野见上：亮色全员有边、暗色透明容器零线条 */
 
 /* ---- 深色材质（2026-10-25 定稿：token 化，无独立结构规则）----
    历史教训存档：本文件曾叠放四段互相冲突的「材质体系」块（CSS 模拟 B+ /

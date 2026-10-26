@@ -19,6 +19,8 @@
 /// vibrancy 总开关（false = 纯 CSS 哑光材质，视图不创建不挂载）
 pub const ENABLED: bool = false;
 
+// 使用点都在 macOS 分支（imp::update 的窗口键转换），Windows 侧不导入
+#[cfg(target_os = "macos")]
 use std::os::raw::c_void;
 
 use serde::Deserialize;
@@ -26,6 +28,9 @@ use serde::Deserialize;
 use tauri::Manager;
 
 /// TS 上报的卡片矩形（窗口内容坐标，CSS px = 逻辑点，top-left 原点）。
+/// 字段读取都在 macOS 分支（serde 派生的读取不计入 dead_code 分析），
+/// Windows 侧按平台豁免告警
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Deserialize, Clone)]
 pub struct MaterialCard {
     pub x: f64,

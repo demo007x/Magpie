@@ -1296,6 +1296,12 @@ export default function App() {
         } else if (menuStateRef.current !== null) {
           dwellRef.current = null;
           switchMenu(trig);
+        } else if (trig === "overflow") {
+          // 「更多」的唯一职责就是展开更多操作（用户定稿 2026-10-25）：hover
+          // 即开、无驻留等待——它不是「动作 + 附带 ⌄」的组合项，不存在误触
+          // 语义；收起仍走统一的离开宽限（350ms）
+          dwellRef.current = null;
+          switchMenu(trig);
         } else if (dwellRef.current?.trig !== trig) {
           dwellRef.current = { trig, since: now };
         } else if (now - dwellRef.current.since >= HOVER_OPEN_MS) {

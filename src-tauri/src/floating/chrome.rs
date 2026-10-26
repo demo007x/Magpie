@@ -58,7 +58,11 @@ pub fn apply_native_corner_radius(win: &WebviewWindow, _radius: f64) {
 /// 透明角在有 DWM 圆角的机器上被 DWM 裁掉，其余机器透出桌面）。
 /// 前提：set_shadow(false) 先行（否则 MARKER_UNDECORATED_SHADOW 仍会让
 /// WM_NCCALCSIZE 内缩客户区）
+/// 【暂存未用】DWM 方形阴影（ExtendFrame 1px 自请）：投影跟窗口矩形走，
+/// 而 CSS 卡片是圆角——四角漏影在亮背景上呈灰斑（2026-10-25 弃用）。
+/// 若做「窗口出血 + CSS 圆角投影」方案可参考此 DWM 配方
 #[cfg(target_os = "windows")]
+#[allow(dead_code)]
 pub fn apply_frame_shadow(win: &WebviewWindow) {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
@@ -87,7 +91,6 @@ pub fn apply_frame_shadow(win: &WebviewWindow) {
 /// 整个变直角。所以底色只在拖拽进行中不透明（直角一闪而过），松手/隐藏
 /// 即恢复全透明，圆角由 CSS 常驻。颜色按窗口当前生效主题取 --surf 同值；
 /// 同值重复设置经 RESULT_OPAQUE 边沿记忆跳过（拖拽 tick 高频调用）
-#[cfg(target_os = "windows")]
 #[cfg(target_os = "windows")]
 static RESULT_OPAQUE: AtomicBool = AtomicBool::new(false);
 

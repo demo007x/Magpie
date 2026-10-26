@@ -5,6 +5,7 @@ use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewWi
 
 use serde_json::json;
 
+use crate::capture::debug_log;
 use super::{snap_pos, show_without_activation, FloatingState, monitor_rect, CARD_GAP};
 
 // ---- Windows 分离卡二级浮层（方案甲：一卡一窗）----

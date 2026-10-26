@@ -44,20 +44,22 @@ pub mod ocr;
 pub mod pops;
 
 pub use bar::{
-    apply_drag, apply_hover_tracking, clamp_move_window, end_drag, hover_feed_active,
-    is_dragging, is_visible, rect_contains, route_hover, FloatingState,
+    apply_drag, apply_hover_tracking, clamp_move_window, end_drag, is_visible,
+    rect_contains, route_hover, FloatingState,
 };
-pub use chrome::apply_native_corner_radius;
+// 仅对应平台的捕获后端消费（capture/macos 的拖拽驱动、capture/windows 的
+// 拖拽起点判定）——按平台导出，另一侧不产生未使用告警
+#[cfg(target_os = "macos")]
+pub use bar::{hover_feed_active, is_dragging};
 #[cfg(target_os = "windows")]
-pub use chrome::{apply_frame_shadow, set_result_window_opaque};
+pub use bar::capsule_rect_contains;
+pub use chrome::apply_native_corner_radius;
 pub use ocr::{dismiss_ocr_if_unpinned, init_result_pin, ocr_peek_image, ocr_rect_contains, ocr_set_pending, ocr_visible};
 #[cfg(target_os = "windows")]
 pub use pops::init_pop_windows;
 
 use serde::Serialize;
 use tauri::WebviewWindow;
-#[cfg(target_os = "windows")]
-pub use pops::init_pop_windows;
 
 /// TS 未传尺寸时的兜底
 pub const DEFAULT_W: f64 = 328.0;

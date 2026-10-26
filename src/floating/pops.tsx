@@ -117,14 +117,15 @@ export default function PopCard() {
   return (
     <div className="stage">
       <div className="pop menu" ref={ref}>
+        {/* 不标记默认项、无圆点（2026-10-25 用户定稿，与 App.tsx 菜单同规则）：
+            二级菜单是「选一个执行」的平面列表，默认服务已由胶囊上的服务名表达 */}
         {data.items.map((it) => (
           <button
             key={it.key}
             type="button"
-            className={`mitem ${it.on ? "on" : ""}`}
+            className="mitem"
             onClick={() => pick(`pick:${data.kind}`, it.key)}
           >
-            <span className="dot" />
             <span>{it.label}</span>
           </button>
         ))}

@@ -618,19 +618,19 @@ fn main() {
             }
 
             // Windows：方案甲「一卡一窗」——每张卡是一扇零出血窗口，窗口矩形 =
-            // 卡片矩形。阴影不走 tao 的无边框阴影：它以 WM_NCCALCSIZE 内缩
-            // 客户区一圈不可见非客户带换阴影（Win11 顶部约 2 物理像素），窗口
-            // 矩形 ≠ 卡片矩形，阴影沿外圈画、带子透出桌面成毛边——改在
-            // 「客户区 = 满窗」前提下自请 DWM 边框（apply_frame_shadow），
-            // 阴影/圆角沿卡片画。不可聚焦（WS_EX_NOACTIVATE，对位 macOS
-            // orderFrontRegardless）：划词弹出浮动条不抢焦点，目标应用保持
-            // 选区高亮。点击/滚轮不受影响；排除 snap（遮罩要收 Esc 键盘）
-            // 与 pin（Esc 关闭需键盘）
+            // 卡片矩形。tao 的无边框阴影以 WM_NCCALCSIZE 内缩客户区一圈换阴影
+            // （窗口矩形 ≠ 卡片矩形，带子透出桌面成毛边）——一律 set_shadow(false)。
+            // DWM 方形阴影（apply_frame_shadow）也已弃用：投影跟窗口矩形走，而
+            // 卡片是 CSS 圆角，四角处阴影从圆弧外侧漏出，亮背景上呈灰斑
+            // （2026-10-25 用户反馈「毛刺」）；边缘感改由 CSS 发丝描边承担
+            // （floating.css html.win 的 --edge 内描边）。不可聚焦
+            // （WS_EX_NOACTIVATE，对位 macOS orderFrontRegardless）：划词弹出
+            // 浮动条不抢焦点，目标应用保持选区高亮。点击/滚轮不受影响；
+            // 排除 snap（遮罩要收 Esc 键盘）与 pin（Esc 关闭需键盘）
             #[cfg(target_os = "windows")]
             for label in ["floating", "floating-panel", "floating-menu", "ocr", "toast"] {
                 if let Some(w) = app.get_webview_window(label) {
                     let _ = w.set_shadow(false);
-                    floating::apply_frame_shadow(&w);
                     let _ = w.set_focusable(false);
                 }
             }

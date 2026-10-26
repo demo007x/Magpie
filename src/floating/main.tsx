@@ -7,6 +7,20 @@ import PopCard from "./pops";
 import { interceptExternalLinks } from "../shared/external-links";
 import "./floating.css";
 
+// dev 专用自愈：结果窗/胶囊窗常驻后台，隐藏时 WebView2 被系统节流，vite 的
+// HMR websocket 会断连——之后所有样式/代码更新都收不到，窗口再显示就一直跑
+// 旧代码（本次会话「改了没生效」的根因）。断连后窗口重新可见即整页重载；
+// 生产构建 import.meta.hot 不存在，此分支整体剔除
+if (import.meta.hot) {
+  let hmrDead = false;
+  import.meta.hot.on("vite:ws:disconnect", () => {
+    hmrDead = true;
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (hmrDead && document.visibilityState === "visible") location.reload();
+  });
+}
+
 // 应用内链接一律外部打开（结果窗译文里的 URL 等），webview 永不自行导航
 interceptExternalLinks();
 
