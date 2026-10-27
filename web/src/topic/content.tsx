@@ -108,7 +108,7 @@ const zh: TopicCopy = {
     items: [
       { q: "使用翻译需要配置什么？", a: "翻译服务三选一：AI 翻译需接入自己的模型服务，地址、模型名称与密钥自行填写；百度翻译与 DeepL 需自备密钥。都可以设定默认服务。就算不配置翻译，复制、搜索、识图等本机动作照常能用。" },
       { q: "翻译时会离开当前应用吗？", a: "不会。浮动条与结果窗浮在当前应用上方，不夺取焦点；查完词，正在读的页面原样保留，输入与滚动不被打断。" },
-      { q: "选中的文字会被上传吗？", a: "只有在你使用 AI 翻译或联网翻译服务时，所选文字才会发送给你自己配置的服务；识图与信息提取在本机完成，拾趣本身不收集任何使用数据。" },
+      { q: "选中的文字会被上传吗？", a: "只有在你使用 AI 翻译或联网翻译服务时，所选文字才会发送给你自己配置的服务；识图在本机完成，拾趣本身不收集任何使用数据；智能提取默认开启、会把所选文字发给你配置的模型，可在设置中关闭。" },
       { q: "文字选不了怎么办？", a: "扫描版 PDF、图片、视频字幕这类选不到的文字，改用识图翻译：按 ⌥T 框选屏幕区域，识别完成后自动翻译，适用于截图、扫描件与应用界面。" },
     ],
     home: "了解拾趣的全部功能 →",
@@ -269,7 +269,7 @@ const en: TopicCopy = {
     items: [
       { q: "What do I need to set up for translation?", a: "Pick any of the three services: AI translation connects to your own model service (address, model name and key are yours to fill in); Baidu Translate and DeepL need your own keys. Set a default service either way. Without translation configured, copy, search, OCR and other local actions still work." },
       { q: "Does translating pull me out of the current app?", a: "No. The floating bar and the result window sit above the current app without taking focus. The page you're reading stays exactly as it was; typing and scrolling go on undisturbed." },
-      { q: "Is the selected text uploaded?", a: "Only when you use AI or online translation services — the selection goes to the service you configured yourself. OCR and information extraction run on-device, and Magpie collects no usage data of any kind." },
+      { q: "Is the selected text uploaded?", a: "Only when you use AI or online translation services — the selection goes to the service you configured yourself. OCR runs on-device and Magpie collects no usage data of any kind; smart extraction (on by default) sends the selection to the model you configured and can be turned off in settings." },
       { q: "What if the text can't be selected?", a: "Scanned PDFs, images and video subtitles were never selectable — use OCR translate instead: press ⌥T, drag a box over the region, and the recognized text is translated automatically. Works for screenshots, scanned pages and app interfaces." },
     ],
     home: "Explore everything Magpie can do →",

@@ -27,7 +27,7 @@ const zh = {
     lead: "划选或双击，浮动条随即弹出：翻译、解释、总结实时呈现；复制、搜索、写入 Obsidian、预填日历，结果直接落地。图片、视频与扫描文档中的文字，框选亦可识别——处理在原地完成，无需迁入对话窗口。",
     cta1: "下载拾趣",
     cta2: "GitHub Releases",
-    note: "选中即弹出 · 模型服务自选 · 识图与提取在本机完成 · 不收集使用数据",
+    note: "选中即弹出 · 模型服务自选 · 识图在本机完成 · 不收集使用数据",
     stats: [
       { value: "2", label: "种取字方式", note: "划词 · 识图" },
       { value: "12", label: "个内置动作", note: "AI 动作 3 个 · 本地动作 9 个" },
@@ -54,7 +54,7 @@ const zh = {
     ],
     localItems: [
       { name: "复制 / 搜索", desc: "本机完成的常规动作，无需配置，不消耗模型额度。" },
-      { name: "提取信息", desc: "自动识别选区中的网址、邮箱、验证码与电话号码。仅一种信息时直接提供对应动作，多种信息时集中显示。" },
+      { name: "提取信息", desc: "自动识别选区中的网址、邮箱、验证码、电话号码、日期与地点。仅一种信息时直接提供对应动作，多种信息时集中显示；配置模型服务后，日期与地点由 AI 结合上下文理解（合并日期区间、补全活动标题），可在设置中关闭。" },
       { name: "打开链接 / 写邮件", desc: "选中网址可直接打开，选中邮箱可直接撰写邮件，电话号码一键复制。" },
       { name: "加入日历 / 打开地图", desc: "选中含日期、时间或地点的文字，一键预填日历事件或在地图中打开。" },
       { name: "存入 Obsidian", desc: "选中文本按模板直写进 vault：摘录追加进当日日记，任务行写入待办（自动识别截止日期），知识卡一卡一文件。全程本地文件写入，无需安装插件。" },
@@ -171,7 +171,7 @@ const zh = {
     lead: "以下说明拾趣读取的内容、使用的系统权限、数据的存储与发送范围，以及免费与需要自备服务的边界。",
     items: [
       { title: "模型服务自选", desc: "支持主流模型服务，地址、模型名称与密钥由用户设定，可随时更换，密钥仅保存在本机配置文件。" },
-      { title: "内容在本机处理", desc: "识图、信息提取、搜索与复制均在本机完成。使用 AI 动作时，所选文字发送至所配置的模型服务。" },
+      { title: "内容在本机处理", desc: "识图、搜索与复制均在本机完成。使用 AI 动作（含智能提取）时，所选文字发送至所配置的模型服务；关闭智能提取则信息提取也完全在本机。" },
       { title: "不收集使用数据", desc: "无使用统计、无广告，不向第三方提供内容。更新检查仅读取 GitHub Releases 的公开版本信息。" },
       { title: "永久免费", desc: "内置动作、自定义动作、识图与设置项全部免费，无订阅、无需账号。翻译、解释、总结需接入自己的模型服务，费用由该服务决定。" },
     ],
@@ -246,7 +246,7 @@ const zh = {
     items: [
       { q: "支持哪些系统？", a: "支持 macOS（Apple Silicon 与 Intel 通用）与 Windows 10/11（x64）。Windows 版无需授权系统权限；以管理员身份运行的应用无法取词。" },
       { q: "必须准备 API key 吗？", a: "不需要。复制、搜索、打开链接、写邮件、提取信息、识图与钉图无需配置即可使用。仅翻译、解释、总结需要接入模型服务。" },
-      { q: "文字会被上传吗？", a: "识别与提取均在本机完成，屏幕内容不上传。使用 AI 动作时，所选文字发送至用户自行配置的模型服务。" },
+      { q: "文字会被上传吗？", a: "识图在本机完成，屏幕截图不上传。使用 AI 动作时（翻译、解释、总结，以及默认开启的智能提取），所选文字发送至用户自行配置的模型服务；智能提取可在设置中关闭。" },
       { q: "下载后无法打开怎么办？", a: "当前版本未完成 Apple 签名与公证，首次打开需右键选择「打开」并确认。更新或重装后需重新确认辅助功能权限。" },
       { q: "划词未显示浮动条？", a: "在设置页「权限」确认辅助功能与输入监控已开启，并检查该应用是否位于禁用应用列表。微信、Office 等界面由应用自行绘制的软件，划词可能取不到文字，可改用识图取字。" },
       { q: "与其他划词工具的区别？", a: "PopClip 以扩展生态见长，Easydict、Pot 聚焦划词翻译。拾趣的差异在三点：一、划词之外还可识图，图片、视频与扫描文档中的文字同样可识别；二、结果不锁在对话窗口——保留在独立窗口中，可复制、搜索，也可直写 Obsidian、预填日历与地图；三、模型服务自选，不绑定特定厂商。" },
@@ -288,7 +288,7 @@ const en: Dict = {
     lead: "Select or double-click, and the floating bar appears on the spot: translate, explain and summarize in real time; copy, search, save to Obsidian or prefill a calendar — results land right where you are. Text in images, videos and scanned documents can be captured by region as well — all handled in place, never locked in a chat window.",
     cta1: "Download Magpie",
     cta2: "GitHub Releases",
-    note: "Pops in ~0.1s · bring your own model service · OCR & extraction run on-device · No usage tracking",
+    note: "Pops in ~0.1s · bring your own model service · OCR runs on-device · No usage tracking",
     stats: [
       { value: "2", label: "capture methods", note: "Selection · OCR" },
       { value: "12", label: "built-in actions", note: "3 AI · 9 local" },
@@ -315,7 +315,7 @@ const en: Dict = {
     ],
     localItems: [
       { name: "Copy / Search", desc: "Everyday actions handled on your machine — no configuration, no model quota." },
-      { name: "Extract info", desc: "Detects URLs, emails, verification codes and phone numbers in the selection. A single hit gets a direct action; multiple hits open a grouped panel." },
+      { name: "Extract info", desc: "Detects URLs, emails, verification codes, phone numbers, dates and places in the selection. A single hit gets a direct action; multiple hits open a grouped panel. With a model service configured, dates and places are understood by the AI in context (merged date ranges, event titles) — switchable off in settings." },
       { name: "Open link / Compose email", desc: "Select a URL to open it, select an email address to compose, copy phone numbers with one click." },
       { name: "Add to Calendar / Open in Maps", desc: "Select text containing a date, time or place — prefill a calendar event or open it in Maps with one click." },
       { name: "Save to Obsidian", desc: "Writes the selection straight into your vault from templates: excerpts append to the daily note, task lines go to your to-dos (due dates detected in the selection), and cards are one file each. Entirely local file writes — no plugin needed." },
@@ -432,7 +432,7 @@ const en: Dict = {
     lead: "What Magpie reads, which system permissions it uses, where data is stored and sent, and where free ends and bring-your-own begins.",
     items: [
       { title: "Bring your own model service", desc: "Works with mainstream providers — endpoint, model name and key are yours to set and change anytime. Keys stay in a local config file." },
-      { title: "Processed on your machine", desc: "OCR, info extraction, search and copying run locally. AI actions send the selected text to the model service you configured." },
+      { title: "Processed on your machine", desc: "OCR, search and copying run locally. AI actions (including smart extraction) send the selected text to the model service you configured; turn smart extraction off and info extraction stays fully local." },
       { title: "No usage data collected", desc: "No analytics, no ads, nothing shared with third parties. Update checks only read public GitHub Releases info." },
       { title: "Free forever", desc: "Built-in actions, custom actions, OCR and settings are all free — no subscription, no account. Translate, explain and summarize need your own model service; costs are whatever that service charges." },
     ],
@@ -507,7 +507,7 @@ const en: Dict = {
     items: [
       { q: "Which systems are supported?", a: "macOS (universal for Apple Silicon and Intel) and Windows 10/11 (x64). The Windows build needs no system-permission grants; apps running as administrator can't be captured." },
       { q: "Do I need an API key?", a: "No. Copy, search, open link, compose email, info extraction, OCR and pinning work with zero configuration. Only translate, explain and summarize need a model service." },
-      { q: "Is my text uploaded?", a: "Recognition and extraction run on your machine; screen content is never uploaded. AI actions send the selected text to the model service you configured yourself." },
+      { q: "Is my text uploaded?", a: "OCR runs on your machine and screenshots are never uploaded. AI actions — translate, explain, summarize, and smart extraction (on by default) — send the selected text to the model service you configured yourself; smart extraction can be turned off in settings." },
       { q: "The app won't open after download?", a: "This build isn't signed and notarized by Apple yet: right-click the app and choose Open to confirm the first launch. After updates or a reinstall, permissions need re-confirming." },
       { q: "No floating bar on selection?", a: "Check Settings → Permissions for Accessibility and Input Monitoring, and make sure the app isn't in the blocklist. Apps that draw their own UI (WeChat, Office…) may not yield text — use OCR capture instead." },
       { q: "How is this different from other selection tools?", a: "PopClip is known for its extension ecosystem; Easydict and Pot focus on selection translation. Magpie differs in three ways: one, beyond selectable text, it reads text from images, videos and scanned documents. Two: results aren't locked in a chat — they stay in a standalone window you can copy and search, write straight to Obsidian, or turn into calendar events and map searches. Three: bring your own model service — no vendor lock-in." },
