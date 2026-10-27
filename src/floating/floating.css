@@ -516,6 +516,21 @@ body,
   background: transparent;
 }
 
+/* 胶囊堆行侧项与行侧 chips 的挂起：静息态本就是墨底（非透明），压制时回落到
+   墨面配色而非透明——否则弹出瞬间 pill 会闪成无底文字 */
+.stage.suppress-hover .rail .pitem.syn-hover,
+.stage.suppress-hover .hchips .chip.syn-hover {
+  background: var(--ink-bg);
+  border-color: var(--ink-border);
+  color: var(--ink-text);
+}
+
+.stage.suppress-hover .rail .pitem.syn-hover .action,
+.stage.suppress-hover .rail .pitem.syn-hover .ic,
+.stage.suppress-hover .rail .pitem.syn-hover .pchev {
+  color: inherit;
+}
+
 /* .action .ic 已 inherit 文字色：suppress-hover 压住 .action 的 color 即可，
    图标随之回落 --text，无需单独覆盖 */
 
@@ -1199,15 +1214,17 @@ body,
 }
 
 /* hover = 蓝底白字（与子菜单 chip 同款交互）：文字一律白，含展开态胶囊；
-   .ic 图标写死了 --sec 灰，必须一并显式覆盖（用户反馈：图标要跟文字同色） */
-.rail .pitem:hover {
+   .ic 图标写死了 --sec 灰，必须一并显式覆盖（用户反馈：图标要跟文字同色）。
+   .syn-hover = 非 key 窗口合成 hover（结果窗不点击就要有 hover 反馈，
+   类由 useSynHover 挂在 .pitem 整颗胶囊上） */
+.rail .pitem:is(:hover, .syn-hover) {
   background: var(--accent);
   border-color: transparent;
 }
 
-.rail .pitem:hover .action,
-.rail .pitem:hover .ic,
-.rail .pitem:hover .pchev {
+.rail .pitem:is(:hover, .syn-hover) .action,
+.rail .pitem:is(:hover, .syn-hover) .ic,
+.rail .pitem:is(:hover, .syn-hover) .pchev {
   color: var(--on-accent);
 }
 
@@ -1219,9 +1236,9 @@ body,
 
 /* 展开态胶囊被悬停：同样走蓝底白字——本规则必须排在 .open 之后，
    否则浅靛/深靛文字落在品牌色底上 = 蓝底蓝字（用户指出的拉跨点） */
-.rail .pitem.open:hover .action,
-.rail .pitem.open:hover .ic,
-.rail .pitem.open:hover .pchev {
+.rail .pitem.open:is(:hover, .syn-hover) .action,
+.rail .pitem.open:is(:hover, .syn-hover) .ic,
+.rail .pitem.open:is(:hover, .syn-hover) .pchev {
   color: var(--on-accent);
 }
 
@@ -1270,7 +1287,7 @@ body,
   color: var(--ink-text);
 }
 
-.hchips .chip:hover {
+.hchips .chip:is(:hover, .syn-hover) {
   background: var(--accent);
   border-color: transparent;
   color: var(--on-accent);

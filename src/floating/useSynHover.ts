@@ -132,6 +132,30 @@ export function useSynHover(opts: {
     return () => window.removeEventListener("mousemove", onMove);
   }, [hoverSuppress]);
 
+  // hover/active 粘连修复：鼠标离开窗口时 webview 收不到 mouseout，短暂挂起
+  // pointer-events 强制浏览器丢弃悬停/按压态；重新弹出（新划词）时也复位一次。
+  // suspend/restore 挂 document mouseleave/enter；resetGhostStates 供
+  // useCaptureSession 在 captured 事件入口调用
+  const suspendPointer = () => {
+    document.documentElement.style.pointerEvents = "none";
+  };
+  const restorePointer = () => {
+    document.documentElement.style.pointerEvents = "";
+  };
+  const resetGhostStates = () => {
+    suspendPointer();
+    requestAnimationFrame(() => requestAnimationFrame(restorePointer));
+    setHoverSuppress(true);
+  };
+  useEffect(() => {
+    document.addEventListener("mouseleave", suspendPointer);
+    document.addEventListener("mouseenter", restorePointer);
+    return () => {
+      document.removeEventListener("mouseleave", suspendPointer);
+      document.removeEventListener("mouseenter", restorePointer);
+    };
+  }, []);
+
   // 二级浮层 hover 收起：光标离开∪浮层满 HOVER_CLOSE_MS 后自动收（胶囊条与
   // 结果窗口动作行同一套）。只信 mouseleave 离开边沿 + 心跳复核，不做「事件
   // 超时即收」——光标静止时 hover://move 本就不来，超时会把「在菜单里犹豫」
@@ -296,12 +320,16 @@ export function useSynHover(opts: {
         }
       }
       const btn =
+        // 结果窗胶囊堆行侧项（.rail .pitem）：底色画在 .pitem 整颗胶囊上（主体+⌄
+        // 一体），合成 hover 须落到 .pitem 而非其内 .action——必须排在 .action
+        // 之前匹配，否则类挂到子按钮上、CSS 的 .rail .pitem.syn-hover 规则不生效
+        el?.closest<HTMLElement>(".rail .pitem") ??
         el?.closest<HTMLElement>(".action") ??
         // 二级菜单项（.mitem）与主胶囊按钮同受非 key 窗口 hover 失效影响，
         // 同走合成 hover（原生 :hover 在窗口被点击激活前不渲染）
         el?.closest<HTMLElement>(".mitem") ??
-        // 结果窗的存入目标 chips（.ocr-menu-slot .chip）与面板头工具钮（.tool）
-        // 同理：非 key 窗口下原生 :hover 不渲染，必须合成（结果窗不点击就 hover）
+        // 结果窗的存入目标 chips（.ocr-menu-slot .chip / .hchips .chip）与面板头
+        // 工具钮（.tool）同理：非 key 窗口下原生 :hover 不渲染，必须合成
         el?.closest<HTMLElement>(".chip") ??
         el?.closest<HTMLElement>(".tool") ??
         // 光标落在 ⌄ 上时点亮同项主按钮：⌄ 太小，单独反馈没有「这一项悬停」感
@@ -372,5 +400,6 @@ export function useSynHover(opts: {
     switchMenu,
     hoverLeftAtRef,
     subLeftAtRef,
+    resetGhostStates,
   };
 }

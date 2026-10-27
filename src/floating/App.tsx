@@ -2,18 +2,24 @@
 // 两个窗口共用本组件，按 IS_OCR 分叉；pin-* 窗口直接渲染 PinView。
 //
 // 2026-10-27 拆分（纯移动、逻辑零改动）：原 3361 行按域拆为 hook 文件，本文件保留
-// 菜单状态机（menu / fading）、phase 状态机、动作执行（runAction）、布局 effect
-// 与全部 JSX。改某个域的行为先去对应文件：
-//   env.ts              窗口身份 / 平台常量 / 共享类型（IS_OCR、POPS_EXTERNAL、HoverMenuId…）
-//   useSynHover.ts      合成 hover + 二级浮层驻留展开/收起（非 key 窗口 hover 的全部机制）
-//   useCapsuleDrag.ts   胶囊整条拖拽 + 点空白收浮层 + guarded 点击守卫
-//   useOcrPanelDrag.ts  结果窗面板拖拽（空白处按住拖、文本区保留选择）
-//   usePopsSync.ts      Windows 分离卡：浮层 payload 推送 / 弹层点击回传处理
-//   useMaterialSync.ts  macOS vibrancy 材质同步（当前总开关关闭，逻辑保留）
-//   PinView.tsx         钉图窗口渲染端（缩放/拖拽/识别/复制）
-//   pops.tsx            Windows 弹层窗口的哑渲染端（floating-panel / floating-menu）
-// 跨文件共享的 ref（suppressClickRef / dragActiveRef / dwellRef / menuStateRef）在
-// 本文件 ref 区声明或由 hook 返回，注释标明谁写谁读。
+// 菜单状态机（menu / fading）、phase 状态机、动作执行（runAction——读 13 处 phase、
+// 9 处 text 等渲染期值，是状态机的执行臂，刻意不拆）、布局 effect 与全部 JSX。
+// 改某个域的行为先去对应文件：
+//   env.ts                 窗口身份 / 平台常量 / 轻量共享类型（IS_OCR、POPS_EXTERNAL、HoverMenuId、WindowPos）
+//   types.ts               领域类型：Phase 状态机 / PendingView 回包 / ExtractGroups 分组
+//   useFloatingSettings.ts 设置状态底座（get_settings 全量 + settings://changed / live 两路刷新；liveRef）
+//   useCaptureSession.ts   划词会话生命周期（selection://captured 分诊树 + dismiss 规则）
+//   useSynHover.ts         合成 hover + 二级浮层驻留展开/收起 + ghost 态复位（非 key 窗口 hover 全部机制）
+//   useCapsuleDrag.ts      胶囊整条拖拽 + 点空白收浮层 + guarded 点击守卫
+//   useOcrPanelDrag.ts     结果窗面板拖拽（空白处按住拖、文本区保留选择）
+//   usePopsSync.ts         Windows 分离卡：浮层 payload 推送 / 弹层点击回传处理
+//   useMaterialSync.ts     macOS vibrancy 材质同步（当前总开关关闭，逻辑保留）
+//   PinView.tsx            钉图窗口渲染端（缩放/拖拽/识别/复制）
+//   pops.tsx               Windows 弹层窗口的哑渲染端（floating-panel / floating-menu）
+// 跨文件共享的 ref（suppressClickRef / dragActiveRef / dwellRef / menuStateRef /
+// runIdRef / streamingRef / capturedAtRef…）在本文件 ref 区声明或由 hook 返回，
+// 注释标明谁写谁读。hook 调用顺序有约束：useCaptureSession 的监听闭包经 opts
+// 捕获 runAction / showExtractPanel，须在二者声明之后调用（见其调用处注释）。
 import {
   useCallback,
   useEffect,
@@ -55,7 +61,6 @@ import {
   buildExtractPrompt,
   parseAiExtract,
   type AiExtractResult,
-  type AiEventItem,
 } from "../shared/aiExtract";
 import { TRANSLATE_SERVICES, translateMissingReason, translateService } from "../shared/translate";
 import {
@@ -65,43 +70,22 @@ import {
   extractTel,
   extractUrl,
 } from "../shared/textContext";
-import type {
-  CustomAction,
-  ObsidianConfig,
-  Provider,
-  SearchEngine,
-  Settings,
-  TranslateConfig,
-} from "../shared/types";
+import type { SearchEngine, Settings } from "../shared/types";
 
 // 窗口身份与平台常量拆至 ./env.ts（App.tsx 拆分导航见本文件头部注释）
 import { IS_OCR, IS_PIN, POPS_EXTERNAL } from "./env";
 import type { HoverMenuId, ScreenRect, WindowPos } from "./env";
+import type { PendingView, Phase } from "./types";
+import { EXTRACT_GROUPS, type ExtractGroups } from "./types";
 import { useMaterialSync } from "./useMaterialSync";
 import { useOcrPanelDrag } from "./useOcrPanelDrag";
 import { useCapsuleDrag } from "./useCapsuleDrag";
 import { usePopsSync } from "./usePopsSync";
 import { useSynHover } from "./useSynHover";
+import { useFloatingSettings } from "./useFloatingSettings";
+import { useCaptureSession } from "./useCaptureSession";
 
-// 上下文智能动作：由「提取信息」统一承载（多值/混合进面板），不再逐个上胶囊条
-// （id 集合见 shared/actions.ts CONTEXT_ACTION_IDS）
-type ExtractGroups = {
-  tel: string[];
-  email: string[];
-  link: string[];
-  code: string[];
-  date: string[];
-  addr: string[];
-};
-
-const EXTRACT_GROUPS: Array<{ id: keyof ExtractGroups; label: string }> = [
-  { id: "tel", label: "电话" },
-  { id: "email", label: "邮箱" },
-  { id: "link", label: "链接" },
-  { id: "code", label: "验证码" },
-  { id: "date", label: "日期" },
-  { id: "addr", label: "地点" },
-];
+// ExtractGroups / EXTRACT_GROUPS 拆至 ./types.ts
 
 /** 数量最多的实体类型（面板图标用） */
 function dominantGroup(groups: ExtractGroups): string {
@@ -151,41 +135,7 @@ function renderUrl(item: string): React.ReactNode {
 
 // 图标表/工具钮图标已拆至 ./icons（pops.tsx 与 App 共用）
 
-// 状态机：Bar（胶囊） → Result（流式面板）/ Extract（多值列表）；dismiss/新选区回收
-type Phase =
-  | { kind: "bar" }
-  | {
-    kind: "extract";
-    /** 主要实体类型（决定面板图标） */
-    actionId: string;
-    label: string;
-    groups: ExtractGroups;
-    /** 原始选中文本：日期实体异步合并、「加入日历」行点击时重检测用 */
-    text?: string;
-    /** AI 语义提取的结构化事件（非空时日期组按此渲染，点击直接写日历，不再重检测） */
-    events?: AiEventItem[];
-    /** AI 提取进行中：日期/地点的确定性识别暂缓兜底，等 AI 结果定夺 */
-    aiPending?: boolean;
-    /** 确定性日期/地点识别已回填过（含回填为空），防止 effect 重复拉取 */
-    deterministicLoaded?: boolean;
-    /** 选区来源页面 URL（浏览器地址栏，面板打开时现查）：提交 AI 的来源上下文，
-     * 写日历时优先于选区内提取的链接（活动页往往链接不在选区文本里） */
-    sourceUrl?: string;
-  }
-  | {
-    /** OCR 识图取字：合并面板（文本可见 + 动作内嵌 + 结果流式）。
-        fromOcr = 识别来源（显示钉图/识图取字标题）；false = 划词导流结果 */
-    kind: "ocr";
-    text: string;
-    fromOcr: boolean;
-    actionId: string | null;
-    output: string;
-    streaming: boolean;
-    error: string | null;
-    expanded: boolean;
-    /** 机器翻译结果按纯文本渲染（API 返回即纯文本，不进 markdown 解释） */
-    plain?: boolean;
-  };
+// Phase 状态机类型拆至 ./types.ts（ExtractGroups / EXTRACT_GROUPS / PendingView 同）
 
 // 重复查询缓存：同动作 + 同服务 + 同文本，5 分钟内直接复用结果
 // （容量 50，LRU 淘汰；划词场景「反复选中同一段」很常见）
@@ -233,16 +183,6 @@ function cachePut(key: string, output: string) {
 }
 
 // 结果窗口待显示结果（Rust ocr_take_pending 的返回结构）
-interface PendingView {
-  text: string;
-  fromOcr: boolean;
-  pinned: boolean;
-  hasImage: boolean;
-  imagePath: string | null;
-  run: { id: string; service: string | null } | null;
-  pid: number;
-}
-
 // ---- 钉图视图：无边框置顶窗口内渲染截图 ----
 // 交互：图片即拖拽区（data-tauri-drag-region 系统级拖动）；滚轮缩放；
 // 悬停工具条（识别文字 / 复制图片 / 关闭）；Esc 关闭。
@@ -301,38 +241,26 @@ export default function App() {
     ocrPinnedRef.current = v;
     setOcrPinned(v);
   };
-  const [actions, setActions] = useState<Record<string, boolean>>({
-    translate: true,
-    explain: true,
-    summarize: true,
-    copy: true,
-    link: true,
-    email: true,
-    code: true,
-    tel: true,
-  });
-  const [actionOrder, setActionOrder] = useState<string[]>([]);
-  /** 用户自定义 AI 动作（注册表 = 内置 + 这份数据，见 registry） */
-  const [customActions, setCustomActions] = useState<CustomAction[]>([]);
-  // runAction 可能由挂载效应里的首帧闭包调用（划词/识图导流的自动执行路径），
-  // 那份闭包读到的 state 永远停在初始值：注册表与提示词覆盖因此经 ref 取。
-  // 新增设置项若被 runAction 用到，一并写进这里，否则表现为"改了没生效"。
-  const liveRef = useRef<{
-    registry: ReturnType<typeof actionRegistry>;
-    prompts: Record<string, string>;
-  }>({ registry: actionRegistry(), prompts: {} });
-  const [capsuleMax, setCapsuleMax] = useState(4);
-  const [translateEnabled, setTranslateEnabled] = useState<string[]>(["ai"]);
-  const [translateDefault, setTranslateDefault] = useState("ai");
-  const [translateOrder, setTranslateOrder] = useState<string[]>([]);
-  // 翻译服务配置快照：使用时兜底提醒的判据（shared/translate.ts）
-  const [translateCfg, setTranslateCfg] = useState<TranslateConfig | null>(null);
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [defaultProviderId, setDefaultProviderId] = useState("");
+  // ---- 设置状态底座：拆至 ./useFloatingSettings.ts（get_settings 全量 +
+  // settings://changed 重拉 + settings://live 增量；liveRef 供 runAction 首帧闭包读）----
+  const {
+    actions,
+    actionOrder,
+    customActions,
+    liveRef,
+    capsuleMax,
+    translateEnabled,
+    translateDefault,
+    translateOrder,
+    translateCfg,
+    providers,
+    defaultProviderId,
+    engines,
+    defaultSearch,
+    obsidianCfg,
+  } = useFloatingSettings();
   const [flashId, setFlashId] = useState<string | null>(null);
   const [flashMsg, setFlashMsg] = useState("");
-  const [engines, setEngines] = useState<SearchEngine[]>([]);
-  const [defaultSearch, setDefaultSearch] = useState("");
   // 展开的二级浮层（同屏只开一个入口）："search"/"translate"/"obsidian" 仅供 OCR
   // 结果窗口的动作行 chips 沿用（obsidian = 存入目标：笔记/任务/卡片）；浮动条用
   // overflow（收纳面板）/ chev:*（胶囊动作换渠道/存入目标）/
@@ -352,8 +280,6 @@ export default function App() {
   const [pinOk, setPinOk] = useState(false);
   // 结果窗口完成闪烁：流式结束瞬间呼吸点变绿，2s 后消失（比单纯延迟消失语义清晰）
   const [doneFlash, setDoneFlash] = useState(false);
-  // Obsidian 接入配置：vaultPath 非空 = 「存入 Obsidian」动作可用
-  const [obsidianCfg, setObsidianCfg] = useState<ObsidianConfig | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
   // 分离卡几何基准：屏幕矩形（贴边翻转判定）、窗口上次落位、bar 在窗口内偏移。
   // 卡片屏幕坐标 = 窗口位置 + 窗口内偏移；winPos 由 show/resize 返回值与
@@ -393,6 +319,7 @@ export default function App() {
     switchMenu,
     hoverLeftAtRef,
     subLeftAtRef,
+    resetGhostStates,
   } = useSynHover({
     menu,
     setMenu,
@@ -403,6 +330,7 @@ export default function App() {
     dragActiveRef,
     ocrDragActiveRef,
   });
+
   // 钉图失败的反馈（图标变红 + title 显示具体原因，直到下次重试）
   const [pinErr, setPinErr] = useState<string | null>(null);
   const copiedAllTimerRef = useRef<number | undefined>(undefined);
@@ -508,30 +436,6 @@ export default function App() {
   // 上次下发的材质签名（去重：窗口没动、卡片也没变就不重复同步材质视图）
   const lastMaterialSigRef = useRef("");
 
-  const loadSettings = () => {
-    invoke<Settings>("get_settings")
-      .then((s) => {
-        setActions({ ...s.actions });
-        setActionOrder(s.actionOrder ?? []);
-        setCustomActions(s.customActions ?? []);
-        liveRef.current = {
-          registry: actionRegistry((s.customActions ?? []).filter((c) => c.enabled)),
-          prompts: s.actionPrompts ?? {},
-        };
-        setCapsuleMax(Math.max(2, Math.min(8, s.capsuleShowCount ?? 4)));
-        setEngines(s.searchEngines ?? []);
-        setDefaultSearch(s.defaultSearch ?? "");
-        setTranslateEnabled(s.translate?.enabled ?? ["ai"]);
-        setTranslateDefault(s.translate?.default ?? "ai");
-        setTranslateOrder(s.translate?.order ?? []);
-        setTranslateCfg(s.translate ?? null);
-        setProviders(s.providers ?? []);
-        setDefaultProviderId(s.defaultProviderId ?? "");
-        setObsidianCfg(s.obsidian ?? null);
-      })
-      .catch(() => undefined);
-  };
-
   // 按用户自定义顺序渲染（未配置的按注册表顺序排在后面）。
   // 实体提取与胶囊分流：
   // 无实体 → 不出现；恰好 1 个实体 → 对应动作一键直达；
@@ -540,6 +444,7 @@ export default function App() {
   // 各类动作均可在主界面动作卡片关闭（关闭的类型不提取、不计数）。
   // 日期/地点是异步识别（Rust 命令：NSDataDetector 日期 + NLTagger 地名 NER，µs 级）：
   // text 到达后胶囊先出，命中随即补进分组——晚几十毫秒的渐进出现，换来热路径零负担
+
   const [dateHits, setDateHits] = useState<DateHit[]>([]);
   const [placeHits, setPlaceHits] = useState<string[]>([]);
   useEffect(() => {
@@ -857,7 +762,6 @@ export default function App() {
   );
 
   useEffect(() => {
-    loadSettings();
     // 主题诊断：appearance=auto 时亮暗由 webview 的 prefers-color-scheme 决定，
     // 真机出现过「系统亮色下胶囊呈暗色材质」的异常——此日志输出 webview 实际
     // 感知的亮暗、根类与胶囊条计算背景（排查完可删）
@@ -922,21 +826,6 @@ export default function App() {
         .catch(() => undefined);
     }
 
-    // hover/active 粘连修复：鼠标离开窗口时 webview 收不到 mouseout，
-    // 短暂挂起 pointer-events 强制浏览器丢弃悬停/按压态；重新弹出时也复位一次。
-    const root = document.documentElement;
-    const suspendPointer = () => {
-      root.style.pointerEvents = "none";
-    };
-    const restorePointer = () => {
-      root.style.pointerEvents = "";
-    };
-    const resetGhostStates = () => {
-      suspendPointer();
-      requestAnimationFrame(() => requestAnimationFrame(restorePointer));
-      setHoverSuppress(true);
-    };
-
     const unlisteners: Array<() => void> = [];
     // StrictMode（dev 双挂载）/ 快速重挂防护：cleanup 先于 listen().then 执行时，
     // 旧监听的 unlisten 永远进不了 unlisteners → 泄漏，事件回调从此跑两遍
@@ -944,130 +833,7 @@ export default function App() {
     // then 里检查 cancelled：已清理则立即自行解绑。
     let listenCancelled = false;
 
-    listen<{ text: string; x: number; y: number; app?: string; pid?: number }>("selection://captured", (e) => {
-      // 钉图窗口与划词流无关：忽略广播（防止误触发浮动条弹出/窗口移动）
-      if (IS_PIN) return;
-      // app=ocr 是 OCR/结果流的内部合成事件（len=0、坐标 -1），由下方 OCR 分支消费；
-      // 结果窗（IS_OCR）靠这些事件显示结果面板——两者都只是不记日志，流程照常
-      if (e.payload.app !== "ocr" && !IS_OCR) {
-        invoke("ui_debug_log", {
-          msg: `收到 captured 事件：len=${e.payload.text.length} (${e.payload.x.toFixed(0)},${e.payload.y.toFixed(0)}) app=${e.payload.app ?? "-"}`,
-        }).catch(() => undefined);
-      }
-      capturedAtRef.current = performance.now();
-      resetGhostStates();
-      // 清除上一个操作可能残留的焦点态（避免新胶囊里按钮呈现选中样式）
-      (document.activeElement as HTMLElement | null)?.blur?.();
-      // 新选区使进行中的流失效（否则 streamingRef 卡住，dismiss 会被误拦）
-      runIdRef.current++;
-      streamingRef.current = false;
-      setMenu(null);
-      // 驻留计时一并作废：残留的 since 会让新胶囊的同一动作「一碰就开」
-      dwellRef.current = null;
-      hoverLeftAtRef.current = null;
-      // OCR 来源事件：仅 OCR 独立窗口消费（浮动条抢走 pending 会与之竞争）
-      if (e.payload.app === "ocr") {
-        if (!IS_OCR) return;
-        invoke<PendingView | null>("ocr_take_pending")
-          .then((p) => {
-            if (!p) return;
-            // 新结果：重置测量/显示状态——若尺寸与上次相同也必须重新显示窗口
-            ocrReadyRef.current = false;
-            setOcrPinnedState(p.pinned);
-            setMenu(null); // 新结果回收展开中的二级菜单（防陈旧菜单泄漏进新面板）
-            setUsedTranslate(null); // 选中态回落到默认服务
-            setUsedEngine(null);
-              setHoverSuppress(true);
-            setPhase({
-              kind: "ocr",
-              text: p.text,
-              fromOcr: p.fromOcr,
-              actionId: p.run?.id ?? null,
-              output: "",
-              streaming: false,
-              error: null,
-              expanded: false,
-            });
-            if (p.run?.id === "__extract") {
-              showExtractPanel(p.text, p.pid);
-            } else {
-              setPhase({
-                kind: "ocr",
-                text: p.text,
-                fromOcr: p.fromOcr,
-                actionId: p.run?.id ?? null,
-                output: "",
-                streaming: false,
-                error: null,
-                expanded: false,
-              });
-              if (p.run) runAction(p.run.id, p.run.service ?? undefined, p.text);
-            }
-          })
-          .catch(() => undefined);
-        return;
-      }
-      // OCR 窗口忽略普通划词广播
-      if (IS_OCR) return;
-      // 全关极端态守卫：常驻动作数为 0（复制关闭、Obsidian 未配 vault、
-      // 自定义动作全停等过滤后）且选区无同步实体（网址/邮箱/验证码/电话）、
-      // 日期/地点识别又未启用 → 无任何可显示内容，不弹（否则出现空"·"胶囊）。
-      // 判定走 ref + 现算实体（监听闭包拿不到渲染期状态）；日期/地点是异步
-      // 识别，开关开着时保守放行——宁弹空壳不漏真实的上下文动作
-      const all = extractAll(e.payload.text);
-      const acts = actionsRef.current;
-      const syncCtx =
-        (acts.link !== false && all.urls.length > 0) ||
-        (acts.email !== false && all.emails.length > 0) ||
-        (acts.code !== false && all.codes.length > 0) ||
-        (acts.tel !== false && all.tels.length > 0);
-      if (!barLiveRef.current && !syncCtx && acts.date === false && acts.addr === false) {
-        invoke("hide_floating_bar").catch(() => undefined);
-        return;
-      }
-      // 普通划词：浮动条在鼠标位置弹出（x/y 来自选区）
-      // 新划词 = 新胶囊：清掉上一轮残留的合成 hover 类（否则旧高亮在挂起解除后显形，
-      // 表现为"没碰到任何动作却有个动作是 hover 态"）
-      synHoverRef.current?.classList.remove("syn-hover");
-      synHoverRef.current = null;
-      sourceAppRef.current = e.payload.app ?? "";
-      sourcePidRef.current = e.payload.pid ?? 0;
-      setPending({ x: e.payload.x, y: e.payload.y });
-      // 屏幕矩形：二级浮层贴边翻转的判定基准（跨屏拖动后由拖拽结束回读刷新）
-      invoke<ScreenRect>("screen_rect_at", { x: e.payload.x, y: e.payload.y })
-        .then((r) => (screenRef.current = r))
-        .catch(() => undefined);
-      setText(e.payload.text);
-      setPhase({ kind: "bar" });
-    }).then((un) => {
-      if (listenCancelled) un();
-      else unlisteners.push(un);
-    });
-
-    listen("selection://dismiss", () => {
-      // 钉图窗口不受划词 dismiss 影响
-      if (IS_PIN) return;
-      // OCR 窗口钉住：忽略 dismiss（Rust 侧同样不会隐藏窗口）
-      if (IS_OCR && ocrPinnedRef.current) {
-        invoke("ui_debug_log", { msg: "忽略 dismiss：OCR 已钉住" }).catch(() => undefined);
-        return;
-      }
-      // 任务流式进行中不打断；其余点击空白即隐藏
-      if (streamingRef.current) {
-        invoke("ui_debug_log", { msg: "忽略 dismiss：任务进行中" }).catch(() => undefined);
-        return;
-      }
-      invoke("hide_floating_bar").catch(() => undefined);
-      // Windows 分离卡：弹层窗口已随 hide_pops 隐藏，菜单状态同步复位，
-      // 否则胶囊下次弹出时「更多」钮残留点亮态
-      if (POPS_EXTERNAL) setMenu(null);
-      if (IS_OCR) invoke("hide_ocr_window").catch(() => undefined);
-    }).then((un) => unlisteners.push(un));
-
-    listen("settings://changed", () => loadSettings()).then((un) => {
-      if (listenCancelled) un();
-      else unlisteners.push(un);
-    });
+    // ---- 划词会话生命周期（captured 分诊树 + dismiss）：拆至 ./useCaptureSession.ts ----
 
     // Windows 分离卡：弹层窗口的点击回传（动作执行统一在胶囊窗口）。
     // 事件经 emit_to 定向到本窗口，监听必须用窗口作用域——全局 listen()
@@ -1083,38 +849,9 @@ export default function App() {
         });
     }
 
-    // 主窗口的动作开关/顺序/搜索引擎实时推送（无需保存即时生效）
-    listen<{
-      actions: Record<string, boolean>;
-      actionOrder: string[];
-      capsuleShowCount?: number;
-      searchEngines?: SearchEngine[];
-      defaultSearch?: string;
-      translateEnabled?: string[];
-      translateDefault?: string;
-      translateOrder?: string[];
-    }>("settings://live", (e) => {
-      setActions({ ...e.payload.actions });
-      setActionOrder(e.payload.actionOrder ?? []);
-      if (e.payload.capsuleShowCount)
-        setCapsuleMax(Math.max(2, Math.min(8, e.payload.capsuleShowCount)));
-      if (e.payload.searchEngines) setEngines(e.payload.searchEngines);
-      if (e.payload.defaultSearch) setDefaultSearch(e.payload.defaultSearch);
-      if (e.payload.translateEnabled) setTranslateEnabled(e.payload.translateEnabled);
-      if (e.payload.translateDefault) setTranslateDefault(e.payload.translateDefault);
-      if (e.payload.translateOrder) setTranslateOrder(e.payload.translateOrder);
-    }).then((un) => {
-      if (listenCancelled) un();
-      else unlisteners.push(un);
-    });
-
-    document.addEventListener("mouseleave", suspendPointer);
-    document.addEventListener("mouseenter", restorePointer);
     return () => {
       listenCancelled = true;
       unlisteners.forEach((u) => u());
-      document.removeEventListener("mouseleave", suspendPointer);
-      document.removeEventListener("mouseenter", restorePointer);
     };
   }, []);
 
@@ -1915,6 +1652,37 @@ export default function App() {
     setUsedEngine,
   });
   pickRef.current = buildPickHandler();
+
+  // ---- 划词会话生命周期：拆至 ./useCaptureSession.ts（captured 分诊树 +
+  // dismiss 规则；resetGhostStates 来自 useSynHover，新划词时复位 hover 残留）。
+  // 须在 runAction / showExtractPanel 声明之后调用（监听闭包经 opts 捕获它们）----
+  useCaptureSession({
+    menu,
+    setMenu,
+    dwellRef,
+    hoverLeftAtRef,
+    synHoverRef,
+    setHoverSuppress,
+    screenRef,
+    actionsRef,
+    barLiveRef,
+    runIdRef,
+    streamingRef,
+    ocrReadyRef,
+    ocrPinnedRef,
+    capturedAtRef,
+    sourceAppRef,
+    sourcePidRef,
+    setText,
+    setPending,
+    setPhase,
+    setOcrPinnedState,
+    setUsedTranslate,
+    setUsedEngine,
+    runAction,
+    showExtractPanel,
+    resetGhostStates,
+  });
 
   const backToBar = () => {
     runIdRef.current++;
