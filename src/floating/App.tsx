@@ -414,10 +414,34 @@ export default function App() {
     }
     setMenu(next);
   }, []);
+  // 胶囊浮层驻留区判定（2026-10-27，与结果窗 pmenu 规则同语言）：菜单/面板
+  // 开着时光标须落在「触发项 ∪ 浮层卡」内；行侧级联（pmenu:*）多一层——
+  // 在收纳面板内但不在子菜单 = "panel"（只收子菜单回面板），全离开 = "out"。
+  // 只读 ref 与 DOM（监听注册一次也安全），不依赖渲染期状态
+  const capsuleRegion = (cx: number, cy: number): "in" | "panel" | "out" => {
+    const m = menuStateRef.current;
+    if (!m) return "out";
+    const hitEl = (el: Element | null) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
+    };
+    const inSub =
+      (m !== "overflow" && hitEl(menuPopRef.current)) ||
+      hitEl(document.querySelector(`[data-trig="${m}"]`));
+    if (m.startsWith("pmenu:")) {
+      if (inSub) return "in";
+      return hitEl(overflowRef.current) ? "panel" : "out";
+    }
+    return inSub || hitEl(overflowRef.current) ? "in" : "out";
+  };
   const hoverLeftAtRef = useRef<number | null>(null);
   // 子菜单级划出时刻：chips 开着时光标离开「胶囊堆 ∪ chips」区域即计时，
   // 150ms 后只收回 chips（回 overflow 态，主堆保留）；窗口级离开仍走 hoverLeft
   const subLeftAtRef = useRef<number | null>(null);
+  // 最近一次 hover://move 的光标位置：驻留区收起的宽限复核用（宽限期内可能
+  // 已点击切换/折返，收起前以最后光标位置重判，防止误收刚打开的菜单）
+  const lastPosRef = useRef<{ x: number; y: number } | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
   // 分离卡几何基准：屏幕矩形（贴边翻转判定）、窗口上次落位、bar 在窗口内偏移。
   // 卡片屏幕坐标 = 窗口位置 + 窗口内偏移；winPos 由 show/resize 返回值与
@@ -523,6 +547,19 @@ export default function App() {
     if (menu === null) return;
     const iv = window.setInterval(() => {
       const now = performance.now();
+      // 胶囊侧驻留区收起（2026-10-27）：光标离开「触发项 ∪ 浮层」150ms 后收；
+      // 收前用 lastPosRef 复核——宽限期内可能已点击切换/折返（见 lastPosRef 注释）
+      if (!IS_OCR && subLeftAtRef.current !== null && now - subLeftAtRef.current > 150) {
+        subLeftAtRef.current = null;
+        const p = lastPosRef.current;
+        const r = p ? capsuleRegion(p.x, p.y) : "out";
+        if (r !== "in") {
+          hoverLeftAtRef.current = null;
+          dwellRef.current = null;
+          switchMenu(r === "panel" ? "overflow" : null);
+          return;
+        }
+      }
       // 两级收起：子菜单（chips）开着时光标离开「堆 ∪ chips」→ 150ms 后只收回
       // chips（回 overflow 态，主堆保留）；光标离开窗口 → 350ms 后收回全部
       if (
@@ -1222,6 +1259,7 @@ export default function App() {
     listen<{ x: number; y: number }>("hover://move", (e) => {
       const cx = e.payload.x;
       const cy = e.payload.y;
+      lastPosRef.current = { x: cx, y: cy };
       // 「光标在窗口内」的证据链（Rust 按落点路由，含 Windows 分离卡弹层）：
       // 常规清掉 mouseleave 记下的离开边沿；结果窗浮层打开时改按「浮层∪触发区」
       // 判定——大窗口里光标挪到正文/角落留白等同划出，350ms 后收起子菜单，
@@ -1275,6 +1313,17 @@ export default function App() {
             hoverLeftAtRef.current = null;
             switchMenu(null);
           }
+        }
+      } else if (!POPS_EXTERNAL && menuStateRef.current !== null) {
+        // 胶囊侧驻留区（2026-10-27）：菜单/面板开着时划过无 ⌄ 的动作（如 总结）
+        // = 离开「触发项 ∪ 浮层」，开始 150ms 计时（interval 复核后收）——
+        // 不再让菜单错位悬停在无关动作头顶；Windows 分离卡不走此逻辑
+        //（弹层是独立窗口，由窗口级 350ms 规则覆盖）
+        if (capsuleRegion(cx, cy) === "in") {
+          subLeftAtRef.current = null;
+          hoverLeftAtRef.current = null;
+        } else if (subLeftAtRef.current === null) {
+          subLeftAtRef.current = performance.now();
         }
       } else {
         hoverLeftAtRef.current = null;
