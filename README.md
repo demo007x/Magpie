@@ -22,9 +22,24 @@ Every piece of text on your screen is one mouse gesture away: select or capture 
 
 ## Introduction
 
-**Magpie (拾趣)** is the entry hub for the first text source, triggered by your mouse. Select text or capture the screen in *any* app on macOS or Windows and a floating bar instantly offers translate / explain / summarize with streaming output. Unlike pure selection tools, Magpie covers all visible text with a dual pipeline (selection + OCR capture) — zero-cost capture via Accessibility APIs (macOS) or UI Automation (Windows) with a compatibility-mode fallback that restores the clipboard. Models are BYOK and never locked in; downstream, it connects to the professional tools you already use — **integrate, don't rebuild**.
+**Magpie (拾趣)** is a text-selection AI tool: select text in *any* app on macOS or Windows, or capture a region of the screen, and a floating bar appears on the spot — translate, explain and summarize stream in; URLs, phone numbers and dates are extracted in one step; results go straight into Obsidian or a pre-filled calendar event. It covers more than selectable text: content in images, videos and scans can be recognized and handled the same way. Bring your own model service, with no vendor lock-in; downstream, it connects to the apps you already use — **integrate, don't rebuild**.
 
 **Website**: [demo007x.github.io/Magpie](https://demo007x.github.io/Magpie/) — product intro & screenshots
+
+### Why Magpie
+
+We handle a lot of text with the mouse every day, and every kind of text has its own disconnected path:
+
+- A new word or an English paragraph: copy, switch to a translator, switch back, find where you were
+- Text in images, videos and scans can't be selected — a screenshot or retyping is the only way to keep it
+- A passage you don't follow: copy, open a search box, paste, enter
+- A long article you want summarized, and a blank chat box to start from
+- URLs, phone numbers and event details scattered through a block of text, copied one by one
+- Note-takers reopening the app and hunting for the right file just to save one line
+
+Each step takes seconds, but they all break the same thing: attention. Dozens of app switches, covered windows and rebuilt contexts a day add up to more than lost time — they fragment your train of thought.
+
+Magpie exists to make on-screen text actionable where it is: select to translate, explain or save; capture to recognize; extract information in one step; write results straight into Obsidian. What it replaces is not any one app but the copy → switch → paste → switch-back routine itself, repeated dozens of times a day.
 
 ## Screenshots
 
