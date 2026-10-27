@@ -33,6 +33,8 @@ pnpm build:debug:app    # debug .app 包（macOS 26 下 dev 裸二进制的托�
 
 前端是多入口 MPA（vite 三入口）：`main`（index.html，设置/自检）、`floating`（floating.html，浮动条/OCR 面板/钉图复用）、`toast`（toast.html，全局轻提示）。
 
+`src/floating/` 已按域拆分（2026-10-27）：`App.tsx` 是组装层（菜单/phase 状态机、`runAction`、布局 effect、全部 JSX），其余按域各一文件——`useSynHover`（合成 hover + 驻留开合，非 key 窗口 hover 的全部机制）、`useCaptureSession`（selection://captured 分诊 + dismiss）、`useFloatingSettings`（设置三路刷新）、`useCapsuleDrag` / `useOcrPanelDrag`（两窗拖拽）、`usePopsSync`（Windows 分离卡同步）、`useMaterialSync`、`env.ts`（窗口身份/平台常量）、`types.ts`（Phase/PendingView）。**改某个域的行为先看 App.tsx 头部的文件地图再定位**，别在 App.tsx 全文搜；拆分是纯移动、零逻辑改动，hook 之间经 ref/返回值共享状态，不引 Context。`useCaptureSession` 须在 `runAction`/`showExtractPanel` 之后调用（监听闭包经 opts 捕获二者）。
+
 Rust 侧 `src-tauri/src/`：
 
 - `capture/` 划词捕获（最高风险模块）：`#[cfg]` 分发 macos/other 后端，两后端同一 `start(tx, debounce_ms)` 签名；Windows 实现进 `capture/windows.rs` 时照此接入，勿在 worker 层加平台分支。
@@ -58,6 +60,8 @@ Rust 侧 `src-tauri/src/`：
 - **Windows 上同步 command 里禁止 `WebviewWindowBuilder::build()`**：同步 command 跑在主线程的 IPC 派发内，而 build() 的 WebView2 创建要在主线程泵消息等完成回调（wry `wait_with_pump`）——泵到的下一条 IPC 重入已占住的派发路径 → 主线程死锁（AppHangB1：钉图点下去全部窗口冻结、拖动失效、目标窗永不出现，tauri-runtime-wry 源码注释也明示 create_window 须跨线程调用）。运行时建窗一律放 async command（钉图 `pin_from_ocr` 是范例：跨线程建窗「排队即返回」，build 失败不回传、紧随其后的 `get_webview_window` 可能拿 None，都要按此语义写）。快捷键/托盘 handler 里建窗（如遮罩窗）不受此限——handler 在事件循环里、不带 IPC 锁。
 - **Windows 分离卡的二级浮层是独立窗口、独立渲染路径**：floating-panel / floating-menu 由 `pops.tsx` 哑渲染（`.pop.overflow` / `.pop.menu` / `.pop.hchips`），与结果窗/胶囊内的 `.rail`、`.ocr-menu-slot`（App.tsx）是**两套 DOM**——浮层样式与浮层问题排查，第一步先确认元素归属哪条渲染路径（开发工具看真实 DOM），再写/查选择器；按 macOS 单窗心智猜选择器会漏掉弹层窗整条链路（2026-10-25「更多菜单缺描边」排查超长的教训：描边正例清单漏了 `.pop.overflow`）。另：这些常驻隐藏窗口的 HMR 会因 WebView2 节流断连且不自愈（main.tsx 有断连自愈，需一次全新加载生效）——「改了没生效」先整窗重载再查代码。
 - **更新检测只做提示不做自更新**：GitHub 匿名 API 60 次/小时限流，后台检查按 24h 节流且结果落盘（`update.json` 与 settings 同目录）；网络失败一律静默。
+- **用户日志 `magpie.log`（与 settings 同目录，全构建落盘）**：`main.rs::user_log` 唯一写入口，超 128KB 裁尾 32KB；「关于 › 复制日志」的数据源。排查用户问题先读它而非 stderr（release 无 stderr）；hover 类高频诊断只在 dev 记（`import.meta.env.DEV`），别往 release 日志里刷屏。OCR 识别失败时**保留**截图并记尺寸+路径（删文件 = 删证据）。
+- **深链 `magpie://`**（tauri-plugin-deep-link）：目前只有 `magpie://feedback` → 主窗口置前 + `nav://page` 到关于页；新增路由在 main.rs 的 deep-link handler 按 host 分发。
 - **UI 不用组件库，浮层原语自建一份**：模态一律用 `src/shared/Modal.tsx`（portal 到 body，自带遮罩/Esc/点遮罩关闭/Tab 焦点循环，样式在 `main.css` 的 `.modal*`；`Confirm` 是它的危险操作用法，`size="sm"` 给一两句确认的窄版）。需要新浮层时扩展它，别在页面里再搓一份遮罩层。
 - **列表项删除钮统一 `.row-del`**（`main.css`）：无边框无底色的 24×24 纯图标钮，hover 才转红。模型服务/搜索引擎/禁用应用的删除都用它（自定义动作的删除在编辑弹窗内做两步确认），别再各写描边胶囊或文字「删除/移除」。
 - **WKWebView 里没有 JS 对话框**：`window.alert/confirm/prompt` 是静默空操作（`confirm()` 恒返回 `false`，表现为"按钮点了没反应"）。提醒走 `toast()`（`src/shared/toast.ts` → Rust `notify` 命令 → 全局 toast 窗口），确认走 `Modal.tsx` 的 `Confirm`。别"简化"回原生对话框。
