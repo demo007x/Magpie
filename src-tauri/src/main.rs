@@ -22,10 +22,16 @@ use tauri::{
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 /// 通用页开关：登录时自动启动。先改 LaunchAgent（OS 侧事实），成功才落 settings；
-/// 失败时返回错误由前端 toast，settings 保持原状——OS 状态与镜像不同步比失败更糟
+/// 失败时返回错误由前端 toast，settings 保持原状——OS 状态与镜像不同步比失败更糟。
+/// debug 构建拒绝开启：dev 二进制的页面在 devUrl（Vite 开发服务器），开机
+/// 自拉起时 Vite 不在运行，窗口必然「localhost 拒绝连接」——自启动只属于
+/// 打包安装版（前端资源嵌在 exe 内）。前端 catch 现成 toast，无需额外 UI
 #[tauri::command]
 fn set_launch_at_login(app: AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
+    if cfg!(debug_assertions) && enabled {
+        return Err("开发版不能设置自启动，请使用打包安装版".into());
+    }
     let al = app.autolaunch();
     if enabled {
         al.enable().map_err(|e| e.to_string())?;
@@ -569,7 +575,9 @@ fn main() {
             floating::init_pop_windows(&handle);
 
             // 自启状态同步：LaunchAgent 是 OS 侧事实，settings 只是镜像——
-            // 应用启动时若两者漂移（系统清理了 plist 等），按 settings 静默拉齐
+            // 应用启动时若两者漂移（系统清理了 plist 等），按 settings 静默拉齐。
+            // debug 构建只降不升（禁用照常执行，启用跳过）——否则 dev 运行期间
+            // 会把 target/debug 的 exe 静默注册成自启动项（dev 二进制无前端可加载）
             {
                 use tauri_plugin_autostart::ManagerExt;
                 let enabled = settings::current(&handle).launch_at_login;
@@ -578,7 +586,7 @@ fn main() {
                     Ok(true) if !enabled => {
                         let _ = al.disable();
                     }
-                    Ok(false) if enabled => {
+                    Ok(false) if enabled && !cfg!(debug_assertions) => {
                         let _ = al.enable();
                     }
                     _ => {}
