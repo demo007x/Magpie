@@ -102,6 +102,26 @@ pub(super) fn pop_rect_contains(x: f64, y: f64, pad: f64) -> bool {
     })
 }
 
+/// 点落在哪张二级浮层卡内（"panel" | "menu"，不含出血）——hover 路由随
+/// hover://move 带给胶囊：分离卡下弹层是独立窗口、胶囊 DOM 不可见，胶囊
+/// 驻留区判定（划过无 ⌄ 动作收回浮层）凭此标记认定「光标在浮层内」。
+/// macOS 恒 None（无分离卡，胶囊直接量自己的 DOM）
+pub(super) fn pop_rect_at(x: f64, y: f64) -> Option<&'static str> {
+    let s = POPS.lock().unwrap_or_else(|e| e.into_inner());
+    let hit = |r: Option<PopRect>| {
+        r.map_or(false, |r| {
+            x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h
+        })
+    };
+    if hit(s.panel) {
+        Some("panel")
+    } else if hit(s.menu) {
+        Some("menu")
+    } else {
+        None
+    }
+}
+
 /// Windows 分离卡：胶囊窗口推送二级浮层的渲染数据与锚点。
 /// target："panel"（收纳面板）| "menu"（窄单列菜单）| "close-panel" / "close-menu"
 /// （单收一张卡——同屏只开一个入口，胶囊 ⌄ 与面板 ⌄ 互斥）| "none"（全收起）；

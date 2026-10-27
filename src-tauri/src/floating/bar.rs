@@ -121,7 +121,18 @@ pub fn route_hover(app: &AppHandle, gx: f64, gy: f64) {
             _ => "floating",
         });
         HOVER_IN.store(true, Ordering::Relaxed);
-        let _ = app.emit_to(label.as_str(), "hover://move", json!({ "x": cx, "y": cy }));
+        // pop 标记仅 floating 消费：光标在哪张分离卡内（panel/menu，见
+        // pop_rect_at），胶囊驻留区判定用；macOS 恒 None
+        let pop = if label == "floating" {
+            super::pops::pop_rect_at(gx, gy)
+        } else {
+            None
+        };
+        let _ = app.emit_to(
+            label.as_str(),
+            "hover://move",
+            json!({ "x": cx, "y": cy, "pop": pop }),
+        );
     } else if HOVER_IN.swap(false, Ordering::Relaxed) {
         let last = HOVER_LAST.lock().unwrap_or_else(|e| e.into_inner()).take();
         if let Some(label) = last {

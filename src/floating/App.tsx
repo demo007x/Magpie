@@ -417,8 +417,14 @@ export default function App() {
   // 胶囊浮层驻留区判定（2026-10-27，与结果窗 pmenu 规则同语言）：菜单/面板
   // 开着时光标须落在「触发项 ∪ 浮层卡」内；行侧级联（pmenu:*）多一层——
   // 在收纳面板内但不在子菜单 = "panel"（只收子菜单回面板），全离开 = "out"。
+  // 浮层卡的认定分两式：macOS 同窗直接量 DOM；Windows 分离卡弹层是独立
+  // 窗口、DOM 不可见，由 Rust 随 hover://move 带来的 pop 标记判定。
   // 只读 ref 与 DOM（监听注册一次也安全），不依赖渲染期状态
-  const capsuleRegion = (cx: number, cy: number): "in" | "panel" | "out" => {
+  const capsuleRegion = (
+    cx: number,
+    cy: number,
+    inPop: string | null,
+  ): "in" | "panel" | "out" => {
     const m = menuStateRef.current;
     if (!m) return "out";
     const hitEl = (el: Element | null) => {
@@ -426,22 +432,29 @@ export default function App() {
       const r = el.getBoundingClientRect();
       return cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
     };
-    const inSub =
-      (m !== "overflow" && hitEl(menuPopRef.current)) ||
-      hitEl(document.querySelector(`[data-trig="${m}"]`));
+    const inMenuCard = POPS_EXTERNAL ? inPop === "menu" : hitEl(menuPopRef.current);
+    const inPanelCard = POPS_EXTERNAL ? inPop === "panel" : hitEl(overflowRef.current);
+    // 触发区 = 整个动作槽（主按钮 + ⌄），不是 ⌄ 本身——驻留展开后光标停在
+    // 主按钮文字上仍算「在自己的菜单项里」，否则 150ms 收 → 驻留再展开 → 抖动
+    const trigEl = document.querySelector(`[data-trig="${m}"]`);
+    const inTrig = hitEl(
+      trigEl?.closest(".action-slot") ?? trigEl?.closest(".pitem") ?? trigEl,
+    );
+    const inSub = (m !== "overflow" && inMenuCard) || inTrig;
     if (m.startsWith("pmenu:")) {
       if (inSub) return "in";
-      return hitEl(overflowRef.current) ? "panel" : "out";
+      return inPanelCard ? "panel" : "out";
     }
-    return inSub || hitEl(overflowRef.current) ? "in" : "out";
+    return inSub || inPanelCard ? "in" : "out";
   };
   const hoverLeftAtRef = useRef<number | null>(null);
   // 子菜单级划出时刻：chips 开着时光标离开「胶囊堆 ∪ chips」区域即计时，
   // 150ms 后只收回 chips（回 overflow 态，主堆保留）；窗口级离开仍走 hoverLeft
   const subLeftAtRef = useRef<number | null>(null);
-  // 最近一次 hover://move 的光标位置：驻留区收起的宽限复核用（宽限期内可能
-  // 已点击切换/折返，收起前以最后光标位置重判，防止误收刚打开的菜单）
-  const lastPosRef = useRef<{ x: number; y: number } | null>(null);
+  // 最近一次 hover://move 的光标位置与分离卡命中（pop = "panel"|"menu"|null）：
+  // 驻留区收起的宽限复核用（宽限期内可能已点击切换/折返，收起前以最后光标
+  // 位置重判，防止误收刚打开的菜单）
+  const lastPosRef = useRef<{ x: number; y: number; pop: string | null } | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
   // 分离卡几何基准：屏幕矩形（贴边翻转判定）、窗口上次落位、bar 在窗口内偏移。
   // 卡片屏幕坐标 = 窗口位置 + 窗口内偏移；winPos 由 show/resize 返回值与
@@ -552,7 +565,7 @@ export default function App() {
       if (!IS_OCR && subLeftAtRef.current !== null && now - subLeftAtRef.current > 150) {
         subLeftAtRef.current = null;
         const p = lastPosRef.current;
-        const r = p ? capsuleRegion(p.x, p.y) : "out";
+        const r = p ? capsuleRegion(p.x, p.y, p.pop) : "out";
         if (r !== "in") {
           hoverLeftAtRef.current = null;
           dwellRef.current = null;
@@ -1256,10 +1269,11 @@ export default function App() {
     // 并已换算成本窗口视口坐标（~60Hz 节流），elementFromPoint 找到光标下的
     // 动作手动加 hover 类——非 key 窗口收不到 mouseMoved、WebKit 只给活动
     // 页面渲染 :hover，两者都绕开
-    listen<{ x: number; y: number }>("hover://move", (e) => {
+    listen<{ x: number; y: number; pop?: string | null }>("hover://move", (e) => {
       const cx = e.payload.x;
       const cy = e.payload.y;
-      lastPosRef.current = { x: cx, y: cy };
+      const inPop = e.payload.pop ?? null;
+      lastPosRef.current = { x: cx, y: cy, pop: inPop };
       // 「光标在窗口内」的证据链（Rust 按落点路由，含 Windows 分离卡弹层）：
       // 常规清掉 mouseleave 记下的离开边沿；结果窗浮层打开时改按「浮层∪触发区」
       // 判定——大窗口里光标挪到正文/角落留白等同划出，350ms 后收起子菜单，
@@ -1314,12 +1328,12 @@ export default function App() {
             switchMenu(null);
           }
         }
-      } else if (!POPS_EXTERNAL && menuStateRef.current !== null) {
+      } else if (menuStateRef.current !== null) {
         // 胶囊侧驻留区（2026-10-27）：菜单/面板开着时划过无 ⌄ 的动作（如 总结）
         // = 离开「触发项 ∪ 浮层」，开始 150ms 计时（interval 复核后收）——
-        // 不再让菜单错位悬停在无关动作头顶；Windows 分离卡不走此逻辑
-        //（弹层是独立窗口，由窗口级 350ms 规则覆盖）
-        if (capsuleRegion(cx, cy) === "in") {
+        // 不再让菜单错位悬停在无关动作头顶。双平台同行为：浮层卡的认定
+        // macOS 量 DOM、Windows 用 pop 标记（见 capsuleRegion 注释）
+        if (capsuleRegion(cx, cy, inPop) === "in") {
           subLeftAtRef.current = null;
           hoverLeftAtRef.current = null;
         } else if (subLeftAtRef.current === null) {
