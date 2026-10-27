@@ -1,3 +1,19 @@
+// src/floating/App.tsx —— 浮动条工程的组装层：floating（划词胶囊条）/ ocr（结果窗）
+// 两个窗口共用本组件，按 IS_OCR 分叉；pin-* 窗口直接渲染 PinView。
+//
+// 2026-10-27 拆分（纯移动、逻辑零改动）：原 3361 行按域拆为 hook 文件，本文件保留
+// 菜单状态机（menu / fading）、phase 状态机、动作执行（runAction）、布局 effect
+// 与全部 JSX。改某个域的行为先去对应文件：
+//   env.ts              窗口身份 / 平台常量 / 共享类型（IS_OCR、POPS_EXTERNAL、HoverMenuId…）
+//   useSynHover.ts      合成 hover + 二级浮层驻留展开/收起（非 key 窗口 hover 的全部机制）
+//   useCapsuleDrag.ts   胶囊整条拖拽 + 点空白收浮层 + guarded 点击守卫
+//   useOcrPanelDrag.ts  结果窗面板拖拽（空白处按住拖、文本区保留选择）
+//   usePopsSync.ts      Windows 分离卡：浮层 payload 推送 / 弹层点击回传处理
+//   useMaterialSync.ts  macOS vibrancy 材质同步（当前总开关关闭，逻辑保留）
+//   PinView.tsx         钉图窗口渲染端（缩放/拖拽/识别/复制）
+//   pops.tsx            Windows 弹层窗口的哑渲染端（floating-panel / floating-menu）
+// 跨文件共享的 ref（suppressClickRef / dragActiveRef / dwellRef / menuStateRef）在
+// 本文件 ref 区声明或由 hook 返回，注释标明谁写谁读。
 import {
   useCallback,
   useEffect,
@@ -6,7 +22,8 @@ import {
   useRef,
   useState,
 } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";import { invoke } from "@tauri-apps/api/core";
+import type { MouseEvent as ReactMouseEvent } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "../shared/toast";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -57,23 +74,14 @@ import type {
   TranslateConfig,
 } from "../shared/types";
 
-// 窗口身份（生命周期内不变 → 模块级常量，事件回调不会读到过期值）：
-// floating = 划词浮动条；ocr = 文本识别独立窗口；pin-* = 钉图窗口
-const WIN_LABEL = (() => {
-  try {
-    return getCurrentWebviewWindow().label;
-  } catch {
-    return "floating";
-  }
-})();
-const IS_OCR = WIN_LABEL === "ocr";
-const IS_PIN = WIN_LABEL.startsWith("pin-");
-// 平台分叉（与 main.tsx 的 html.win 根类同一判据）：Windows 走方案甲「一卡一窗」
-// 分离卡——二级浮层渲染在独立窗口（floating-panel / floating-menu，窗口即卡片，
-// 见 floating.rs），本窗口（胶囊）只把渲染数据 + 锚点推给 Rust（set_floating_pops）；
-// macOS 维持单窗分离卡（NSWindow 按内容轮廓画影），交互逻辑与样式零改动
-const IS_WIN_LIKE = !/Mac/i.test(navigator.platform);
-const POPS_EXTERNAL = IS_WIN_LIKE && !IS_OCR && !IS_PIN;
+// 窗口身份与平台常量拆至 ./env.ts（App.tsx 拆分导航见本文件头部注释）
+import { IS_OCR, IS_PIN, POPS_EXTERNAL } from "./env";
+import type { HoverMenuId, ScreenRect, WindowPos } from "./env";
+import { useMaterialSync } from "./useMaterialSync";
+import { useOcrPanelDrag } from "./useOcrPanelDrag";
+import { useCapsuleDrag } from "./useCapsuleDrag";
+import { usePopsSync } from "./usePopsSync";
+import { useSynHover } from "./useSynHover";
 
 // 上下文智能动作：由「提取信息」统一承载（多值/混合进面板），不再逐个上胶囊条
 // （id 集合见 shared/actions.ts CONTEXT_ACTION_IDS）
@@ -195,52 +203,14 @@ const CACHE_CAP = 50;
 const FLOAT_PAD = 8;
 const CARD_GAP = 3;
 
-// vibrancy 材质总开关（与 src-tauri floating/material.rs 的 ENABLED 同步）：
-// 2026-10-25 停用——menu 材质基色导致「黑中有灰」，定稿回退不透明哑光 + 细节层。
-// 重开需与本开关、bar.rs 两处 apply、CSS 半透明墨度节三处一起翻
-const MATERIAL_ENABLED = false;
-
-// hover 驻留展开：光标在「带 ⌄ 的动作项」上停留满 OPEN 才展开二级浮层
-// （快速路过不开）；离开胶囊∪浮层满 CLOSE 后自动收起（跨窗口缝隙、
-// 瞄准时的犹豫抖动不打断）。收起比展开略长：leave → 进菜单窗口的间隙别误收
-const HOVER_OPEN_MS = 300;
-const HOVER_CLOSE_MS = 350;
-// 子菜单退场时长：与 floating.css 的 --menu-out-ms 同步（switchMenu 以 fading
-// 快照续挂旧菜单 .m-out 淡出，到点卸载）
-const MENU_FADE_MS = 110;
+// HOVER_OPEN_MS / HOVER_CLOSE_MS / MENU_FADE_MS 拆至 ./useSynHover.ts
 
 // hover 驻留的作用域入口 id（menu 状态取值域的子集）：
 // chev:* = 胶囊动作 ⌄，overflow = 最右收纳钮，pmenu:* = 收纳面板行的行侧菜单
 // （面板开着才可达，故行 hover 恒走「已开即切」，不走驻留分支），
-// search/translate/obsidian = 结果窗口动作行 ⌄（同窗流内菜单，窗口向下生长）
-type HoverMenuId =
-  | "chev:translate"
-  | "chev:search"
-  | "chev:obsidian"
-  | "overflow"
-  | "pmenu:translate"
-  | "pmenu:search"
-  | "pmenu:obsidian"
-  | "search"
-  | "translate"
-  | "obsidian";
-
-// 二级浮层开合状态的取值域（fading 退场快照同域）：chev:* 仅浮动条胶囊、
-// overflow 浮动条「更多」收纳 / OCR 结果窗胶囊堆共用一名、pmenu:* 为堆内
-// 行侧菜单、search/translate/obsidian 为结果窗动作行 ⌄ 槽位菜单
+// search/translate/obsidian = 结果窗口动作行 ⌄（同窗流内菜单，窗口向下生长）。
+// 类型定义拆至 ./env.ts（hook 文件共用）
 type MenuState = HoverMenuId;
-
-// Rust 返回的窗口落位 / 显示器逻辑矩形（逻辑坐标）
-interface WindowPos {
-  x: number;
-  y: number;
-}
-interface ScreenRect {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-}
 
 function cacheGet(key: string): string | null {
   const hit = resultCache.get(key);
@@ -382,79 +352,8 @@ export default function App() {
   const [pinOk, setPinOk] = useState(false);
   // 结果窗口完成闪烁：流式结束瞬间呼吸点变绿，2s 后消失（比单纯延迟消失语义清晰）
   const [doneFlash, setDoneFlash] = useState(false);
-  // 弹出瞬间挂起 hover 样式：胶囊常压在光标下，hover 残留会被误认为「选中」；
-  // 首次 mousemove 即恢复（非 key 窗口下由 hover://move 合成事件解除，见下）
-  const [hoverSuppress, setHoverSuppress] = useState(false);
   // Obsidian 接入配置：vaultPath 非空 = 「存入 Obsidian」动作可用
   const [obsidianCfg, setObsidianCfg] = useState<ObsidianConfig | null>(null);
-  // 合成 hover 当前命中的动作：hover://move 驱动 elementFromPoint 增删类，
-  // 绕开 WebKit 对非活动页面的 :hover 门控（真 mousemove 在本窗口不可靠）
-  const synHoverRef = useRef<HTMLElement | null>(null);
-  // —— 二级浮层 hover 驻留展开（胶囊条与结果窗口动作行，两处动作行同构）——
-  // dwell：光标连续停在同一个 ⌄ 动作项上的计时；menuStateRef：hover 回调读
-  // 最新 menu 的守卫镜像；hoverLeftAtRef：document mouseleave 记下的离开时刻
-  // （非 key 窗口收不到逐元素 mousemove，但 document 级离开/进入边沿可靠——
-  // ghost-state 修复已依赖同一对事件），null = 光标在胶囊∪浮层内
-  const dwellRef = useRef<{ trig: HoverMenuId; since: number } | null>(null);
-  const menuStateRef = useRef(menu);
-  menuStateRef.current = menu;
-  // 子菜单退场快照：纯收起/切换时旧菜单值在此多挂 MENU_FADE_MS 毫秒，
-  // 渲染层按它续挂旧内容并加 .m-out 原地淡出（与新菜单入场交叉），到点清空
-  // 一并卸载。执行动作的收起不经此（结果区立即接管，退场抢戏）
-  const [fading, setFading] = useState<MenuState | null>(null);
-  const fadeTimerRef = useRef(0);
-  // 菜单纯收起/切换的统一入口（替代直接 setMenu）：事件闭包经 menuStateRef
-  // 读最新值，渲染期回调经渲染闭包——两条路径都取到当前菜单；同值调用无副作用
-  const switchMenu = useCallback((next: MenuState | null) => {
-    const cur = menuStateRef.current;
-    if (cur !== null && cur !== next) {
-      setFading(cur);
-      window.clearTimeout(fadeTimerRef.current);
-      fadeTimerRef.current = window.setTimeout(() => setFading(null), MENU_FADE_MS);
-    }
-    setMenu(next);
-  }, []);
-  // 胶囊浮层驻留区判定（2026-10-27，与结果窗 pmenu 规则同语言）：菜单/面板
-  // 开着时光标须落在「触发项 ∪ 浮层卡」内；行侧级联（pmenu:*）多一层——
-  // 在收纳面板内但不在子菜单 = "panel"（只收子菜单回面板），全离开 = "out"。
-  // 浮层卡的认定分两式：macOS 同窗直接量 DOM；Windows 分离卡弹层是独立
-  // 窗口、DOM 不可见，由 Rust 随 hover://move 带来的 pop 标记判定。
-  // 只读 ref 与 DOM（监听注册一次也安全），不依赖渲染期状态
-  const capsuleRegion = (
-    cx: number,
-    cy: number,
-    inPop: string | null,
-  ): "in" | "panel" | "out" => {
-    const m = menuStateRef.current;
-    if (!m) return "out";
-    const hitEl = (el: Element | null) => {
-      if (!el) return false;
-      const r = el.getBoundingClientRect();
-      return cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
-    };
-    const inMenuCard = POPS_EXTERNAL ? inPop === "menu" : hitEl(menuPopRef.current);
-    const inPanelCard = POPS_EXTERNAL ? inPop === "panel" : hitEl(overflowRef.current);
-    // 触发区 = 整个动作槽（主按钮 + ⌄），不是 ⌄ 本身——驻留展开后光标停在
-    // 主按钮文字上仍算「在自己的菜单项里」，否则 150ms 收 → 驻留再展开 → 抖动
-    const trigEl = document.querySelector(`[data-trig="${m}"]`);
-    const inTrig = hitEl(
-      trigEl?.closest(".action-slot") ?? trigEl?.closest(".pitem") ?? trigEl,
-    );
-    const inSub = (m !== "overflow" && inMenuCard) || inTrig;
-    if (m.startsWith("pmenu:")) {
-      if (inSub) return "in";
-      return inPanelCard ? "panel" : "out";
-    }
-    return inSub || inPanelCard ? "in" : "out";
-  };
-  const hoverLeftAtRef = useRef<number | null>(null);
-  // 子菜单级划出时刻：chips 开着时光标离开「胶囊堆 ∪ chips」区域即计时，
-  // 150ms 后只收回 chips（回 overflow 态，主堆保留）；窗口级离开仍走 hoverLeft
-  const subLeftAtRef = useRef<number | null>(null);
-  // 最近一次 hover://move 的光标位置与分离卡命中（pop = "panel"|"menu"|null）：
-  // 驻留区收起的宽限复核用（宽限期内可能已点击切换/折返，收起前以最后光标
-  // 位置重判，防止误收刚打开的菜单）
-  const lastPosRef = useRef<{ x: number; y: number; pop: string | null } | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
   // 分离卡几何基准：屏幕矩形（贴边翻转判定）、窗口上次落位、bar 在窗口内偏移。
   // 卡片屏幕坐标 = 窗口位置 + 窗口内偏移；winPos 由 show/resize 返回值与
@@ -474,6 +373,36 @@ export default function App() {
   // AI 提取的运行令牌：新一次提取使旧流的回调失效（防止陈旧结果覆盖新面板）
   const aiExtractRunRef = useRef(0);
   const menuPopRef = useRef<HTMLDivElement | null>(null);
+  // 拖拽后的残余 click 抑制（胶囊拖拽 useCapsuleDrag 与面板拖拽 useOcrPanelDrag
+  // 共用；拖拽结束时置 true、140ms 后复位，click 捕获段见到即吞）
+  const suppressClickRef = useRef(false);
+  // 胶囊拖拽进行中（useCapsuleDrag 维护；合成 hover 拖拽中不开浮层）
+  const dragActiveRef = useRef(false);
+  // ---- OCR 面板拖拽：拆至 ./useOcrPanelDrag.ts（逻辑零改动）----
+  const { onOcrPanelDown, ocrDragActiveRef } = useOcrPanelDrag(suppressClickRef);
+  // ---- 合成 hover + 二级浮层驻留展开/收起：拆至 ./useSynHover.ts ----
+  // 返回的 refs（dwellRef / menuStateRef）与 switchMenu 供分离卡同步、拖拽、
+  // 渲染层共用；fading / hoverSuppress 驱动退场快照与 hover 挂起类名
+  const {
+    hoverSuppress,
+    setHoverSuppress,
+    synHoverRef,
+    dwellRef,
+    menuStateRef,
+    fading,
+    switchMenu,
+    hoverLeftAtRef,
+    subLeftAtRef,
+  } = useSynHover({
+    menu,
+    setMenu,
+    barRef,
+    overflowRef,
+    menuPopRef,
+    ocrPanelRef,
+    dragActiveRef,
+    ocrDragActiveRef,
+  });
   // 钉图失败的反馈（图标变红 + title 显示具体原因，直到下次重试）
   const [pinErr, setPinErr] = useState<string | null>(null);
   const copiedAllTimerRef = useRef<number | undefined>(undefined);
@@ -543,59 +472,6 @@ export default function App() {
       setOcrStick(true);
     }
   }, [phase]);
-
-  // hover 挂起恢复：弹出后首次移动鼠标即恢复正常 hover 反馈
-  useEffect(() => {
-    if (!hoverSuppress) return;
-    const onMove = () => setHoverSuppress(false);
-    window.addEventListener("mousemove", onMove, { once: true });
-    return () => window.removeEventListener("mousemove", onMove);
-  }, [hoverSuppress]);
-
-  // 二级浮层 hover 收起：光标离开∪浮层满 HOVER_CLOSE_MS 后自动收（胶囊条与
-  // 结果窗口动作行同一套）。只信 mouseleave 离开边沿 + 心跳复核，不做「事件
-  // 超时即收」——光标静止时 hover://move 本就不来，超时会把「在菜单里犹豫」
-  // 误判成「已划走」。结果窗口的收起走 grow=0 分支，窗口随之缩回
-  useEffect(() => {
-    if (menu === null) return;
-    const iv = window.setInterval(() => {
-      const now = performance.now();
-      // 胶囊侧驻留区收起（2026-10-27）：光标离开「触发项 ∪ 浮层」150ms 后收；
-      // 收前用 lastPosRef 复核——宽限期内可能已点击切换/折返（见 lastPosRef 注释）
-      if (!IS_OCR && subLeftAtRef.current !== null && now - subLeftAtRef.current > 150) {
-        subLeftAtRef.current = null;
-        const p = lastPosRef.current;
-        const r = p ? capsuleRegion(p.x, p.y, p.pop) : "out";
-        if (r !== "in") {
-          hoverLeftAtRef.current = null;
-          dwellRef.current = null;
-          switchMenu(r === "panel" ? "overflow" : null);
-          return;
-        }
-      }
-      // 两级收起：子菜单（chips）开着时光标离开「堆 ∪ chips」→ 150ms 后只收回
-      // chips（回 overflow 态，主堆保留）；光标离开窗口 → 350ms 后收回全部
-      if (
-        menuStateRef.current?.startsWith("pmenu:") &&
-        subLeftAtRef.current !== null &&
-        now - subLeftAtRef.current > 150
-      ) {
-        subLeftAtRef.current = null;
-        // 光标仍在窗口内（只是离开了堆 ∪ chips 区域）：窗口级收起计时一并作废，
-        // 否则停在正文上不动，350ms 后会把整个堆也收掉
-        hoverLeftAtRef.current = null;
-        switchMenu("overflow");
-        return;
-      }
-      const left = hoverLeftAtRef.current;
-      if (left !== null && now - left > HOVER_CLOSE_MS) {
-        hoverLeftAtRef.current = null;
-        dwellRef.current = null;
-        switchMenu(null);
-      }
-    }, 100);
-    return () => window.clearInterval(iv);
-  }, [menu]);
 
   // 完成闪烁：streaming true→false 且已有输出（出错不闪绿，错误有自己的提示）
   useEffect(() => {
@@ -973,40 +849,12 @@ export default function App() {
         : null;
   const pmenuGhost = !(menu !== null && menu.startsWith("pmenu:")) && pmenuVal !== null;
 
-  // ---- vibrancy 材质同步（macOS 条窗专属，Rust 侧见 floating/material.rs）----
-  // 每张卡片（胶囊 + 已展开二级浮层）一个材质视图，缝隙/留白无视图 = 真实桌面。
-  // 矩形随 show/resize 命令同趟上报——Rust 在同一命令内先落窗口尺寸再摆材质
-  // （主线程队列 FIFO 保证顺序）；曾分两条命令，材质按旧窗口高度换算 y 翻转，
-  // resize 一落地视图全部错位悬空（「残影圆角矩形」根因）。
-  // syncMaterial 只服务主题切换（尺寸不变，仅刷新材质明暗）
-  const materialActive = MATERIAL_ENABLED && !IS_WIN_LIKE && !IS_OCR && !IS_PIN;
-  const materialDark = () => {
-    const root = document.documentElement;
-    return (
-      root.classList.contains("theme-dark") ||
-      (!root.classList.contains("theme-light") &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches)
-    );
-  };
-  const materialCards = () => {
-    const cards: { x: number; y: number; w: number; h: number }[] = [];
-    const bar = barRef.current;
-    if (!bar) return cards;
-    const rect = (el: HTMLElement) => {
-      const b = el.getBoundingClientRect();
-      return { x: b.x, y: b.y, w: b.width, h: b.height };
-    };
-    cards.push(rect(bar));
-    if (overflowRef.current) cards.push(rect(overflowRef.current));
-    if (menuPopRef.current) cards.push(rect(menuPopRef.current));
-    return cards;
-  };
-  const syncMaterial = () => {
-    if (!materialActive || !barRef.current) return;
-    invoke("update_floating_material", { cards: materialCards(), dark: materialDark() }).catch(
-      () => undefined,
-    );
-  };
+  // ---- vibrancy 材质同步：拆至 ./useMaterialSync.ts（macOS 条窗专属）----
+  const { materialActive, materialCards, materialDark, syncMaterial } = useMaterialSync(
+    barRef,
+    overflowRef,
+    menuPopRef,
+  );
 
   useEffect(() => {
     loadSettings();
@@ -1031,11 +879,6 @@ export default function App() {
       .then((s) => applyTheme(s.appearance ?? "auto"))
       .catch(() => undefined);
     listen<string>("theme://appearance", (e) => applyTheme(e.payload)).catch(() => undefined);
-    // 跟随系统模式时系统亮暗切换不发 theme://appearance——材质明暗自听媒体查询
-    // （组件与窗口同生命周期，监听无需摘除）
-    window
-      .matchMedia("(prefers-color-scheme: dark)")
-      .addEventListener("change", syncMaterial);
     // OCR 独立窗口：取走 Rust 侧存好的识别文本（推送可能早于 webview 挂载）
     if (IS_OCR) {
       invoke<PendingView | null>("ocr_take_pending")
@@ -1265,182 +1108,13 @@ export default function App() {
       else unlisteners.push(un);
     });
 
-    // 合成 hover：Rust 侧 CGEventTap 把全局鼠标位置按光标落点路由到本窗口，
-    // 并已换算成本窗口视口坐标（~60Hz 节流），elementFromPoint 找到光标下的
-    // 动作手动加 hover 类——非 key 窗口收不到 mouseMoved、WebKit 只给活动
-    // 页面渲染 :hover，两者都绕开
-    listen<{ x: number; y: number; pop?: string | null }>("hover://move", (e) => {
-      const cx = e.payload.x;
-      const cy = e.payload.y;
-      const inPop = e.payload.pop ?? null;
-      lastPosRef.current = { x: cx, y: cy, pop: inPop };
-      // 「光标在窗口内」的证据链（Rust 按落点路由，含 Windows 分离卡弹层）：
-      // 常规清掉 mouseleave 记下的离开边沿；结果窗浮层打开时改按「浮层∪触发区」
-      // 判定——大窗口里光标挪到正文/角落留白等同划出，350ms 后收起子菜单，
-      // 不让角落停留把浮层钉住；区域内则清边沿照常挑选
-      if (IS_OCR && menuStateRef.current !== null) {
-        const panel = ocrPanelRef.current;
-        const hit = (el: Element | null, pad: number) => {
-          if (!el) return false;
-          const r = el.getBoundingClientRect();
-          return (
-            cx >= r.left - pad &&
-            cx <= r.right + pad &&
-            cy >= r.top - pad &&
-            cy <= r.bottom + pad
-          );
-        };
-        if (menuStateRef.current === "overflow") {
-          // 主堆（「更多」展开）开着：整个窗口都算区域内——光标从 ⌃2 挪向
-          // 胶囊的途中堆不会消失；收起只由光标离开窗口 / 点外 / 再点钮触发
-          hoverLeftAtRef.current = null;
-        } else if (menuStateRef.current.startsWith("pmenu:")) {
-          // 子菜单（chips）开着：区域 = 触发胶囊 ∪ chips——离开两者 150ms 后
-          // 收回子菜单（主堆保留）；短防抖吸收边缘抖动/路过，区域内照常挑选。
-          // 触发胶囊 = 拥有该子菜单的那一颗（挪到兄弟胶囊上等同离开）
-          const anchor = panel
-            ? panel.querySelector(`.rail [data-pill="${menuStateRef.current.slice(6)}"]`)
-            : null;
-          const inRegion =
-            hit(anchor, 12) || hit(panel?.querySelector(".hchips") ?? null, 10);
-          if (inRegion) {
-            hoverLeftAtRef.current = null;
-            subLeftAtRef.current = null;
-          } else {
-            if (hoverLeftAtRef.current === null) hoverLeftAtRef.current = performance.now();
-            if (subLeftAtRef.current === null) subLeftAtRef.current = performance.now();
-          }
-        } else {
-          // 槽位子菜单（⌄ 服务/引擎/目标）开着：区域 = 触发槽位 ∪ 槽位 chips
-          // ——光标一离开两者立即收回，交互与胶囊堆 chips 一致。
-          // 注意：此分支不得吞掉 "overflow"（上一分支已单独处理）
-          const inRegion =
-            hit(
-              panel
-                ?.querySelector(`.ocr-actions [data-trig="${menuStateRef.current}"]`)
-                ?.closest(".action-slot") ?? null,
-              8,
-            ) || hit(panel?.querySelector(".ocr-menu-slot") ?? null, 10);
-          if (inRegion) {
-            hoverLeftAtRef.current = null;
-          } else {
-            hoverLeftAtRef.current = null;
-            switchMenu(null);
-          }
-        }
-      } else if (menuStateRef.current !== null) {
-        // 胶囊侧驻留区（2026-10-27）：菜单/面板开着时划过无 ⌄ 的动作（如 总结）
-        // = 离开「触发项 ∪ 浮层」，开始 150ms 计时（interval 复核后收）——
-        // 不再让菜单错位悬停在无关动作头顶。双平台同行为：浮层卡的认定
-        // macOS 量 DOM、Windows 用 pop 标记（见 capsuleRegion 注释）
-        if (capsuleRegion(cx, cy, inPop) === "in") {
-          subLeftAtRef.current = null;
-          hoverLeftAtRef.current = null;
-        } else if (subLeftAtRef.current === null) {
-          subLeftAtRef.current = performance.now();
-        }
-      } else {
-        hoverLeftAtRef.current = null;
-      }
-      const el = document.elementFromPoint(cx, cy);
-      {
-        // 驻留目标检测（胶囊条与结果窗口动作行同构，复用同一套）：命中「带 ⌄
-        // 的动作项」才算——主按钮与 ⌄ 同属一个 .action-slot（面板行为 .pitem），
-        // 整个项都是驻留区；无 ⌄ 的动作不参与。无浮层时驻留满 HOVER_OPEN_MS
-        // 才展开（快速路过不开）；已有浮层开着时划过其他 ⌄ 项立即切换
-        // （菜单栏心智，这正是 hover 的核心收益）。拖拽中（胶囊搬移/结果窗拖拽）不开
-        const dragging = dragActiveRef.current || ocrDragActiveRef.current;
-        const slot =
-          el?.closest<HTMLElement>(".action-slot") ?? el?.closest<HTMLElement>(".pitem");
-        const trig = (
-          dragging ? null : slot?.querySelector<HTMLElement>("[data-trig]")?.dataset.trig ?? null
-        ) as HoverMenuId | null;
-        const now = performance.now();
-        if (!trig || menuStateRef.current === trig) {
-          dwellRef.current = null;
-        } else if (menuStateRef.current !== null) {
-          dwellRef.current = null;
-          switchMenu(trig);
-        } else if (trig === "overflow") {
-          // 「更多」的唯一职责就是展开更多操作（用户定稿 2026-10-25）：hover
-          // 即开、无驻留等待——它不是「动作 + 附带 ⌄」的组合项，不存在误触
-          // 语义；收起仍走统一的离开宽限（350ms）
-          dwellRef.current = null;
-          switchMenu(trig);
-        } else if (dwellRef.current?.trig !== trig) {
-          dwellRef.current = { trig, since: now };
-        } else if (now - dwellRef.current.since >= HOVER_OPEN_MS) {
-          dwellRef.current = null;
-          switchMenu(trig);
-        }
-      }
-      const btn =
-        el?.closest<HTMLElement>(".action") ??
-        // 二级菜单项（.mitem）与主胶囊按钮同受非 key 窗口 hover 失效影响，
-        // 同走合成 hover（原生 :hover 在窗口被点击激活前不渲染）
-        el?.closest<HTMLElement>(".mitem") ??
-        // 结果窗的存入目标 chips（.ocr-menu-slot .chip）与面板头工具钮（.tool）
-        // 同理：非 key 窗口下原生 :hover 不渲染，必须合成（结果窗不点击就 hover）
-        el?.closest<HTMLElement>(".chip") ??
-        el?.closest<HTMLElement>(".tool") ??
-        // 光标落在 ⌄ 上时点亮同项主按钮：⌄ 太小，单独反馈没有「这一项悬停」感
-        (el?.closest<HTMLElement>(".chev")?.closest<HTMLElement>(".action-slot") ??
-          el?.closest<HTMLElement>(".pchev")?.closest<HTMLElement>(".pitem")
-        )?.querySelector<HTMLElement>(".action") ?? null;
-      if (btn !== synHoverRef.current) {
-        // 诊断（仅 dev）：hover 目标变化时记录；release 落盘日志会刷屏，不记
-        if (import.meta.env.DEV) {
-          const hitDesc = btn
-            ? `进入 ${(btn.textContent ?? "?").slice(0, 6)} <${btn.tagName.toLowerCase()} ${btn.className.split(" ")[0]}>`
-            : "离开动作";
-          invoke("ui_debug_log", {
-            msg: `SYN ${hitDesc} @(${cx.toFixed(0)},${cy.toFixed(0)}) el=${el?.tagName.toLowerCase() ?? "null"}.${(el?.className ?? "").toString().split(" ")[0]}`,
-          }).catch(() => undefined);
-        }
-        synHoverRef.current?.classList.remove("syn-hover");
-        if (btn) btn.classList.add("syn-hover");
-        synHoverRef.current = btn;
-      }
-      // 合成 hover 就是真实的鼠标反馈：弹出时挂起的 hover 挂起态一并解除
-      setHoverSuppress(false);
-    }).then((un) => {
-      if (listenCancelled) un();
-      else unlisteners.push(un);
-    });
-
-    // Rust 侧离开边沿：光标划出全部 hover 目标窗口的瞬间补发给最后命中的
-    // 窗口（本窗口若非目标则收不到；Windows 分离卡下胶囊文档看不到弹层窗口
-    // 边界，光标从弹层直接划走时收不到 mouseleave）。mouseleave 已先记过
-    // 时刻时保留较早值，收起从真正离开那刻起算
-    listen("hover://left", () => {
-      if (hoverLeftAtRef.current === null) hoverLeftAtRef.current = performance.now();
-    }).then((un) => {
-      if (listenCancelled) un();
-      else unlisteners.push(un);
-    });
-
     document.addEventListener("mouseleave", suspendPointer);
     document.addEventListener("mouseenter", restorePointer);
-    // 收起判定的离开/回归边沿：离开窗口记时刻（心跳到点收起浮层，清驻留计时），
-    // 回到窗口即撤销——与 suspendPointer 同用一对 document 级事件
-    const markHoverLeft = () => {
-      hoverLeftAtRef.current = performance.now();
-      dwellRef.current = null;
-    };
-    const markHoverInside = () => {
-      hoverLeftAtRef.current = null;
-    };
-    document.addEventListener("mouseleave", markHoverLeft);
-    document.addEventListener("mouseenter", markHoverInside);
-
     return () => {
       listenCancelled = true;
       unlisteners.forEach((u) => u());
-      window.clearTimeout(fadeTimerRef.current);
       document.removeEventListener("mouseleave", suspendPointer);
       document.removeEventListener("mouseenter", restorePointer);
-      document.removeEventListener("mouseleave", markHoverLeft);
-      document.removeEventListener("mouseenter", markHoverInside);
     };
   }, []);
 
@@ -1866,100 +1540,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // ---- OCR 面板拖拽：面板任意空白处按住即可拖动（标题栏/动作行/留白区）。
-  //      文本区（原文/结果）保留文字选择复制；按钮/开关/尺寸手柄不作为拖拽起点；
-  //      位移 >5px 判定为拖并吞掉结束后的残余 click。move_ocr 落位时钳制在屏幕内 ----
-  const ocrArmRef = useRef<{ sx: number; sy: number } | null>(null);
-  const ocrDragRef = useRef<{ sx: number; sy: number; wx: number; wy: number } | null>(null);
-  const ocrDragActiveRef = useRef(false);
-
-  const onOcrPanelDown = (e: ReactMouseEvent) => {
-    if (!IS_OCR || e.button !== 0) return;
-    const t = e.target as HTMLElement;
-    // 按钮等交互元素：即点即聚焦（不会演变成拖拽，激活无副作用）
-    if (
-      t.closest(
-        "button, .ocr-source, .ocr-result-scroll, .panel-body, .resize-handle, .resize-handle-v",
-      )
-    ) {
-      invoke("focus_ocr_window").catch(() => undefined);
-      return;
-    }
-    // 拖拽起点区域：不在此刻聚焦——按住期间激活应用会打断首次拖拽手势；
-    // 聚焦延迟到松手且未拖动时（纯点击），见拖拽 effect 的 onUp
-    ocrArmRef.current = { sx: e.screenX, sy: e.screenY };
-  };
-
-  useEffect(() => {
-    if (!IS_OCR) return;
-    let raf = 0;
-    let latest: { x: number; y: number } | null = null;
-    // rAF 合帧：最多一次 IPC/帧，拖动跟手且不淹没 IPC 通道
-    const flush = () => {
-      raf = 0;
-      const d = ocrDragRef.current;
-      const p = latest;
-      latest = null;
-      if (d && p) {
-        invoke("move_ocr", {
-          x: d.wx + (p.x - d.sx),
-          y: d.wy + (p.y - d.sy),
-        }).catch(() => undefined);
-      }
-    };
-    const onMove = (e: MouseEvent) => {
-      const s = ocrArmRef.current;
-      if (!s) return;
-      if (!ocrDragActiveRef.current) {
-        if (Math.hypot(e.screenX - s.sx, e.screenY - s.sy) <= 5) return;
-        ocrDragActiveRef.current = true;
-        suppressClickRef.current = true;
-        document.body.style.cursor = "grabbing";
-        // 用按下时的全局坐标取窗口位置：此刻窗口尚未移动，抓取偏移精确
-        invoke<{ x: number; y: number }>("ocr_window_pos")
-          .then((p) => {
-            if (p) ocrDragRef.current = { sx: s.sx, sy: s.sy, wx: p.x, wy: p.y };
-          })
-          .catch(() => undefined);
-        return;
-      }
-      const d = ocrDragRef.current;
-      if (!d) return; // 等窗口位置回包，起步头几 px 丢弃（绝对坐标计算，无累积误差）
-      latest = { x: e.screenX, y: e.screenY };
-      if (!raf) raf = requestAnimationFrame(flush);
-    };
-    const onUp = () => {
-      const hadArm = ocrArmRef.current !== null;
-      ocrArmRef.current = null;
-      ocrDragRef.current = null;
-      latest = null;
-      if (raf) {
-        cancelAnimationFrame(raf);
-        raf = 0;
-      }
-      if (ocrDragActiveRef.current) {
-        ocrDragActiveRef.current = false;
-        document.body.style.cursor = "";
-        window.setTimeout(() => {
-          suppressClickRef.current = false;
-        }, 140);
-        // 拖完即持久化位置（含尺寸），下次显示/重启都在用户放下的地方
-        invoke("persist_result_window_state").catch(() => undefined);
-      } else if (hadArm) {
-        // 纯点击（未拖动）：此刻才聚焦——Esc/⌘P/⌘W 键盘闭环生效，
-        // 且不会打断可能正在进行的拖拽手势
-        invoke("focus_ocr_window").catch(() => undefined);
-      }
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, []);
-
   // 动作按钮的短暂文字反馈（已复制 / 已打开 / 不支持…）
   const flash = (id: string, msg: string) => {
     setFlashId(id);
@@ -2310,179 +1890,31 @@ export default function App() {
     });
   };
 
-  // ---- Windows 分离卡（一卡一窗）：二级浮层的渲染数据与状态同步 ----
-  // 弹层窗口（floating-panel / floating-menu）是哑渲染端：这里按当前状态组装
-  // payload，经 set_floating_pops 推给 Rust（payload 变化即重发——实体渐进补进
-  // 胶囊、设置实时推送改了收纳清单，弹层内容都须跟上）；弹层量尺寸回传
-  // pop_ready 后由 Rust 定位显示。pmenu:* 的行侧锚点只有面板窗口知道，
-  // 不经此 effect，由 floating://pick(menu-toggle) 直接下发（见 pickRef）
-  const menuItemsFor = (kind: string) =>
-    kind === "translate"
-      ? enabledTranslates.map((s) => ({
-          key: s.id,
-          label: s.label,
-          on: s.id === (usedTranslate ?? defaultTranslate?.id ?? null),
-        }))
-      : kind === "search"
-        ? enabledEngines.map((en) => ({
-            key: en.name,
-            label: en.name,
-            on: en.name === (usedEngine ?? defaultEngine?.name ?? null),
-          }))
-        : [
-            { key: "note", label: "笔记", on: true },
-            { key: "task", label: "任务", on: false },
-            { key: "card", label: "卡片", on: false },
-          ];
-  // 行 ⌄ 的判定（动态，非 barEntries.hasMenu）：翻译行=多个翻译服务、
-  // 搜索行=多个引擎、Obsidian 行=已配置 vault——macOS 面板渲染、Windows
-  // 面板数据组装与行 hover 回传校验共用同一判据
-  const entryHasMenu = (id: string) =>
-    (id === "translate" && enabledTranslates.length > 1) ||
-    (id === "search" && enabledEngines.length > 1) ||
-    (id === "obsidian" && Boolean(obsidianCfg?.vaultPath));
-  const panelData = (subOpenForce?: string | null) => ({
-    type: "overflow" as const,
-    subOpen:
-      subOpenForce !== undefined
-        ? subOpenForce
-        : menu && menu.startsWith("pmenu:")
-          ? menu.slice(6)
-          : null,
-    items: restEntries.map((e) => ({
-      id: e.id,
-      label: e.label,
-      icon: e.icon ?? null,
-      hasMenu: entryHasMenu(e.id),
-    })),
-  });
-  // 弹层同步的内容签名（id/文案/图标/⌄ 有无——任一变化才重发 payload）
-  const panelSig = restEntries
-    .map((e) => `${e.id}|${e.label}|${e.icon ?? ""}|${e.hasMenu ? 1 : 0}`)
-    .join(",");
-  const translateSig = enabledTranslates.map((s) => s.id).join(",");
-  const enginesSig = enabledEngines.map((en) => en.name).join(",");
-
-  // 同屏只开一个入口：开面板收菜单、开胶囊 ⌄ 菜单收面板（close-* 由 Rust
-  // 隐藏对应窗口并清锚点；close 与 payload 作用在不同窗口，次序无关）
-  useEffect(() => {
-    if (!POPS_EXTERNAL) return;
-    if (menu !== null && menu.startsWith("pmenu:")) return;
-    const trigX = (id: string): number | null => {
-      const el = document.querySelector<HTMLElement>(`[data-trig="${id}"]`);
-      if (!el) return null;
-      // 锚「整个动作项」左缘（用户定稿 2026-10-26：子菜单展开到对应主菜单
-      // 正下方），而非尾部 16px 的 ⌄ 按钮——否则子菜单右偏一个图标位
-      const slot = el.closest<HTMLElement>(".action-slot");
-      return Math.round((slot ?? el).getBoundingClientRect().left);
-    };
-    if (menu === null) {
-      invoke("set_floating_pops", { target: "none", data: {}, trigX: null, rowY: null }).catch(
-        () => undefined,
-      );
-      return;
-    }
-    if (menu === "overflow") {
-      invoke("set_floating_pops", {
-        target: "close-menu",
-        data: {},
-        trigX: null,
-        rowY: null,
-      }).catch(() => undefined);
-      invoke("set_floating_pops", {
-        target: "panel",
-        trigX: trigX("overflow"),
-        rowY: null,
-        data: panelData(),
-      }).catch(() => undefined);
-      return;
-    }
-    // chev:* → 窄单列菜单锚在胶囊触发钮下方
-    const kind = menu.startsWith("chev:") ? menu.slice(5) : menu;
-    invoke("set_floating_pops", {
-      target: "close-panel",
-      data: {},
-      trigX: null,
-      rowY: null,
-    }).catch(() => undefined);
-    invoke("set_floating_pops", {
-      target: "menu",
-      trigX: trigX(menu),
-      rowY: null,
-      data: { type: "menu", kind, items: menuItemsFor(kind) },
-    }).catch(() => undefined);
-    // panelData/menuItemsFor 是渲染期闭包：数据变化由上面的签名依赖表达
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menu, panelSig, translateSig, enginesSig, usedTranslate, usedEngine, defaultTranslate?.id, defaultEngine?.name]);
-
-  // 弹层窗口点击回传（floating://pick）：动作语义、选区上下文、服务选择与
-  // 反馈全在本窗口执行（弹层是哑渲染端）。监听只注册一次，经 ref 读最新渲染
+  // ---- Windows 分离卡（一卡一窗）浮层数据同步：拆至 ./usePopsSync.ts ----
+  // entryHasMenu 同时供 macOS 面板渲染（行 ⌄ 有无）复用；pickRef 由 hook 组装的
+  // 处理器每次渲染刷新（监听只注册一次，经 ref 读最新渲染）
   const pickRef = useRef<(p: { kind: string; key: string; rowY: number | null }) => void>(
     () => undefined,
   );
-  // 行侧菜单展开（Windows 分离卡）：pmenu 锚点 rowY 只有面板窗口知道，随
-  // menu-toggle 点击 / row-hover 上报带来；面板 payload 一并重发让 pchev
-  // 高亮跟着 subOpen 走（panelData 显式传 subOpen——此刻 menu 还是旧状态）
-  const showRowMenu = (key: string, rowY: number | null) => {
-    setMenu(`pmenu:${key}` as "pmenu:translate" | "pmenu:search" | "pmenu:obsidian");
-    invoke("set_floating_pops", {
-      target: "menu",
-      trigX: null,
-      rowY,
-      data: { type: "menu", kind: key, items: menuItemsFor(key) },
-    }).catch(() => undefined);
-    invoke("set_floating_pops", {
-      target: "panel",
-      trigX: null,
-      rowY: null,
-      data: panelData(key),
-    }).catch(() => undefined);
-  };
-  pickRef.current = (p) => {
-    if (p.kind === "action") {
-      setMenu(null);
-      runAction(p.key);
-      return;
-    }
-    if (p.kind === "row-hover") {
-      // 面板行 hover 回传：面板开着 ⇒ 必有浮层入口开着，行 ⌄ 恒走「已开即切」
-      // （与胶囊 ⌄ 一致）；无 ⌄ 的行只清驻留计时。行命中在面板窗口检测
-      // （WebView2 真 mousemove 可靠），决策集中在胶囊
-      const hasMenu = entryHasMenu(p.key) && restEntries.some((x) => x.id === p.key);
-      if (!hasMenu) {
-        dwellRef.current = null;
-        return;
-      }
-      if (menuStateRef.current !== `pmenu:${p.key}`) showRowMenu(p.key, p.rowY);
-      return;
-    }
-    if (p.kind === "menu-toggle") {
-      if (menu !== `pmenu:${p.key}`) {
-        showRowMenu(p.key, p.rowY);
-      } else {
-        // 收起 = 回到父级（面板保持展开），effect 会重发面板 payload 复位高亮
-        setMenu("overflow");
-      }
-      return;
-    }
-    if (p.kind === "pick:translate") {
-      setUsedTranslate(p.key);
-      setMenu(null);
-      runAction("translate", p.key);
-      return;
-    }
-    if (p.kind === "pick:search") {
-      setUsedEngine(p.key);
-      setMenu(null);
-      const en = enabledEngines.find((x) => x.name === p.key);
-      if (en) openEngine(en);
-      return;
-    }
-    if (p.kind === "pick:obsidian") {
-      setMenu(null);
-      runAction("obsidian", undefined, undefined, p.key);
-    }
-  };
+  const { entryHasMenu, buildPickHandler } = usePopsSync({
+    menu,
+    setMenu,
+    menuStateRef,
+    dwellRef,
+    restEntries,
+    enabledTranslates,
+    enabledEngines,
+    usedTranslate,
+    usedEngine,
+    defaultTranslateId: defaultTranslate?.id,
+    defaultEngineName: defaultEngine?.name,
+    obsidianVaultConfigured: Boolean(obsidianCfg?.vaultPath),
+    runAction,
+    openEngine,
+    setUsedTranslate,
+    setUsedEngine,
+  });
+  pickRef.current = buildPickHandler();
 
   const backToBar = () => {
     runIdRef.current++;
@@ -2490,88 +1922,18 @@ export default function App() {
     setPhase({ kind: "bar" });
   };
 
-  // ---- 拖拽：整条任意位置可拖（含按钮上），按下后位移 > 5px 判定为拖，吞掉其 click ----
-  const dragStartRef = useRef<{ sx: number; sy: number } | null>(null);
-  const dragActiveRef = useRef(false);
-  const suppressClickRef = useRef(false);
-
-  const onStageMouseDown = (e: ReactMouseEvent) => {
-    const t = e.target as HTMLElement;
-    // 结果窗：点浮层与动作行之外收起展开中的浮层（与胶囊条同规则）；
-    // 不参与浮动条拖拽（结果窗拖拽走 onOcrPanelDown 一条链）
-    if (IS_OCR) {
-      // .ocr-menu-slot 同样豁免：点子菜单 chip 是要执行动作的点击，mousedown
-      // 若抢先收起，click 会落在退场态（pointer-events:none）容器上丢失——
-      // 表现为「点了没反应」；chip 的 click 自己负责执行并收起（与 .pop 同理）
-      if (
-        menu !== null &&
-        !t.closest(".pop") &&
-        !t.closest(".ocr-actions") &&
-        !t.closest(".ocr-menu-slot")
-      ) {
-        switchMenu(null);
-      }
-      return;
-    }
-    // 点空白（胶囊与浮层之外的留白/缝隙）收起二级浮层；点窗口外才整条消失
-    // （窗口矩形含留白，Rust 侧 rect_contains 会抑制这区域的 dismiss）
-    if (menu !== null && !t.closest(".bar") && !t.closest(".pop")) {
-      setMenu(null);
-    }
-    // 结果文本区保留文字选择/复制，不作为拖拽起点
-    if (t.closest(".panel-body")) return;
-    dragStartRef.current = { sx: e.screenX, sy: e.screenY };
-  };
-
-  const onStageMouseMove = (e: ReactMouseEvent) => {
-    const s = dragStartRef.current;
-    if (!s || dragActiveRef.current) return;
-    if (IS_OCR) return;
-    if (Math.hypot(e.screenX - s.sx, e.screenY - s.sy) > 5) {
-      dragActiveRef.current = true;
-      suppressClickRef.current = true;
-      dwellRef.current = null; // 拖拽期间不开二级浮层（拖拽中驻留检测已被守卫，这里清残留计时）
-      // 拖动即收起二级浮层（Windows 分离卡是独立窗口，不随胶囊联动移动）
-      if (POPS_EXTERNAL) setMenu(null);
-      // 用按下时的全局坐标计算抓取偏移（此刻窗口尚未移动）
-      invoke("begin_floating_drag", { x: s.sx, y: s.sy }).catch(() => undefined);
-    }
-  };
-
-  const onStageMouseUp = () => {
-    dragStartRef.current = null;
-    if (dragActiveRef.current) {
-      // 拖拽改变窗口位置（Rust 侧直接落位，前端不感知）：回读落位与新所在
-      // 屏幕矩形，恢复布局 effect 的坐标基准（锚定/翻转判定依赖两者）
-      invoke<WindowPos>("floating_window_pos")
-        .then((p) => {
-          winPosRef.current = p;
-          return invoke<ScreenRect>("screen_rect_at", { x: p.x, y: p.y });
-        })
-        .then((r) => {
-          screenRef.current = r;
-        })
-        .catch(() => undefined);
-      // DragEnd 由系统事件 tap 的 mouse-up 转发；稍后恢复点击
-      window.setTimeout(() => {
-        dragActiveRef.current = false;
-      }, 60);
-      window.setTimeout(() => {
-        suppressClickRef.current = false;
-      }, 140);
-    }
-  };
-
-  const guarded = (fn: () => void) => () => {
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      return;
-    }
-    // 点击终结驻留计时：点主按钮执行动作后光标仍停在动作项上，
-    // 残留的计时会让二级浮层在动作执行后「自己弹开」
-    dwellRef.current = null;
-    fn();
-  };
+  // ---- 拖拽：拆至 ./useCapsuleDrag.ts（逻辑零改动；dragActiveRef /
+  // suppressClickRef 声明在组件 ref 区，与面板拖拽共用）----
+  const { onStageMouseDown, onStageMouseMove, onStageMouseUp, guarded } = useCapsuleDrag({
+    menu,
+    setMenu,
+    switchMenu,
+    dwellRef,
+    winPosRef,
+    screenRef,
+    suppressClickRef,
+    dragActiveRef,
+  });
 
   // 动作行槽位渲染：真实行与溢出测算行共用同一构型（测算行 interactive=false，
   // 不挂交互、不参与 hover 定位，仅用于逐项量宽——宽度与真实槽位一致）
