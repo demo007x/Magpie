@@ -99,7 +99,13 @@ export default function PinView() {
       fy: e.clientY / rect.height,
     };
     const factor = Math.min(1.15, Math.max(0.87, Math.exp(-e.deltaY * 0.0009)));
-    setZoom((z) => Math.min(5, Math.max(0.25, z * factor)));
+    setZoom((z) => {
+      const n = Math.min(5, Math.max(0.25, z * factor));
+      // 贴近 100% 自动吸附：触控板微滑把 zoom 带到 0.998 这类值时，整图被
+      // 不可见的 0.2% 重采样糊掉（尺寸看不出变、锐度全损）——回到 1 才是
+      // 物理像素 1:1 直通
+      return Math.abs(n - 1) < 0.02 ? 1 : n;
+    });
   };
 
   // ---- 自定义拖拽：不用系统拖动（无法钳制边界），位移换算成窗口目标位置，

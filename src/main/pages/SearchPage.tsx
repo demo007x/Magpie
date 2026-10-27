@@ -107,7 +107,7 @@ export default function SearchPage({ settings, patch, save, saved }: PageProps) 
           <>
             <h1>搜索引擎</h1>
             <p className="page-hint">
-              开关决定该引擎是否进入「搜索」展开列表，拖动把手调整顺序，「默认」为单击直达项；链接中的 {'{q}'} 代入选中文字。改动即时反映到浮动条，点「保存更改」持久化。
+              拖动调整顺序，「默认」为单击直达项；链接中的 {'{q}'} 代入选中文字。点「保存更改」永久生效。
             </p>
             <div className="card">
               {settings.searchEngines.map((eng, idx) => (

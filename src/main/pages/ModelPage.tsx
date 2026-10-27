@@ -76,7 +76,7 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
           <>
             <h1>模型服务</h1>
             <p className="page-hint">
-              添加模型服务选预设即可自动带出地址与形态，只填密钥并确认模型名；设为默认的一项供全部划词动作调用。密钥仅保存在本机。更改需保存后生效。
+              添加服务选预设，只填密钥和模型名；设为默认的一项供所有动作使用。密钥仅保存在本机。点「保存更改」永久生效。
             </p>
 
             <h2 className="sec">服务</h2>

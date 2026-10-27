@@ -62,7 +62,7 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
                 <div>
                   <div className="row-title">登录时自动启动</div>
                   <div className="row-sub">
-                    开机登录后自动运行拾趣并驻留菜单栏，无需手动打开。更改即时生效。
+                    登录后自动在菜单栏运行拾趣，无需手动打开。
                   </div>
                 </div>
                 <label className="switch">
@@ -90,7 +90,7 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
                 <div>
                   <div className="row-title">在程序坞中显示图标</div>
                   <div className="row-sub">
-                    默认仅以菜单栏形态常驻。开启后程序坞同时显示图标；关闭时点主窗口关闭按钮仅隐藏窗口，退出请用菜单栏右键「退出应用」。
+                    开启后程序坞同时显示图标；关闭仅保留菜单栏，退出用菜单栏右键。
                   </div>
                 </div>
                 <label className="switch">
@@ -115,7 +115,7 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
                 <div>
                   <div className="row-title">默认尺寸</div>
                   <div className="row-sub">
-                    预设四种大小，点选立即作用于结果窗口；拖拽微调仍然有效并被记住。
+                    预设四种大小，点选立即作用于结果窗口。
                   </div>
                 </div>
                 <div className="seg sized" role="radiogroup" aria-label="结果窗口默认尺寸">

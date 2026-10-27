@@ -21,31 +21,31 @@ const SHORTCUT_ITEMS: Array<{
     key: "ocrShortcut",
     label: "识图取字",
     default: "Alt+S",
-    desc: "框选屏幕任意区域，识别其中的文字，在结果面板中查看、复制、钉住原图，或继续翻译等后续操作。默认 ⌥S。",
+    desc: "框选屏幕任意区域识别文字，可复制、钉住原图或继续翻译。",
   },
   {
     key: "ocrTranslateShortcut",
     label: "识图翻译",
     default: "Alt+T",
-    desc: "框选截图，识别出的文字自动交给默认翻译服务，结果直接呈现在面板中。默认 ⌥T。",
+    desc: "框选截图，自动翻译识别出的文字。",
   },
   {
     key: "ocrExplainShortcut",
     label: "识图解释",
     default: "Alt+E",
-    desc: "框选截图，AI 自动解释识别出的内容。默认 ⌥E。",
+    desc: "框选截图，AI 解释识别出的内容。",
   },
   {
     key: "ocrSummarizeShortcut",
     label: "识图总结",
     default: "Alt+D",
-    desc: "框选截图，AI 自动提炼识别出的文字要点。默认 ⌥D。",
+    desc: "框选截图，AI 提炼识别内容要点。",
   },
   {
     key: "fileOcrShortcut",
     label: "访达选图取字",
     default: "Alt+F",
-    desc: "选择一张图片文件，识别其中的文字，后续操作与识图取字一致。默认 ⌥F。",
+    desc: "识别所选图片文件的文字，后续与识图取字一致。",
   },
 ];
 
@@ -149,12 +149,12 @@ function ShortcutRecorder({
           <>
             <h1>快捷键</h1>
             <p className="page-hint">
-              点按输入框后按下新组合键完成设置，需含 ⌘ / Ctrl / Alt / Shift 之一，Esc 取消。组合键已被其他应用占用时不生效。更改需保存后生效。
+              点击输入框按下新组合键，需含 ⌘ / Ctrl / Alt / Shift 之一，Esc 取消；被其他应用占用的组合键不生效。点「保存更改」永久生效。
             </p>
             <div className="card">
               {SHORTCUT_ITEMS.map((item, i) => (
                 <div className={`row-between${i > 0 ? " sep" : ""}`} key={item.key}>
-                  <div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="row-title">{item.label}</div>
                     <div className="row-sub">{item.desc}</div>
                   </div>

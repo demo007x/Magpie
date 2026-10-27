@@ -1316,6 +1316,10 @@ export default function App() {
         // 二级菜单项（.mitem）与主胶囊按钮同受非 key 窗口 hover 失效影响，
         // 同走合成 hover（原生 :hover 在窗口被点击激活前不渲染）
         el?.closest<HTMLElement>(".mitem") ??
+        // 结果窗的存入目标 chips（.ocr-menu-slot .chip）与面板头工具钮（.tool）
+        // 同理：非 key 窗口下原生 :hover 不渲染，必须合成（结果窗不点击就 hover）
+        el?.closest<HTMLElement>(".chip") ??
+        el?.closest<HTMLElement>(".tool") ??
         // 光标落在 ⌄ 上时点亮同项主按钮：⌄ 太小，单独反馈没有「这一项悬停」感
         (el?.closest<HTMLElement>(".chev")?.closest<HTMLElement>(".action-slot") ??
           el?.closest<HTMLElement>(".pchev")?.closest<HTMLElement>(".pitem")

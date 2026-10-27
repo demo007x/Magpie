@@ -42,14 +42,16 @@ export default function PermsPage() {
           <>
             <h1>权限</h1>
             <p className="page-hint">
-              划词需「辅助功能」与「输入监控」，识图需「屏幕录制」。按条目提示完成授权，返回后状态自动刷新。
+              划词需「辅助功能」与「输入监控」，识图需「屏幕录制」。授权后返回，状态自动刷新。
             </p>
             <div className="card">
               <div className="row-between">
                 <div>
                   <div className="row-title">辅助功能</div>
                   <div className="row-sub">
-                    读取所选文字，供翻译、解释、总结使用。未授权时划词无响应，点下方「授权划词」开启。
+                    {granted === false
+                      ? "划词必需，授权后才能读取所选文字。"
+                      : "读取所选文字，供翻译、解释、总结使用。"}
                   </div>
                 </div>
                 <span className={`pill ${granted ? "ok" : granted === false ? "bad" : ""}`}>
@@ -79,7 +81,9 @@ export default function PermsPage() {
                 <div>
                   <div className="row-title">输入监控</div>
                   <div className="row-sub">
-                    监听选择动作，选完文字即弹出浮动条。未授权时不会有响应，点下方「授权输入监控」开启。
+                    {listenAccess === false
+                      ? "浮动条必需，授权后划选文字才会弹出浮动条。"
+                      : "监听划选动作，选定即弹出浮动条。"}
                   </div>
                 </div>
                 <span className={`pill ${listenAccess ? "ok" : listenAccess === false ? "bad" : ""}`}>
@@ -100,7 +104,9 @@ export default function PermsPage() {
                 <div>
                   <div className="row-title">屏幕录制</div>
                   <div className="row-sub">
-                    框选屏幕区域并识别文字的前提，识别全程在本机完成，画面不上传。未授权时点下方「授权屏幕录制」开启。
+                    {screenAccess === false
+                      ? "识图取字必需，授权后即可框选屏幕文字识别。"
+                      : "识图取字的前提，识别全程在本机完成，画面不上传。"}
                   </div>
                 </div>
                 <span className={`pill ${screenAccess ? "ok" : screenAccess === false ? "bad" : ""}`}>
@@ -123,7 +129,7 @@ export default function PermsPage() {
                 <div>
                   <div className="row-title">取词健康自检</div>
                   <div className="row-sub">
-                    划词失灵时的诊断。权限均已授权却无浮动条，通常是系统权限状态失效：到系统设置「辅助功能」取消勾选拾趣后重新勾选，重启应用恢复。
+                    划词失灵时的诊断。权限均已授权却无浮动条，请在系统设置里关掉再打开拾趣的「辅助功能」，重启应用恢复。
                   </div>
                 </div>
                 <span className={`pill ${axServiceOk ? "ok" : axServiceOk === false ? "bad" : ""}`}>

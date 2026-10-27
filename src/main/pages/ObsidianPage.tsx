@@ -13,8 +13,8 @@ export default function ObsidianPage({ settings, patch, save, saved }: PageProps
           <>
             <h1>Obsidian</h1>
             <p className="page-hint">
-              把划词与识图结果按模板直写进 vault 的 markdown 文件——离线可用，无需安装
-              Obsidian 插件。配置 vault 后，胶囊与结果窗会出现「Obsidian」。更改需保存后生效。
+              把划词与识图结果按模板写入 vault 的 markdown 文件，无需安装 Obsidian
+              插件。配置后，胶囊与结果窗会出现「Obsidian」。更改需保存后生效。
             </p>
 
             <div className="card">
@@ -23,8 +23,8 @@ export default function ObsidianPage({ settings, patch, save, saved }: PageProps
                   <div className="row-title">Vault 目录</div>
                   <div className="row-sub">
                     {settings.obsidian.vaultPath
-                      ? "已接入：写入范围仅限该目录内的相对路径。"
-                      : "选择 vault 根目录（.obsidian 所在的那层）。未选择时「Obsidian」动作不出现。"}
+                      ? "已接入，写入仅限该目录内。"
+                      : "选 .obsidian 所在的那一层目录。"}
                   </div>
                 </div>
                 <div className="row-ctl">
@@ -64,7 +64,7 @@ export default function ObsidianPage({ settings, patch, save, saved }: PageProps
 
               <div className="row-between sep">
                 <div className="field wide">
-                  <span>日记子目录（相对 vault 根，空 = 根目录）</span>
+                  <span>日记目录（vault 内路径，留空放根目录）</span>
                   <input
                     value={settings.obsidian.dailyFolder}
                     placeholder="如 Journal"
@@ -77,7 +77,7 @@ export default function ObsidianPage({ settings, patch, save, saved }: PageProps
 
               <div className="row-between sep">
                 <div className="field wide">
-                  <span>日记文件名格式（与 Daily Notes 插件约定互认）</span>
+                  <span>日记文件名格式（与 Daily Notes 插件保持一致）</span>
                   <input
                     value={settings.obsidian.dailyFileName}
                     placeholder="yyyy-MM-DD"
@@ -90,7 +90,7 @@ export default function ObsidianPage({ settings, patch, save, saved }: PageProps
 
               <div className="row-between sep">
                 <div className="field wide">
-                  <span>任务目标文件（相对 vault，空 = 写入当日日记）</span>
+                  <span>任务写入文件（vault 内路径，留空写入当日日记）</span>
                   <input
                     value={settings.obsidian.taskFile}
                     placeholder="如 Tasks/todo.md"
@@ -103,7 +103,7 @@ export default function ObsidianPage({ settings, patch, save, saved }: PageProps
 
               <div className="row-between sep">
                 <div className="field wide">
-                  <span>知识卡目录（相对 vault）</span>
+                  <span>知识卡目录（vault 内路径）</span>
                   <input
                     value={settings.obsidian.cardFolder}
                     placeholder="Cards"

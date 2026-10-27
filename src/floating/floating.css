@@ -508,8 +508,10 @@ body,
 }
 
 /* hover 挂起：胶囊/结果窗口弹出瞬间压在光标下，压制 hover/焦点残留样式，
-   首次移动鼠标后恢复（.suppress-hover 由 JS 在弹出时挂上、mousemove 摘除） */
-.stage.suppress-hover :is(.action, .action:hover, .action:active, .chip, .chip:hover) {
+   首次移动鼠标后恢复（.suppress-hover 由 JS 在弹出时挂上、mousemove 摘除）。
+   合成 hover（.syn-hover）与原生 :hover 同受压制 */
+.stage.suppress-hover
+  :is(.action, .action:hover, .action:active, .chip, .chip:hover, .chip.syn-hover, .tool.syn-hover) {
   color: var(--text);
   background: transparent;
 }
@@ -630,8 +632,8 @@ body,
   }
 }
 
-.chip:hover {
-  /* 与主胶囊一致：hover 只变色不铺底 */
+.chip:is(:hover, .syn-hover) {
+  /* 与主胶囊一致：hover 只变色不铺底。syn-hover = 非 key 窗口合成 hover */
   background: transparent;
   color: var(--accent);
 }
@@ -744,8 +746,8 @@ body,
   transition: background 120ms, color 120ms;
 }
 
-.tool:hover {
-  /* 与全局一致：hover 只变色不铺底 */
+.tool:is(:hover, .syn-hover) {
+  /* 与全局一致：hover 只变色不铺底；syn-hover = 非 key 窗口合成 hover */
   background: transparent;
   color: var(--accent);
 }
@@ -1115,8 +1117,9 @@ body,
   color: var(--ink-text);
 }
 
-/* hover = 蓝底白字（用户定稿 2026-10-20）：文字恒为白色，只有底色在变 */
-.ocr-menu-slot .chip:hover {
+/* hover = 蓝底白字（用户定稿 2026-10-20）：文字恒为白色，只有底色在变。
+   syn-hover = 非 key 窗口合成 hover（结果窗不点击就要有 hover 反馈） */
+.ocr-menu-slot .chip:is(:hover, .syn-hover) {
   background: var(--accent);
   border-color: transparent;
   color: var(--on-accent);
@@ -1360,10 +1363,15 @@ html.win .hchips .chip {
 .pin img {
   display: block;
   border-radius: 8px;
-  /* 发丝线描边：浅色截图在浅色壁纸上边缘会融进背景，一圈 hairline 勾出轮廓 */
-  border: 0.5px solid var(--line);
-  /* 双层投影（近距定形 + 远距悬浮），渲染在 12px 出血内 */
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.22);
+  /* 发丝线描边必须用 box-shadow spread 画、不能用 border：全局 border-box 下
+     border 吃进内容区——nat 宽的图被 0.5px 边框挤成 (nat-1)px 内容盒，整图
+     0.998× 重采样，尺寸看不出变、锐度整张发虚（2026-10-27「钉图不如原图
+     清晰」的根因，此前修的 scale 快照/像素对齐都在它底下）。spread 环 +
+     双层投影随圆角裁切，布局零占位 */
+  box-shadow:
+    0 0 0 0.5px var(--line),
+    0 4px 16px rgba(0, 0, 0, 0.28),
+    0 1px 3px rgba(0, 0, 0, 0.22);
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
