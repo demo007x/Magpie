@@ -137,7 +137,15 @@ pub fn warmup() {
         if std::fs::write(&img, include_bytes!("../icons/ocr-warmup.png")).is_err() {
             return;
         }
-        let _ = Command::new(&helper).arg(&img).output();
+        let mut cmd = Command::new(&helper);
+        cmd.arg(&img);
+        #[cfg(target_os = "windows")]
+        {
+            // 同 snap_ocr_capture：隐藏控制台子进程的宿主黑窗
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000);
+        }
+        let _ = cmd.output();
         let _ = std::fs::remove_file(&img);
         eprintln!("[ocr] 中文模型预热完成");
     });
@@ -351,10 +359,20 @@ mod win_region {
                 .map(|d| d.as_millis())
                 .unwrap_or(0)
         ));
-        let output = Command::new(&helper)
-            .arg("--snap-ocr")
+        let mut cmd = Command::new(&helper);
+        cmd.arg("--snap-ocr")
             .arg(format!("{x},{y},{w},{h}"))
-            .arg(&image)
+            .arg(&image);
+        #[cfg(target_os = "windows")]
+        {
+            // ocr_helper 是控制台子系统程序：GUI 进程直接拉起会新建一个可见
+            // 控制台窗口（新建控制台默认级联在屏幕左侧，识别完成即消失）——
+            // 「识图时屏幕左边黑窗一闪」的根因。CREATE_NO_WINDOW 只隐藏宿主
+            // 控制台，stdout/stderr 管道不受影响
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000);
+        }
+        let output = cmd
             .output()
             .map_err(|e| format!("无法启动截屏进程: {e}"))?;
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();

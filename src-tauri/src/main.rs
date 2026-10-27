@@ -458,7 +458,15 @@ fn open_url(url: String) -> bool {
     #[cfg(target_os = "macos")]
     let _ = std::process::Command::new("open").arg(&url).spawn();
     #[cfg(target_os = "windows")]
-    let _ = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn();
+    {
+        // cmd.exe 是控制台程序：GUI 进程直接拉起会闪现黑色控制台窗口。
+        // CREATE_NO_WINDOW 隐藏宿主 cmd（浏览器窗口照常弹出）
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .creation_flags(0x0800_0000)
+            .spawn();
+    }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
     true

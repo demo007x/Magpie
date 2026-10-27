@@ -57,10 +57,15 @@ pub fn open_in_calendar(
     #[cfg(target_os = "macos")]
     let opened = std::process::Command::new("open").arg(&path).spawn().is_ok();
     #[cfg(target_os = "windows")]
-    let opened = std::process::Command::new("cmd")
-        .args(["/C", "start", "", &path.to_string_lossy()])
-        .spawn()
-        .is_ok();
+    let opened = {
+        // 同 open_url：CREATE_NO_WINDOW 隐藏 cmd.exe 宿主控制台（黑窗闪现）
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path.to_string_lossy()])
+            .creation_flags(0x0800_0000)
+            .spawn()
+            .is_ok()
+    };
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let opened = std::process::Command::new("xdg-open").arg(&path).spawn().is_ok();
     opened

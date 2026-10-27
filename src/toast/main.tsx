@@ -53,14 +53,6 @@ function ToastApp() {
   // 宽高都随内容：短文案贴内容宽，长文案封顶后折行增高（上限在 Rust 侧钳制）
   useLayoutEffect(() => {
     if (!toast) return;
-    // TODO(diag): 透明圈排查几何日志，确认后删除
-    const stage = document.querySelector<HTMLElement>(".stage");
-    const pop = document.querySelector<HTMLElement>(".toast-pop");
-    const fmt = (el: HTMLElement | null) =>
-      el ? `${el.offsetWidth}x${el.offsetHeight}@(${el.offsetLeft},${el.offsetTop})` : "none";
-    invoke("ui_debug_log", {
-      msg: `diag vp=${window.innerWidth}x${window.innerHeight} dpr=${window.devicePixelRatio} htmlClass="${document.documentElement.className}" stage=${fmt(stage)} pop=${fmt(pop)} popMargin=${pop ? getComputedStyle(pop).margin : "-"} popRadius=${pop ? getComputedStyle(pop).borderRadius : "-"}`,
-    }).catch(() => undefined);
     const el = document.querySelector<HTMLElement>(".toast-pop");
     if (!el) return;
     invoke("resize_toast", {
