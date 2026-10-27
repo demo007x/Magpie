@@ -21,6 +21,7 @@
         "height": 620,
         "minWidth": 780,
         "minHeight": 520,
+        "visible": false,
         "create": false
       },
       {
