@@ -10,32 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Context-aware "提取信息" (extract info): when a model service is configured, dates and places in the panel are now understood by the AI with the surrounding context — a date range like "作品征集 10.12—10.31" becomes one multi-day event, a bare time attaches to the nearest date instead of today, the activity name becomes the event title, and no time is invented when the text has none. "日历" then pre-fills the system calendar from that structured result. If the AI fails or finds nothing for a group, that group falls back to the built-in recognizers; without a model service the panel behaves exactly as before. A "智能提取" master switch on the 提取信息 settings page turns the AI step off, and the extraction prompt is editable on the Prompts page with a one-click reset to default.
-- Calendar events carry their context: adding an event from the extract panel or a date pill writes the source page URL (the browser's address bar, or a link from the selection for non-browsers) into the event URL, puts the selected text in the notes, and lists any e-mail addresses from the selection as invitees.
-- A feedback channel under Settings › About: "反馈问题" offers a Feishu feedback form (no login required) and a GitHub Issue button that open the submission pages directly, plus a "复制日志" button that copies the app's run log to paste alongside your report. The same form is one click away from the tray menu, and README now lists the form (with QR code) and Issues.
-- Web pages can open the app's feedback page in one click: the `magpie://feedback` link launches Magpie and lands on Settings › About.
-- The app now keeps a run log on disk in every build (not just debug builds), so problems in the installed app leave a trace you can send; it is capped in size so it never grows unbounded.
-- Dark-mode surfaces got a finished look: the floating bar and its popup cards are a clean, opaque dark panel whose floating feel comes from the shadow alone — no edge lines, no translucency haze — and the layout follows the design (13px labels, icons matching text colour, no menu dividers, no highlighted default item, tighter padding so the bar covers less of the text underneath).
+- Context-aware "提取信息": with a model service configured, dates and places are understood by the AI in context (date ranges, bare times, event titles) and "日历" pre-fills the system calendar from the result; it falls back to the built-in recognizers when the AI finds nothing. A "智能提取" switch turns the AI step off, and the prompt is editable with a one-click reset.
+- Calendar events now carry the source page link, the selected text as notes, and any e-mail addresses as invitees.
+- Feedback channel under Settings › About and in the tray menu: a Feishu form, a GitHub Issue link, and a "复制日志" button that copies the run log. The `magpie://feedback` link opens this page from any web page.
+- Every build now keeps a size-capped run log on disk.
+- Dark mode got a finished look: clean opaque panels with no edge lines, lifted by shadow alone, with tighter padding and layout matching the design.
 
 ### Changed
 
-- A secondary menu in the floating bar now closes shortly after the pointer leaves its own action and the menu card — moving onto an action without a chevron (like 总结) no longer leaves an unrelated menu hanging above it. Resting on the parent action keeps the menu open and still, moving onto another chevron action switches instantly, and picking inside the menu is unaffected. Same behaviour on macOS and Windows.
-- The app no longer opens its main window on launch: it starts in the menu bar / system tray, and the window opens on demand from the tray menu or Dock icon.
-- Pinned screenshots (钉图) now float as cards with a soft shadow around the image instead of sitting edge-to-edge in the window; the hover toolbar moved with it.
-- Floating cards have no outlines: in both themes and on both platforms the floating bar, popups and result window drop their hairline borders, and the floating bar also drops its window shadow — its edge is defined by brightness contrast alone — while the result window keeps a shadow for depth.
-- Hover feedback across the floating bar's popups is a solid brand-colour fill with white text (main actions, chevrons, menu items, overflow rows), matching the result window; pressing darkens the fill slightly.
-- On Windows the floating bar, popups and result window regained a floating feel with a soft shadow in a small transparent margin, so a white card stands off a white page; the dark theme uses a slightly heavier shadow.
-- Settings copy was tightened page by page so each description reads in one pass: 程序坞 icon, 登录时自动启动, result-window size, Obsidian (header, vault status, folder/file labels), 搜索引擎, 翻译, 模型服务, 快捷键 (each description on one line, with a stable description/key-field column ratio) and 权限 (no more "click the button below" repeats; the self-check gives the fix steps; unauthorized items say what granting unlocks). About-page text was likewise cut to one sentence per section and its three feedback buttons share one visual weight.
+- A floating-bar submenu closes shortly after the pointer leaves its own action and menu card, so it no longer hangs over unrelated actions; resting on the parent action or picking inside the menu keeps it open. Same on macOS and Windows.
+- The app starts in the menu bar / tray without opening its main window.
+- Pinned screenshots float as cards with a soft shadow.
+- Floating cards have no outlines in either theme; the floating bar also drops its window shadow.
+- Hover across floating-bar popups is a solid brand-colour fill with white text, matching the result window.
+- On Windows the floating bar, popups and result window regained a soft shadow for a floating feel.
+- Settings descriptions were shortened throughout so each reads in one pass; the 快捷键 page fits each description on one line.
 
 ### Fixed
 
-- Fixed the result window's "更多" pill stack and its row-side chips (笔记/任务/卡片) only highlighting on hover after you clicked the window once: they now light up the moment the pointer reaches them, like the rest of the window.
-- Fixed pinned screenshots looking slightly softer than the original in every case: the image was being imperceptibly rescaled by a fraction of a percent. Pins now render pixel-for-pixel, and a scroll-wheel zoom that lands within 2% of 100% snaps back to exactly 100% so it stays sharp.
-- Fixed pinned screenshots looking blurry compared with the result preview on Retina displays: the pin window and image now snap to the physical pixel grid, including after zooming or dragging.
-- Fixed "钉图" doing nothing the second time for the same recognition result: a pin now takes its own copy of the image, so you can pin the same result repeatedly or keep several pins open at once.
-- Fixed ghost frames in dark mode — a grey empty panel or an old bar outline lingering where a popup had just closed or moved. No residue remains when menus open, close or switch.
-- Fixed "复制验证码" popping up for arbitrary 4–8 digit numbers in long text such as terminal logs (PIDs, ports, IDs): a longer selection must now contain a verification-code keyword near the digits; selecting the digits themselves or a short snippet still works as before.
-- Fixed verification-code detection picking digit fragments out of dates, times and #numbers (e.g. "北京#001 / 10月31日 10:00-19:00" no longer yields 00110 or 3110).
+- The result window's "更多" pills and their chips now highlight on hover without first clicking the window.
+- Pinned screenshots are pixel-sharp: three separate causes of softness were removed, and scroll-zoom snaps back to 100% when close to it.
+- "钉图" works repeatedly for the same result and several pins can stay open at once.
+- No more ghost frames in dark mode when popups close or move.
+- "复制验证码" no longer appears for arbitrary digit runs in long text, nor for fragments of dates, times or #numbers.
 
 ## [0.1.17] - 2026-10-22
 
