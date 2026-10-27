@@ -50,6 +50,7 @@ static POPS: Mutex<PopsState> = Mutex::new(PopsState {
 #[cfg(target_os = "windows")]
 pub fn init_pop_windows(app: &AppHandle) {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
+    use crate::capture::debug_log;
     for label in ["floating-panel", "floating-menu"] {
         if app.get_webview_window(label).is_some() {
             continue;
