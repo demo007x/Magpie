@@ -192,8 +192,19 @@ fn start_ocr_flow(app: tauri::AppHandle, action: Option<&'static str>) {
             }
             Ok(Err(e)) => {
                 eprintln!("[magpie:ocr] 失败：{e}");
-                // 面板未创建，临时截图也没有存在价值：直接清理
-                let _ = std::fs::remove_file(&image);
+                // 失败证据落用户日志（stderr 仅 dev 可见）：尺寸 + 路径。「未识别到
+                // 文字」时**保留**截图供事后复核（2026-10-27：有字的区域被判空，
+                // 删文件 = 删证据，一次都复现不出）；其余失败照常清理
+                let dims = image::image_dimensions(&image)
+                    .map(|(w, h)| format!("{w}x{h}"))
+                    .unwrap_or_else(|_| "?".into());
+                user_log(&format!(
+                    "[ocr] 识别失败：{e}；截图 {dims} {}",
+                    image.display()
+                ));
+                if e != "未识别到文字" {
+                    let _ = std::fs::remove_file(&image);
+                }
                 if e != "截图已取消" {
                     // 统一话术：主行说发生了什么，次行说该怎么办（toast 两段式）
                     let msg = if e == "未识别到文字" {
