@@ -156,6 +156,32 @@ section[id] {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
 }
 
+/* 产品暗色面板（2026-10-27 对齐 v0.1.18 定稿）：渐变哑光底、零描边、
+   悬浮感由投影单独表达——演示里的浮动条/结果窗用，与 .mock-card（被阅读
+   的应用窗口，保留描边）拉开层次：面板 = 产品，卡 = 别人的应用 */
+.mock-app-panel {
+  /* 恒深色构造：与 .mock-card 同一套 token 重声明（web/README 纪律——漏一项
+     就会浅色页面里"深字压深底"），底换成产品面板渐变 */
+  --color-bg: #0f1012;
+  --color-elev: #15171a;
+  --color-panel: rgba(30, 32, 37, 0.72);
+  --color-card: #232629;
+  --color-ink: #e9eaec;
+  --color-mute: #9ba0a8;
+  --color-mute-soft: #8f949c;
+  --color-mute-faint: #787d86;
+  --color-line: rgba(255, 255, 255, 0.09);
+  --color-fill: rgba(255, 255, 255, 0.06);
+  --color-fill-2: rgba(255, 255, 255, 0.12);
+  --color-accent-fill: rgba(108, 140, 255, 0.16);
+  --color-accent-line: rgba(108, 140, 255, 0.42);
+  --color-accent-ink: #bccbff;
+
+  background: linear-gradient(180deg, #34343c 0%, #2b2b31 100%);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+}
+
 /* 识图演示里的扫描页纸面：固定浅色（与真机截图同口径，不随主题翻色）。
    局部变量供纸面内的小元素取用（骨架线、正文色），组件里不写死色值 */
 .mock-paper {

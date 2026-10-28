@@ -1,6 +1,22 @@
+// 首屏交互演示：划选 → 浮动条弹出 → 点翻译 → 结果窗流式（循环状态机）。
+// 2026-10-27 重做：mock 对齐 v0.1.18 产品定稿——浮动条动作带 ⌄ 与「⌃N」收纳钮、
+// 选中项实底白字；结果窗头部三工具钮 + 识别原文区 + 底部动作行（含 Obsidian ⌄）；
+// 面板用 .mock-app-panel（渐变哑光、零描边，见 styles.css），与被阅读应用的
+// .mock-card（保留描边）拉开层次。循环脚本与减弱动态效果回退不变。
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Check, ChevronsDown, Pin, Sparkles } from "lucide-react";
+import {
+  AlignLeft,
+  ChevronDown,
+  ChevronsUp,
+  Copy,
+  HelpCircle,
+  Languages,
+  Pin,
+  Search,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { DEMO } from "../data";
 
 type Stage = "idle" | "selected" | "typing" | "done";
@@ -10,8 +26,6 @@ const NEXT: Record<Exclude<Stage, "typing">, [Stage, number]> = {
   selected: ["typing", 1000],
   done: ["idle", 3400],
 };
-
-const PILLS = ["翻译", "解释", "总结", "搜索"];
 
 export function CapsuleDemo() {
   const reduce = useReducedMotion();
@@ -73,34 +87,45 @@ export function CapsuleDemo() {
           </span>
         </p>
 
+        {/* 浮动条：动作带 ⌄（换服务/引擎），右侧 ⌃N 收纳其余动作——与 v0.1.18 一致 */}
         <motion.div
           className="absolute -bottom-5 left-6"
           initial={false}
           animate={{ opacity: shown ? 1 : 0, y: shown ? 0 : 8 }}
           transition={{ duration: reduce ? 0 : 0.34, ease: [0.22, 1, 0.36, 1] }}
         >
-          <div className="mock-card flex items-center gap-1 p-1.5">
-            {PILLS.map((p) => (
-              <span
-                key={p}
-                className={`rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors duration-200 ${
-                  p === "翻译" && active
-                    ? "bg-accent-fill text-accent-ink ring-1 ring-accent-line"
-                    : "mock-pill text-ink/80"
-                }`}
-              >
-                {p}
-              </span>
-            ))}
-            <span className="mock-pill flex items-center gap-0.5 rounded-full px-2 py-1.5 text-[12px] text-mute">
-              <ChevronsDown size={13} strokeWidth={2} />
-              5
+          <div className="mock-app-panel flex items-center gap-0.5 p-1">
+            <span
+              className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors duration-200 ${
+                active ? "bg-accent text-white" : "text-ink/90"
+              }`}
+            >
+              <Languages size={13} strokeWidth={1.9} className="opacity-80" />
+              翻译
+              <ChevronDown size={12} strokeWidth={2} className="opacity-70" />
+            </span>
+            <span className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[12px] text-ink/90">
+              <HelpCircle size={13} strokeWidth={1.9} className="opacity-80" />
+              解释
+            </span>
+            <span className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[12px] text-ink/90">
+              <AlignLeft size={13} strokeWidth={1.9} className="opacity-80" />
+              总结
+            </span>
+            <span className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[12px] text-ink/90">
+              <Search size={13} strokeWidth={1.9} className="opacity-80" />
+              搜索
+              <ChevronDown size={12} strokeWidth={2} className="opacity-70" />
+            </span>
+            <span className="ml-0.5 flex items-center gap-0.5 rounded-md px-2 py-1.5 text-[12px] text-mute">
+              <ChevronsUp size={13} strokeWidth={2} />
+              2
             </span>
           </div>
         </motion.div>
       </div>
 
-      {/* 拾趣自己的结果窗：独立、常驻、可钉住 */}
+      {/* 拾趣自己的结果窗：独立、常驻、可钉住；头部工具钮 + 识别原文 + 底部动作行 */}
       <div className="relative mt-10">
         <AnimatePresence initial={false}>
           {active && (
@@ -109,30 +134,51 @@ export function CapsuleDemo() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={reduce ? undefined : { opacity: 0, y: 8 }}
               transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-              className="mock-card p-5"
+              className="mock-app-panel p-5"
             >
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-[12px] text-mute">
+                <div className="flex items-center gap-2 text-[12px] text-ink/90">
                   <Sparkles size={13} strokeWidth={1.9} className="text-accent" />
                   翻译
-                  <span className="text-mute-soft">·</span>
-                  <span className="text-mute-soft">AI 翻译</span>
+                  <span className="text-mute">·</span>
+                  <span className="text-mute">AI 翻译</span>
                 </div>
-                <div className="flex items-center gap-2 text-mute-soft">
+                <div className="flex items-center gap-2.5 text-mute-soft">
                   <Pin size={13} strokeWidth={1.8} />
-                  <Check size={13} strokeWidth={2} className={stage === "done" ? "text-accent-2" : "opacity-0"} />
+                  <Copy size={13} strokeWidth={1.8} />
+                  <X size={13} strokeWidth={1.8} />
                 </div>
               </div>
+              <p className="mt-3 border-l-2 border-line pl-2.5 text-[11px] leading-relaxed text-mute">
+                {DEMO.source}
+              </p>
               <p className="mt-3 min-h-[3.4em] text-[15px] leading-relaxed text-ink">
                 {typed}
                 {stage === "typing" && (
                   <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] bg-accent" />
                 )}
               </p>
-              <div className="mt-4 flex items-center gap-2 border-t border-line pt-3 text-[11px] text-mute-soft">
-                <span className="mock-pill px-2.5 py-1 text-ink/70">复制</span>
-                <span className="mock-pill px-2.5 py-1 text-ink/70">继续处理</span>
-                <span className="ml-auto">窗口尺寸与位置自动记忆</span>
+              {/* 动作行对齐产品 .ocr-actions / .action.sm：12px、靠左密排、
+                  当前动作（翻译）强调色，其余常规；行尾「更多 ⌃」收纳 */}
+              <div className="mt-3 flex items-center gap-0.5 border-t border-line pt-1.5">
+                <span className="flex h-[22px] items-center gap-1 rounded-md px-1.5 text-[12px] font-medium text-accent-ink">
+                  <Sparkles size={12} strokeWidth={1.9} />
+                  翻译
+                </span>
+                <span className="flex h-[22px] items-center rounded-md px-1.5 text-[12px] text-ink">
+                  解释
+                </span>
+                <span className="flex h-[22px] items-center rounded-md px-1.5 text-[12px] text-ink">
+                  总结
+                </span>
+                <span className="flex h-[22px] items-center rounded-md px-1.5 text-[12px] text-ink">
+                  Obsidian
+                  <ChevronDown size={11} strokeWidth={2} className="opacity-70" />
+                </span>
+                <span className="ml-auto flex h-[22px] items-center gap-0.5 rounded-md px-1.5 text-[12px] text-mute">
+                  更多
+                  <ChevronDown size={11} strokeWidth={2} className="rotate-180 opacity-70" />
+                </span>
               </div>
             </motion.div>
           )}
