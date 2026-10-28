@@ -170,6 +170,17 @@ TS (WebView × N)                        Rust 核心进程
 
 欢迎 Issue 与 PR！贡献流程、本地验证标准与工程约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=demo007x%2Fmagpie&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=demo007x/magpie&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=demo007x/magpie&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=demo007x/magpie&type=date&legend=top-left" />
+ </picture>
+</a>
+
 ## License
 
 本项目基于 [MIT](./LICENSE) 许可证发布。
