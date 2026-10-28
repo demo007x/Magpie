@@ -101,6 +101,9 @@ pub fn recognize_file(path: &Path) -> Result<String, String> {
 /// 无交互遮罩，此时画面已稳定）再识别。
 /// 返回 Some((文本, 新截图路径))：文本有效且原图应替换为重截图（钉图用清晰版）；
 /// None = 无可用矩形 / 重截失败 / 仍为空（沿用原失败处理）。
+/// 仅 macOS：Windows 框选是自家遮罩窗 + BitBlt 一次成帧，无过渡帧问题
+///（失败留证见 win_region 的 Ok((image, None)) 分支），不做无据修复
+#[cfg(target_os = "macos")]
 pub fn retry_region_capture() -> Option<(String, PathBuf)> {
     let Some(rect) = crate::capture::macos::last_snip_rect(std::time::Duration::from_millis(5000))
     else {
