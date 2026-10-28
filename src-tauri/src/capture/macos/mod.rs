@@ -32,6 +32,20 @@ use query::{
 };
 
 // ---------- 诊断计数器 ----------
+/// 最近一次拖选手势的矩形（全局坐标，左上原点，逻辑点）——截屏识别的「未识别
+/// 到文字」自愈重截用：交互式 screencapture 在快速手势下可能截到遮罩淡出/
+/// 页面动画未稳的过渡帧（整图发虚、Vision 返回空），此时按此矩形用
+/// `screencapture -R`（无遮罩）延迟重截。任何 >6px 的左键拖选都记录，
+/// 静音期间（截图模态会话）也记录——那正是它的主要服务对象
+static LAST_SNIP_RECT: Mutex<Option<(Instant, (f64, f64, f64, f64))>> = Mutex::new(None);
+
+/// 取最近拖选矩形（max_age 内有效）。x/y/w/h 全局逻辑点，左上原点
+pub fn last_snip_rect(max_age: Duration) -> Option<(f64, f64, f64, f64)> {
+    let guard = LAST_SNIP_RECT.lock().unwrap_or_else(|e| e.into_inner());
+    let (t, r) = guard.as_ref()?;
+    (t.elapsed() <= max_age).then_some(*r)
+}
+
 static FIRST_EVENT: AtomicBool = AtomicBool::new(false);
 static LAST_EVENT_MS: AtomicU64 = AtomicU64::new(0); // UNIX 毫秒
 
@@ -56,6 +70,11 @@ struct MouseEvent {
 
 static EVENT_TX: Mutex<Option<Sender<MouseEvent>>> = Mutex::new(None);
 
+/// 回调层的按下点（回调在 tap 线程串行执行，Mutex 仅防编译器抱怨跨线程）：
+/// 静音期间 mouse 事件在回调入口即被丢弃，detect 线程收不到——截图识别的
+/// 自愈重截需要框选矩形，故在静音早退之前于此处成对记录按下/抬起
+static SNIP_DOWN: Mutex<Option<(f64, f64)>> = Mutex::new(None);
+
 extern "C" fn tap_callback(
     _proxy: CGEventTapProxy,
     kind: u32,
@@ -64,6 +83,23 @@ extern "C" fn tap_callback(
 ) -> CGEventRef {
     // 回调内只做计数 + 入队（绝不查询 AX）
     let is_key = kind == EV_KEY_DOWN;
+    // 拖选矩形记录（须在静音早退之前——静音期间 mouse 事件到此为止）：
+    // LeftDown 记起点，LeftUp 与起点距离 >6px 时成矩形写入 LAST_SNIP_RECT。
+    // 这正是截图框选（capture_muted）的形态，也是自愈重截的数据来源
+    if kind == EV_LEFT_DOWN || kind == EV_LEFT_UP {
+        let p = unsafe { CGEventGetLocation(ev) };
+        let mut down = SNIP_DOWN.lock().unwrap_or_else(|e| e.into_inner());
+        if kind == EV_LEFT_DOWN {
+            *down = Some((p.x, p.y));
+        } else if let Some((dx, dy)) = down.take() {
+            let (w, h) = ((p.x - dx).abs(), (p.y - dy).abs());
+            if w * w + h * h > 36.0 {
+                let rect = (dx.min(p.x), dy.min(p.y), w, h);
+                *LAST_SNIP_RECT.lock().unwrap_or_else(|e| e.into_inner()) =
+                    Some((Instant::now(), rect));
+            }
+        }
+    }
     // 截图取词等系统交互期间静音：screencapture 的框选拖选会被误判为划词。
     // 只静音鼠标事件——Esc 收起浮动条不该被截图模态吞掉
     if !is_key && capture_muted() {

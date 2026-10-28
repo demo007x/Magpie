@@ -94,6 +94,61 @@ pub fn recognize_file(path: &Path) -> Result<String, String> {
     Ok(text)
 }
 
+/// 「未识别到文字」的自愈重截（2026-10-27）：快速框选手势下，交互式
+/// screencapture 可能在遮罩淡出/页面动画未稳的过渡帧上落图（整图发虚、
+/// 笔画重影，Vision 直接返回空——失败截图已在用户日志留证）。此处按事件
+/// 钩子记录的拖选矩形（last_snip_rect）延迟静默重截一次（`screencapture -R`
+/// 无交互遮罩，此时画面已稳定）再识别。
+/// 返回 Some((文本, 新截图路径))：文本有效且原图应替换为重截图（钉图用清晰版）；
+/// None = 无可用矩形 / 重截失败 / 仍为空（沿用原失败处理）。
+pub fn retry_region_capture() -> Option<(String, PathBuf)> {
+    let Some(rect) = crate::capture::macos::last_snip_rect(std::time::Duration::from_millis(5000))
+    else {
+        eprintln!("[ocr] 无可用框选矩形（事件钩子未记录），跳过重截");
+        return None;
+    };
+    // 画面稳定宽限：遮罩淡出 + 可能的滚动动画收尾
+    std::thread::sleep(std::time::Duration::from_millis(350));
+    let (x, y, w, h) = rect;
+    // 区域过小不重试（误触/极小选区，原失败即真实结果）
+    if w < 12.0 || h < 12.0 {
+        return None;
+    }
+    let dir = std::env::temp_dir();
+    let retry = dir.join(format!(
+        "magpie-capture-retry-{}-{}.png",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    ));
+    let status = Command::new("screencapture")
+        .args(["-x", "-R", &format!("{x},{y},{w},{h}")])
+        .arg(&retry)
+        .status()
+        .ok()?;
+    if !(status.success() && retry.exists()) {
+        let _ = std::fs::remove_file(&retry);
+        return None;
+    }
+    eprintln!("[ocr] 首次识别为空，重截 {w}x{h} @({x},{y}) 后重试");
+    match recognize_file(&retry) {
+        Ok(text) => {
+            crate::user_log(&format!(
+                "[ocr] 重截自愈成功：{w}x{h} @({x},{y}) → len={}",
+                text.len()
+            ));
+            Some((text, retry))
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&retry);
+            eprintln!("[ocr] 重截后仍失败：{e}");
+            None
+        }
+    }
+}
+
 /// 识别完成，一次性推送结果（文本 + 原图 + 可选自动执行动作）：面板出现即有
 /// 完整内容，原图随 pending 保留供「钉图」。run = (动作 id, 服务)，
 /// 传 (id, None) 时由前端按该动作既有的默认服务逻辑选择。
@@ -325,8 +380,16 @@ mod win_region {
                     );
                 }
                 Ok((image, None)) => {
-                    // 截屏成功但无可识别文字：换成交代下一步的引导话术
-                    let _ = std::fs::remove_file(&image);
+                    // 截屏成功但无可识别文字：留证后引导。Windows 侧尚未观察到
+                    // 此失败（macOS 的过渡帧根因在此架构上不存在——BitBlt 一次
+                    // 成帧、遮罩是自家窗口），留图为真出现时提供判据，不做无据修复
+                    let dims = image::image_dimensions(&image)
+                        .map(|(w, h)| format!("{w}x{h}"))
+                        .unwrap_or_else(|_| "?".into());
+                    crate::user_log(&format!(
+                        "[ocr][win] 识别失败：未识别到文字；截图 {dims} {}",
+                        image.display()
+                    ));
                     crate::toast::hide_toast(&app2);
                     toast_err(&app2, "未检测到文字\n重新框选，确认区域内有清晰的文字");
                 }

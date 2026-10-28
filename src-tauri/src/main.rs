@@ -198,9 +198,25 @@ fn start_ocr_flow(app: tauri::AppHandle, action: Option<&'static str>) {
             }
             Ok(Err(e)) => {
                 eprintln!("[magpie:ocr] 失败：{e}");
-                // 失败证据落用户日志（stderr 仅 dev 可见）：尺寸 + 路径。「未识别到
-                // 文字」时**保留**截图供事后复核（2026-10-27：有字的区域被判空，
-                // 删文件 = 删证据，一次都复现不出）；其余失败照常清理
+                // 「未识别到文字」先走自愈重截（快速手势可能截到遮罩淡出/页面
+                // 动画未稳的过渡帧，整图发虚被判空——见 retry_region_capture 注释）：
+                // 按事件钩子记录的拖选矩形延迟静默重截再识别，成功即正常展示
+                if e == "未识别到文字" {
+                    if let Some((text, retry_image)) = ocr::retry_region_capture() {
+                        toast::hide_toast(&app);
+                        ocr::push_ocr_result(
+                            &app,
+                            text,
+                            retry_image,
+                            action.map(|a| (a.to_string(), Some(service.clone().unwrap_or_default()))),
+                        );
+                        let _ = std::fs::remove_file(&image); // 原糊图已无价值
+                        return;
+                    }
+                }
+                // 自愈未成（或非空识别错误）：证据落用户日志（stderr 仅 dev 可见）：
+                // 尺寸 + 路径。「未识别到文字」时**保留**截图供事后复核（删文件 =
+                // 删证据）；其余失败照常清理
                 let dims = image::image_dimensions(&image)
                     .map(|(w, h)| format!("{w}x{h}"))
                     .unwrap_or_else(|_| "?".into());
