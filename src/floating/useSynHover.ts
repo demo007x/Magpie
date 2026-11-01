@@ -336,6 +336,10 @@ export function useSynHover(opts: {
         (el?.closest<HTMLElement>(".chev")?.closest<HTMLElement>(".action-slot") ??
           el?.closest<HTMLElement>(".pchev")?.closest<HTMLElement>(".pitem")
         )?.querySelector<HTMLElement>(".action") ?? null;
+      // React 重渲染（菜单开合/fading 卸载）会用模板 className 覆盖手动挂的
+      // syn-hover——类只存在于 DOM、不在 React 状态里。每次事件都重放目标类
+      // （幂等），被抹掉的类在下一帧（≤16ms）内补回；变化时才做摘旧挂新
+      if (btn) btn.classList.add("syn-hover");
       if (btn !== synHoverRef.current) {
         // 诊断（仅 dev）：hover 目标变化时记录；release 落盘日志会刷屏，不记
         if (import.meta.env.DEV) {
@@ -349,6 +353,19 @@ export function useSynHover(opts: {
         synHoverRef.current?.classList.remove("syn-hover");
         if (btn) btn.classList.add("syn-hover");
         synHoverRef.current = btn;
+      }
+      // 一致性守卫（dev 可见）：正常情况全页至多一个 .syn-hover——出现多个 =
+      // 类管理与 React 重渲染竞态（className 模板覆盖手动类 / 节点重建后 ref
+      // 失配），立即自愈（只留最新命中）并留日志定位
+      const dup = document.querySelectorAll(".syn-hover");
+      if (dup.length > 1) {
+        const names = Array.from(dup)
+          .map((n) => (n.textContent ?? "?").slice(0, 6))
+          .join("|");
+        invoke("ui_debug_log", { msg: `SYN 双亮守卫触发：${names}` }).catch(() => undefined);
+        dup.forEach((n) => {
+          if (n !== btn) n.classList.remove("syn-hover");
+        });
       }
       // 合成 hover 就是真实的鼠标反馈：弹出时挂起的 hover 挂起态一并解除
       setHoverSuppress(false);

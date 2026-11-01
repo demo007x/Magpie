@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- 本文件仅在发版时依据 docs/release/release-vX.Y.Z.md 的已勾选条目生成版本节，开发阶段勿改 -->
 
+## [0.1.19] - 2026-10-27
+
+### Fixed
+
+- Fixed two floating-bar actions keeping the pressed highlight at the same time after sweeping quickly across them: only the action under the cursor lights up now, even when menus open and close mid-sweep.
+
 ## [0.1.18] - 2026-10-27
 
 ### Added
@@ -31,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The result window's "更多" pills and their chips now highlight on hover without first clicking the window.
 - Pinned screenshots are pixel-sharp: three separate causes of softness were removed, and scroll-zoom snaps back to 100% when close to it.
 - "钉图" works repeatedly for the same result and several pins can stay open at once.
+- Region OCR no longer fails with "未检测到文字" after fast captures: when recognition comes back empty, the app quietly re-captures the same region (frame settled, no overlay) and tries once more before giving up.
 - No more ghost frames in dark mode when popups close or move.
 - "复制验证码" no longer appears for arbitrary digit runs in long text, nor for fragments of dates, times or #numbers.
 
