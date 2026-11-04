@@ -6,18 +6,29 @@
 //! - 识图翻译/解释/总结（自动动作）：截图后立即识别执行，会话结束
 //! 会话内选区可拖动（snip_frame_move，胶囊实时跟随），拖动后执行时按新矩形
 //! 重截当前屏幕。选区阶段误触（过小选区）取消；会话阶段点选区外取消。
-//! 纪律：遮罩窗不用 always_on_top（普通层即可盖住应用窗口，胶囊在置顶层恒在
-//! 其上——遮罩被点击置前也不会盖住胶囊）；AppKit 窗口操作必须主线程；
-//! 选区/会话全程持 CaptureMuteGuard（在自家遮罩上的拖选也是拖选手势，
-//! 不静音会误触发划词管线，与系统框选静音同理由）。
+//! Windows 复用本模块的 SNIP 状态池与 snip_execute 管线（遮罩窗在
+//! ocr::win_region，会话段交互与 macOS 同构：拖动/缩放经 snip_frame_move
+//! 上报，执行动作按新矩形 BitBlt 重截）。
+//! 纪律：胶囊（置顶层）必须恒在遮罩之上——macOS 遮罩不用 always_on_top
+//!（普通层即可盖住应用窗口，遮罩被点击置前也不会盖住胶囊）；Windows 选区
+//! 段遮罩须置顶（前台锁会把非 topmost 新窗压在前台应用后面，「遮罩没出现」），
+//! 会话段开始即降回普通层（见 ocr::win_region::region_selected）。
+//! AppKit 窗口操作必须主线程；macOS 选区/会话全程持 CaptureMuteGuard（在
+//! 自家遮罩上的拖选也是拖选手势，不静音会误触发划词管线），Windows 选区
+//! 交互段持有、会话段解除（胶囊 hover 依赖捕获管线转发，同一处见上）。
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, LogicalPosition, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, LogicalPosition, Manager, WebviewWindow};
+// 建遮罩仅在 macOS 会话流程使用（Windows 消费侧只有会话状态池与动作执行命令）
+#[cfg(target_os = "macos")]
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 use crate::capture::{debug_log, CaptureMuteGuard};
-use super::{place_rect, show_without_activation, snap_pos};
+use super::{place_rect, snap_pos};
+#[cfg(target_os = "macos")]
+use super::show_without_activation;
 use super::bar::FloatingState;
 
 /// 遮罩窗（snip-frame）label：全屏交互遮罩（选区框选 + 会话视觉共用一窗）
@@ -36,6 +47,9 @@ struct SnipSession {
     /// 遮罩窗所在显示器的逻辑矩形 (origin.x, origin.y, w, h)：
     /// 页面（遮罩窗视口）坐标 ↔ 全局逻辑坐标的换算基准
     mon: (f64, f64, f64, f64),
+    /// 所在屏缩放：Windows 执行动作时按新矩形 BitBlt 重截，逻辑 → 物理
+    /// 坐标换算用（macOS 恒 1.0——snap_region 直收逻辑坐标，不参与）
+    scale: f64,
 }
 
 static SNIP: Mutex<Option<SnipSession>> = Mutex::new(None);
@@ -53,6 +67,7 @@ static SELECT: Mutex<Option<SelectState>> = Mutex::new(None);
 static SNIP_MUTE: Mutex<Option<CaptureMuteGuard>> = Mutex::new(None);
 
 /// 流程期间的 AppHandle 镜像：Esc 转发（tap 回调线程）据此关闭遮罩
+#[cfg(target_os = "macos")]
 static SNIP_APP: Mutex<Option<AppHandle>> = Mutex::new(None);
 
 /// 会话开始时主窗口的可见性（退出时据此还原）：遮罩窗的 webview 创建/加载
@@ -64,6 +79,7 @@ static SNIP_MAIN_HIDDEN: AtomicBool = AtomicBool::new(false);
 
 /// 主窗口可见则隐藏（主线程执行；在 show_frame 之前派发，主队列 FIFO 保证
 /// 先隐藏后建遮罩，激活无可提升的关键窗口）
+#[cfg(target_os = "macos")]
 fn hide_main_for_session(app: &AppHandle) {
     let a = app.clone();
     let _ = app.run_on_main_thread(move || {
@@ -93,6 +109,7 @@ fn restore_main_if_hidden(app: &AppHandle) {
 
 /// 光标所在显示器的逻辑矩形（多显示器 v1 取光标屏，与 Windows snap 同策略）。
 /// cursor_position 不可用（Err）时降级主屏——定位失败不该终止整个流程
+#[cfg(target_os = "macos")]
 fn monitor_at_cursor(app: &AppHandle) -> Option<(f64, f64, f64, f64)> {
     let cur = match app.cursor_position() {
         Ok(p) => p,
@@ -114,6 +131,7 @@ fn monitor_at_cursor(app: &AppHandle) -> Option<(f64, f64, f64, f64)> {
 }
 
 /// 主显示器逻辑矩形（取不到时 1920x1080 兜底）
+#[cfg(target_os = "macos")]
 fn primary_monitor_rect(app: &AppHandle) -> Option<(f64, f64, f64, f64)> {
     app.primary_monitor().ok().flatten().map(|m| {
         let s = m.scale_factor();
@@ -134,6 +152,7 @@ fn primary_monitor_rect(app: &AppHandle) -> Option<(f64, f64, f64, f64)> {
 /// 「派发到主线程执行 + 当前线程阻塞等结果」的实现，而本函数从全局快捷键/
 /// 托盘菜单 handler（主线程事件循环）同步调用——主线程调它们 = 等自己 =
 /// 主线程死锁（2026-11-04 卡死回归；上一版这些调用都在后台线程故无恙）
+#[cfg(target_os = "macos")]
 pub fn begin_selection(app: &AppHandle, action: Option<&'static str>) {
     if app.get_webview_window(FRAME_LABEL).is_some() {
         debug_log("[snip] 幂等闸门命中（遮罩窗已存在），忽略本次触发");
@@ -178,6 +197,7 @@ pub fn begin_selection(app: &AppHandle, action: Option<&'static str>) {
 /// 先建遮罩再弹胶囊：后显示的胶囊窗口置前，盖在遮罩上方（同屏同层级按显示序）。
 /// AppKit 窗口操作必须主线程，建窗与显示经 run_on_main_thread 派发；
 /// 销毁等待轮询留后台线程防阻塞主循环
+#[cfg(target_os = "macos")]
 fn show_frame(app: &AppHandle, mon: (f64, f64, f64, f64)) {
     let app = app.clone();
     if let Some(w) = app.get_webview_window(FRAME_LABEL) {
@@ -203,6 +223,7 @@ fn show_frame(app: &AppHandle, mon: (f64, f64, f64, f64)) {
 
 /// 建遮罩 + 显示（主线程调用）。建不出来（极罕见）不阻断流程：
 /// 终止会话并提示，回不到系统框选（已退役）
+#[cfg(target_os = "macos")]
 fn build_frame(app: &AppHandle, mon: (f64, f64, f64, f64)) {
     // 并发闸：重复触发竞态下旧窗尚未销毁时跳过重建，防重复 label panic
     if app.get_webview_window(FRAME_LABEL).is_some() {
@@ -344,6 +365,7 @@ pub fn snip_region_selected(
                         rect,
                         origin: rect,
                         mon,
+                        scale: 1.0,
                     });
                 }
                 debug_log("[snip] 胶囊会话建立");
@@ -463,6 +485,10 @@ fn snap_region(rect: (f64, f64, f64, f64)) -> Option<PathBuf> {
 pub fn snip_execute(app: AppHandle, action_id: String) {
     debug_log(format!("[snip] 动作执行：{action_id}"));
     close_frame(&app);
+    // Windows 遮罩窗（snap）同样保留到动作执行才关：会话段期间遮罩原位显示
+    // 选区洞（对齐 macOS 视觉），随本命令一起收场
+    #[cfg(target_os = "windows")]
+    crate::ocr::finish_windows_snap_session(&app);
     // 会话结束：放静音、清选区阶段残留、还原主窗口
     *SNIP_MUTE.lock().unwrap() = None;
     *SELECT.lock().unwrap() = None;
@@ -493,7 +519,23 @@ pub fn snip_execute(app: AppHandle, action_id: String) {
                     }
                 }
             }
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(target_os = "windows")]
+            {
+                // Windows：helper 子进程 BitBlt 重截（逻辑矩形 × 屏缩放 → 物理）
+                match crate::ocr::resnap_region(session.rect, session.scale).await {
+                    Some(p) => {
+                        let _ = std::fs::remove_file(&session.image);
+                        p
+                    }
+                    None => {
+                        // 重截失败：会话已清，提示后终止（不回退旧图——区域已变，内容对不上）
+                        crate::toast::show_toast(&app, "选区更新失败，请重新截图", "err");
+                        let _ = std::fs::remove_file(&session.image);
+                        return;
+                    }
+                }
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             session.image
         } else {
             session.image
@@ -516,10 +558,17 @@ pub fn snip_execute(app: AppHandle, action_id: String) {
 
 /// 存入截图会话（Windows 胶囊流程：region_selected 只截屏不发识别，会话
 /// 交由胶囊动作驱动——与 macOS snip_region_selected 的会话建立同一状态池）。
-/// mon 传零值：Windows 无遮罩会话段（无 frame_move），该字段不参与。
+/// mon 传遮罩所在显示器的逻辑矩形（页面坐标 ↔ 全局逻辑换算基准，
+/// snip_frame_move 的钳制依赖它）；scale 为该屏缩放（执行时按新矩形
+/// BitBlt 重截的逻辑 → 物理换算用）。
 /// 仅 Windows 消费（macOS 在 snip_region_selected 内联填充 SNIP）
 #[cfg(target_os = "windows")]
-pub fn store_session(image: PathBuf, rect: (f64, f64, f64, f64)) {
+pub fn store_session(
+    image: PathBuf,
+    rect: (f64, f64, f64, f64),
+    mon: (f64, f64, f64, f64),
+    scale: f64,
+) {
     let mut slot = SNIP.lock().unwrap();
     if let Some(old) = slot.as_ref() {
         let _ = std::fs::remove_file(&old.image);
@@ -528,14 +577,15 @@ pub fn store_session(image: PathBuf, rect: (f64, f64, f64, f64)) {
         image,
         rect,
         origin: rect,
-        mon: (0.0, 0.0, 0.0, 0.0),
+        mon,
+        scale,
     });
 }
 
 /// 取消整段流程（选区阶段或会话阶段通用）：关遮罩、放静音、清待续、删临时图。
 /// 胶囊随 dismiss 管线收起（Esc/点选区外取消时不留孤儿胶囊；选区阶段胶囊
 /// 本就未显示，dismiss 为无害空操作）
-fn cancel_all(app: &AppHandle) {
+pub(crate) fn cancel_all(app: &AppHandle) {
     end_session(app);
     let _ = app.emit_to("floating", "selection://dismiss", serde_json::json!({}));
     if let Some(s) = SNIP.lock().unwrap().take() {
@@ -547,6 +597,29 @@ fn cancel_all(app: &AppHandle) {
 #[tauri::command]
 pub fn snip_cancel(app: AppHandle) {
     cancel_all(&app);
+}
+
+/// 点是否落在截图会话遮罩窗（macOS snip-frame / Windows snap）内——遮罩
+/// 铺满所在屏，会话期间的点击都落它上面，是否取消由遮罩页自行判定
+///（点选区外 = cancel 命令），捕获管线的 dismiss 不得越权收胶囊：Windows
+/// 拖选手势被自身闸门拒绝后兜底的 PlainClick 尤其如此——拖动/缩放选区的
+/// mouseup 会误杀胶囊（2026-11-05 实测）。dismiss 判定（capture worker）
+/// 调用，与 ocr_rect_contains 同构
+pub fn mask_rect_contains(app: &AppHandle, x: f64, y: f64, pad: f64) -> bool {
+    [FRAME_LABEL, "snap"].iter().any(|label| {
+        app.get_webview_window(label).map_or(false, |w| {
+            if !w.is_visible().unwrap_or(false) {
+                return false;
+            }
+            let scale = w.scale_factor().unwrap_or(2.0);
+            let (Ok(pos), Ok(size)) = (w.outer_position(), w.inner_size()) else {
+                return false;
+            };
+            let (lx, ly) = (pos.x as f64 / scale, pos.y as f64 / scale);
+            let (lw, lh) = (size.width as f64 / scale, size.height as f64 / scale);
+            x >= lx - pad && x <= lx + lw + pad && y >= ly - pad && y <= ly + lh + pad
+        })
+    })
 }
 
 /// Esc 按下（事件 tap 回调转发）：取消进行中的截图流程。遮罩窗是非 key

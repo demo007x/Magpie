@@ -1,6 +1,7 @@
-//! OCR 文本识别（父进程侧）：把框选 + Vision 识别全部隔离在独立的
-//! `ocr_helper` 子进程中执行（src/bin/ocr_helper.rs）——AppKit/Vision 的
-//! ObjC 异常或崩溃只影响子进程，主应用任何情况下不会因此 abort。
+//! OCR 文本识别（父进程侧）：把识别与截屏全部隔离在独立的 `ocr_helper`
+//! 子进程中执行（src/bin/ocr_helper.rs；macOS = Vision，Windows = BitBlt
+//! 截屏 + Windows.Media.Ocr）——平台 OCR 栈的异常或崩溃只影响子进程，
+//! 主应用任何情况下不会因此 abort。
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -58,8 +59,8 @@ pub fn recognize_file(path: &Path) -> Result<String, String> {
 /// 无交互遮罩，此时画面已稳定）再识别。
 /// 返回 Some((文本, 新截图路径))：文本有效且原图应替换为重截图（钉图用清晰版）；
 /// None = 无可用矩形 / 重截失败 / 仍为空（沿用原失败处理）。
-/// 仅 macOS：Windows 框选是自家遮罩窗 + BitBlt 一次成帧，无过渡帧问题
-///（失败留证见 win_region 的 Ok((image, None)) 分支），不做无据修复
+/// 仅 macOS：Windows 框选是自家遮罩窗 + BitBlt 一次成帧，无过渡帧问题，
+/// 不做无据修复
 #[cfg(target_os = "macos")]
 pub fn retry_region_capture() -> Option<(String, PathBuf)> {
     let Some(rect) = crate::capture::macos::last_snip_rect(std::time::Duration::from_millis(5000))
@@ -156,7 +157,7 @@ pub async fn recognize_and_push(
         Ok(Err(e)) => {
             eprintln!("[magpie:ocr] 失败：{e}");
             // 「未识别到文字」自愈重截仅 macOS（Windows 框选是自家遮罩窗 +
-            // BitBlt 一次成帧，无过渡帧问题，见 retry_region_capture 注释）
+            // BitBlt 一次成帧，无过渡帧问题，不做无据修复）
             #[cfg(target_os = "macos")]
             if e == "未识别到文字" {
                 if let Some((text, retry_image)) = retry_region_capture() {
@@ -216,7 +217,7 @@ pub fn warmup() {
         cmd.arg(&img);
         #[cfg(target_os = "windows")]
         {
-            // 同 snap_ocr_capture：隐藏控制台子进程的宿主黑窗
+            // 同 snap_capture_only：隐藏控制台子进程的宿主黑窗
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x0800_0000);
         }
@@ -260,9 +261,11 @@ pub fn screen_capture_preflight() -> bool {
 }
 
 // ---------- Windows 框选识图：遮罩窗交互 + GDI 截屏（helper 子进程执行） ----------
-// macOS 用系统 `screencapture -i` 阻塞等用户框选；Windows 无系统级等价物，
-// 流程改为事件驱动：遮罩窗（snap.html）里拖拽选区 → 前端 invoke 回调 →
-// helper `--snap-ocr` 子进程一次完成 BitBlt 截屏 + Windows.Media.Ocr 识别。
+// 流程对齐 macOS 截图胶囊：遮罩窗（snap.html）拖拽选区 → 前端 invoke 回调 →
+// helper `--snap` 子进程只截屏不识别（遮罩窗原位切会话模式，选区洞保留）→
+// 识图取字进胶囊会话（选动作才识别），自动动作槽位（识图翻译/解释/总结）
+// 截图后立即识别执行。会话终止两路：取消（cancel）与动作执行
+//（finish_windows_snap_session，由 snip::snip_execute 调用）。
 
 #[cfg(target_os = "windows")]
 mod win_region {
@@ -277,7 +280,8 @@ mod win_region {
 
     /// 待续流程：(自动执行动作, 翻译服务)。region_selected 后消费
     static PENDING: Mutex<Option<(Option<&'static str>, Option<String>)>> = Mutex::new(None);
-    /// 遮罩窗存续期间的捕获静音守卫（AGENTS.md：模态鼠标操作期间须静音划词管线）
+    /// 选区交互期间的捕获静音守卫（AGENTS.md：模态鼠标操作期间须静音划词
+    /// 管线）；region_selected 解除、异常路径 end_session 释放
     static SNAP_MUTE: Mutex<Option<CaptureMuteGuard>> = Mutex::new(None);
 
     pub fn start(app: &AppHandle, action: Option<&'static str>, service: Option<String>) {
@@ -288,7 +292,8 @@ mod win_region {
             return;
         }
         *PENDING.lock().unwrap() = Some((action, service));
-        // 静音守卫持有到 region_selected/cancel 释放（遮罩窗生命周期）
+        // 静音守卫：选区交互期间持有——region_selected 解除（胶囊 hover 依赖
+        // 捕获管线的 hover 转发），异常路径经 end_session 释放
         *SNAP_MUTE.lock().unwrap() = Some(CaptureMuteGuard::new());
         if let Err(e) = show_snap_window(app) {
             debug_log(format!("capture/windows: 遮罩窗创建失败：{e}"));
@@ -332,6 +337,12 @@ mod win_region {
             .title("拾趣截屏")
             .decorations(false)
             .transparent(true)
+            // 选区段必须置顶：触发时用户多半在其他应用前台，Windows 前台锁
+            // 不允许非前台进程的新窗抢激活——非 topmost 的遮罩会开在前台
+            // 应用后面（页面照常加载但用户看不见，幂等闸门还拦住所有重试，
+            // 2026-11-05 实测）。置顶冲突只在会话段（胶囊也要置顶），届时
+            // region_selected 把遮罩降回普通层（与 macOS snip-frame 同纪律：
+            // 胶囊恒在遮罩之上，遮罩被点击置前也盖不住它）
             .always_on_top(true)
             .skip_taskbar(true)
             .shadow(false)
@@ -352,76 +363,128 @@ mod win_region {
     }
 
     /// 遮罩窗回调：选区完成（逻辑坐标，相对遮罩窗 = 所在显示器）。
-    /// 截屏 + 识别都在 helper 子进程；本函数只做坐标换算与线程编排
+    /// 截屏在 helper 子进程；本函数只做坐标换算与线程编排。
+    /// 遮罩窗不在此关闭：前端已原位切会话模式（选区洞保留，对齐 macOS 截图
+    /// 胶囊），由 cancel / 动作执行收尾关闭（finish_session）
     pub fn region_selected(app: &AppHandle, window: tauri::WebviewWindow, x: f64, y: f64, w: f64, h: f64) {
-        if let Some(snap) = app.get_webview_window("snap") {
-            let _ = snap.close();
-        }
         let monitor = window
             .current_monitor()
             .ok()
             .flatten();
         let _ = window; // 坐标基准已取走
         let Some(mon) = monitor else {
-            end_session();
+            finish_session(app);
             return;
         };
         let s = mon.scale_factor();
-        let org = mon.position();
+        // 坐标值拷出（PhysicalPosition/PhysicalSize 是 Copy）：org/size 不能持
+        // mon 的引用进下方 spawn 闭包——闭包要求 'static，mon 在函数尾即被
+        // drop（E0597）
+        let org = *mon.position();
+        let size = *mon.size();
         let (rx, ry, rw, rh) = (
             org.x + (x * s).round() as i32,
             org.y + (y * s).round() as i32,
             (w * s).round() as i32,
             (h * s).round() as i32,
         );
+        // 待续流程先行消费：识图取字（None）进胶囊会话；自动动作槽位截图后
+        // 立即识别执行（无胶囊段，与 macOS snip_region_selected 同分流）
+        let pending = PENDING.lock().unwrap().take();
         if rw < 8 || rh < 8 {
-            // 过小选区当误触处理：结束会话即可
-            end_session();
+            // 过小选区当误触处理：前端已原位切会话模式，关窗终止
+            finish_session(app);
             return;
         }
-        let _ = PENDING.lock().unwrap().take(); // 会话存续标记；动作由胶囊选择
-        *SNAP_MUTE.lock().unwrap() = None; // 截屏交互结束，解除静音
+        // 解除静音：胶囊动作 hover 依赖捕获管线的 hover 转发（detect_loop 的
+        // 静音闸门连 hover 一起拦）。会话期间的点击都落在本应用窗口，
+        // spawn_worker 的自身 PID 过滤兜底误触发划词
+        *SNAP_MUTE.lock().unwrap() = None;
 
         let app2 = app.clone();
         std::thread::spawn(move || {
-            // 只截屏不识别（截图胶囊流程，对齐 macOS snip）：识别在用户点
-            // 胶囊动作后由 snip_execute → recognize_and_push 进行——框选阶段
-            // 永不报「未检测到文字」（没字是选完动作后才知道的事）
+            // 只截屏不识别（截图胶囊流程，对齐 macOS snip）：识图取字的识别在
+            // 用户点胶囊动作后由 snip_execute → recognize_and_push 进行——框选
+            // 阶段永不报「未检测到文字」（没字是选完动作后才知道的事）
             match snap_capture_only(rx, ry, rw, rh) {
-                Ok(image) => {
-                    // 胶囊锚点/会话矩形用全局逻辑坐标（页面坐标已是逻辑值，
-                    // 加显示器逻辑原点；物理矩形只进 BitBlt）
-                    let lrect = (org.x as f64 / s + x, org.y as f64 / s + y, w, h);
-                    crate::floating::snip::store_session(image, lrect);
-                    let _ = app2.emit_to(
-                        "floating",
-                        "snip://captured",
-                        serde_json::json!({
-                            "x": lrect.0, "y": lrect.1, "w": lrect.2, "h": lrect.3
-                        }),
-                    );
-                }
+                Ok(image) => match pending {
+                    // 自动动作槽位（识图翻译/解释/总结）：截图即识别执行，会话
+                    // 结束。结果窗落屏锚点 = 选区矩形中心（结果落操作发生的屏）
+                    //（PENDING 是双层 Option：外层 = 有待续流程，内层 = 槽位动作）
+                    Some((Some(action), service)) => {
+                        finish_session(&app2);
+                        crate::floating::ocr::set_result_anchor((
+                            org.x as f64 / s + x + w / 2.0,
+                            org.y as f64 / s + y + h / 2.0,
+                        ));
+                        tauri::async_runtime::spawn(async move {
+                            crate::ocr::recognize_and_push(
+                                &app2,
+                                image,
+                                Some(action.to_string()),
+                                service,
+                            )
+                            .await;
+                        });
+                    }
+                    // 识图取字（None 槽位）或无待续流程：截图挂起进胶囊会话
+                    _ => {
+                        // 会话段开始：遮罩降回普通层——胶囊（置顶层）必须恒在其
+                        // 上，遮罩被点击置前也盖不住它（见 show_snap_window 注释：
+                        // 置顶只为保证选区段在前台锁下可见，会话段无胶囊竞争后
+                        // 即让位）
+                        if let Some(snap) = app2.get_webview_window("snap") {
+                            let _ = snap.set_always_on_top(false);
+                        }
+                        // 胶囊锚点/会话矩形用全局逻辑坐标（页面坐标已是逻辑值，
+                        // 加显示器逻辑原点；物理矩形只进 BitBlt）。mon 传遮罩所在
+                        // 屏的逻辑矩形——snip_frame_move 的钳制与坐标换算、执行时
+                        // 重截的逻辑 → 物理换算都依赖它
+                        let mon_logical = (
+                            org.x as f64 / s,
+                            org.y as f64 / s,
+                            size.width as f64 / s,
+                            size.height as f64 / s,
+                        );
+                        let lrect = (org.x as f64 / s + x, org.y as f64 / s + y, w, h);
+                        crate::floating::snip::store_session(image, lrect, mon_logical, s);
+                        let _ = app2.emit_to(
+                            "floating",
+                            "snip://captured",
+                            serde_json::json!({
+                                "x": lrect.0, "y": lrect.1, "w": lrect.2, "h": lrect.3
+                            }),
+                        );
+                    }
+                },
                 Err(e) => {
+                    // 截图失败：会话/自动动作都进行不下去，关窗终止 + 报错
+                    finish_session(&app2);
                     toast_err(&app2, &e);
                 }
             }
         });
     }
 
-    pub fn cancel(app: &AppHandle) {
+    /// 会话终止（误触/取消/截图失败/自动动作收尾）：关遮罩窗、清状态。
+    /// 静音已在选区完成时解除（见 region_selected 注释）
+    pub(crate) fn finish_session(app: &AppHandle) {
         if let Some(snap) = app.get_webview_window("snap") {
             let _ = snap.close();
         }
         end_session();
     }
 
-    /// helper 子进程：BitBlt 截屏 + OCR 一步完成（PNG 落盘，文本走 stdout）。
-    /// 返回 (图片路径, 识别文本)：截屏成功但无可识别文字 = Ok((路径, None))
-    /// （helper 以 ERR:未识别到文字 退出，但 PNG 已在 OCR 前落盘）。
-    /// 文本必须在此一次取回——调用方不再二次起进程识别
-    /// 只截屏不识别（截图胶囊流程：截图与识别分离——识别在用户选动作后
-    /// 由 snip_execute 经 recognize_and_push 进行）。文本返回恒为空占位
-    fn snap_capture_only(x: i32, y: i32, w: i32, h: i32) -> Result<PathBuf, String> {
+    /// 取消整段流程（遮罩页会话点击/Esc/误触调用）：关遮罩窗 + 胶囊随 dismiss
+    /// 管线收起 + 挂起截图清理（与 macOS snip_cancel 同语义）
+    pub fn cancel(app: &AppHandle) {
+        finish_session(app);
+        crate::floating::snip::cancel_all(app);
+    }
+
+    /// helper 子进程只截屏不识别（截图胶囊流程：截图与识别分离——识图取字的
+    /// 识别在用户选动作后由 snip_execute 经 recognize_and_push 进行）
+    pub(crate) fn snap_capture_only(x: i32, y: i32, w: i32, h: i32) -> Result<PathBuf, String> {
         let helper = super::helper_path()?;
         let image = std::env::temp_dir().join(format!(
             "magpie-capture-{}-{}.png",
@@ -475,7 +538,7 @@ pub fn ocr_region_selected(
 #[tauri::command]
 pub fn ocr_region_selected(_x: f64, _y: f64, _w: f64, _h: f64) {}
 
-/// 遮罩窗取消（Esc / 误触）
+/// 遮罩窗取消（Esc / 会话阶段点击胶囊外 / 误触）
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub fn ocr_region_cancel(app: AppHandle) {
@@ -485,6 +548,40 @@ pub fn ocr_region_cancel(app: AppHandle) {
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 pub fn ocr_region_cancel() {}
+
+/// Windows 胶囊会话收尾（snip_execute 动作执行时调用）：关遮罩窗 + 清状态。
+/// 会话段起遮罩窗保留到动作执行才随会话一起关闭（对齐 macOS 时序）；
+/// 挂起截图由 SNIP 池在 snip_execute 内取走消费，本函数不碰
+#[cfg(target_os = "windows")]
+pub fn finish_windows_snap_session(app: &tauri::AppHandle) {
+    win_region::finish_session(app);
+}
+
+/// Windows：按全局逻辑矩形重截（会话选区拖动/缩放后执行动作时调用）。
+/// 逻辑坐标 × 所在屏缩放 → 物理坐标 → helper `--snap` BitBlt。120ms 宽限
+/// 先等遮罩窗异步关闭——洞内像素透明、白环画在矩形外侧，截图本不受遮罩
+/// 污染，宽限只为与 macOS 重截路径同节奏防边缘竞态。失败返回 None
+///（调用方提示后终止，不回退旧图）
+#[cfg(target_os = "windows")]
+pub async fn resnap_region(
+    rect: (f64, f64, f64, f64),
+    scale: f64,
+) -> Option<std::path::PathBuf> {
+    let (rx, ry, rw, rh) = rect;
+    let (px, py, pw, ph) = (
+        (rx * scale).round() as i32,
+        (ry * scale).round() as i32,
+        (rw * scale).round() as i32,
+        (rh * scale).round() as i32,
+    );
+    tauri::async_runtime::spawn_blocking(move || {
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        win_region::snap_capture_only(px, py, pw, ph).ok()
+    })
+    .await
+    .ok()
+    .flatten()
+}
 
 /// Windows 识图入口：起遮罩窗（主线程；由 start_ocr_flow 在事件线程调用前转投）
 #[cfg(target_os = "windows")]
@@ -500,8 +597,8 @@ pub fn start_region_capture_windows(
 }
 
 // 非 Windows 编译期的接线空桩：macOS 走自绘遮罩框选（floating::snip），此函数
-// 在 macOS 下无调用方（dead_code 警告属预期）——保留以稳定跨平台分发签名，
-// Windows 侧接线（main.rs 的识图流程按 cfg 分发）在 M2 接入
+// 在 macOS 下无调用方（dead_code 警告属预期）——保留以稳定跨平台分发签名
+//（Windows 侧接线在 main.rs 的识图流程按 cfg 分发）
 #[cfg(not(target_os = "windows"))]
 #[allow(dead_code)]
 pub fn start_region_capture_windows(

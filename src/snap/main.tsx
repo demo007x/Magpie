@@ -1,8 +1,10 @@
 // 截屏遮罩窗（Windows 框选识图）：铺满光标所在显示器的透明置顶窗。
-// 交互对位 macOS `screencapture -i`：拖拽出选区（四向自适应），Esc 取消，
-// 过小选区（<4px）视为误触取消。选区完成后 invoke 回 Rust 做坐标换算与截屏。
-// 遮罩变暗用 selection 的巨大 box-shadow 实现（洞外半透明、洞内清晰，
-// 免去四块遮罩拼接），与 Snipaste/ShareX 同款手法。
+// 拖拽出选区（四向自适应），Esc 取消，过小选区（<8px）视为误触取消。
+// 选区完成后 invoke 回 Rust 做坐标换算与截屏；遮罩原位切会话模式（对齐
+// macOS 截图胶囊：选区洞保留、洞外变暗），动作胶囊由 floating 窗口渲染，
+// 本窗任意点击 = 取消，动作执行后由 Rust 关窗。遮罩变暗用 selection 的
+// 巨大 box-shadow 实现（洞外半透明、洞内清晰，免去四块遮罩拼接），
+// 与 Snipaste/ShareX 同款手法。
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
@@ -65,63 +67,193 @@ function normDrag(
   };
 }
 
+// 钳制在本屏视口内（窗口铺满所在显示器，视口 = 显示器逻辑矩形；
+// Rust 侧 snip_frame_move 按会话 mon 同规则钳，双保险）
+function clampRect(r: Rect): Rect {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const w = Math.max(8, Math.min(r.w, vw));
+  const h = Math.max(8, Math.min(r.h, vh));
+  return {
+    w,
+    h,
+    x: Math.max(0, Math.min(r.x, vw - w)),
+    y: Math.max(0, Math.min(r.y, vh - h)),
+  };
+}
+
+// 洞样式（Overlay 与 FrameSession 共用）：白环用外扩 box-shadow 画在矩形
+// 外侧——洞内像素不被遮罩污染，静默截图即屏幕原始内容；贴浅色内容时靠
+// 外圈暗晕区分边界（Snipaste 同款），选区外的整幅变暗由最后一个
+// 100000px shadow 承担
+function holeStyle(h: Rect, cursor: string): CSSProperties {
+  return {
+    position: "fixed",
+    left: h.x,
+    top: h.y,
+    width: h.w,
+    height: h.h,
+    boxShadow:
+      "0 0 0 1.5px #ffffff, 0 0 0 2.5px rgba(0, 0, 0, 0.35), 0 0 8px rgba(0, 0, 0, 0.45), 0 0 0 100000px rgba(0, 0, 0, 0.3)",
+    background: "transparent",
+    cursor,
+    pointerEvents: "none",
+  };
+}
+
+// 两阶段同一窗（与 macOS snip-frame 会话段同构）：
+// - 选区阶段：整屏淡暗提示，按下拖出选区（白环实时跟随、画在矩形外侧——
+//   洞内像素不被遮罩污染，Rust 松手后静默截图），过小（<8px）= 取消
+// - 会话阶段（rect 非空）：松手上报 ocr_region_selected 后遮罩原位无缝切
+//   会话模式（选区洞保留、洞外变暗），动作胶囊由 floating 窗口渲染在选区
+//   右下角；选区可拖动（洞内按住整体移动）、边/角 8px 热区可缩放（对侧边
+//   锚定、最小 8px、钳在本屏），拖动中每次移动 invoke snip_frame_move 让
+//   Rust 重排胶囊并更新会话矩形（执行动作按新矩形 BitBlt 重截）；点击
+//   选区外 = 取消（ocr_region_cancel：胶囊随 dismiss 管线收起、挂起截图
+//   清理），Esc 兜底同取消；动作执行后由 Rust（snip_execute →
+//   finish_windows_snap_session）关窗
 function Overlay() {
-  const [drag, setDrag] = useState<{ sx: number; sy: number; cx: number; cy: number } | null>(null);
+  // 会话矩形（非空 = 会话模式）；选区阶段的拖拽矩形独立存 sel
+  const [rect, setRect] = useState<Rect | null>(null);
+  const [sel, setSel] = useState<{ sx: number; sy: number; cx: number; cy: number } | null>(null);
+  // 会话拖拽两模式：move = 按住选区内整体移动；resize = 按住边/角缩放
+  // （对侧边锚定，最小 8px）。起点 rect 快照 + 起点光标算位移——与
+  // FrameSession 会话拖拽同构
+  const drag = useRef<
+    | { mode: "move"; sx: number; sy: number; rect: Rect }
+    | { mode: "resize"; sx: number; sy: number; rect: Rect; hit: EdgeHit }
+    | null
+  >(null);
+  // 悬停边命中对应的游标（无拖拽时的光标反馈；随 mousemove 刷新）
+  const [hoverCursor, setHoverCursor] = useState<string>("default");
   const done = useRef(false);
 
-  const finish = useCallback((r: Rect | null) => {
+  // 取消整段流程（会话点击选区外/Esc/误触）
+  const finishCancel = useCallback(() => {
     if (done.current) return;
     done.current = true;
-    if (r && r.w >= 4 && r.h >= 4) {
-      invoke("ocr_region_selected", { x: r.x, y: r.y, w: r.w, h: r.h }).catch(() =>
-        invoke("ocr_region_cancel").catch(() => undefined)
-      );
-    } else {
-      invoke("ocr_region_cancel").catch(() => undefined);
-    }
+    invoke("ocr_region_cancel").catch(() => undefined);
+  }, []);
+
+  // 会话矩形变化上报：Rust 更新会话状态 + 按新选区右下角重排胶囊
+  const report = useCallback((r: Rect) => {
+    invoke("snip_frame_move", { x: r.x, y: r.y, w: r.w, h: r.h }).catch(() => undefined);
   }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") finish(null);
+      if (e.key === "Escape") finishCancel();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [finish]);
+  }, [finishCancel]);
 
-  const rect = drag ? normDrag(drag.sx, drag.sy, drag.cx, drag.cy) : null;
+  const dragRect = sel ? normDrag(sel.sx, sel.sy, sel.cx, sel.cy) : null;
+  const hole = rect ?? dragRect;
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, cursor: "crosshair" }}
+      style={{ position: "fixed", inset: 0, cursor: rect ? hoverCursor : "crosshair" }}
       onMouseDown={(e) => {
         if (e.button !== 0 || done.current) return;
-        setDrag({ sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY });
+        if (rect) {
+          // 会话阶段：边/角带内 = 缩放（对侧边锚定）、洞内 = 移动、
+          // 洞外（边带之外）= 取消
+          const hit = hitEdge(rect, e.clientX, e.clientY);
+          if (hit.h || hit.v) {
+            drag.current = { mode: "resize", sx: e.clientX, sy: e.clientY, rect, hit };
+            return;
+          }
+          const inside =
+            e.clientX >= rect.x &&
+            e.clientX <= rect.x + rect.w &&
+            e.clientY >= rect.y &&
+            e.clientY <= rect.y + rect.h;
+          if (inside) {
+            drag.current = { mode: "move", sx: e.clientX, sy: e.clientY, rect };
+          } else {
+            finishCancel();
+          }
+          return;
+        }
+        setSel({ sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY });
       }}
       onMouseMove={(e) => {
-        if (drag) setDrag({ ...drag, cx: e.clientX, cy: e.clientY });
+        const d = drag.current;
+        if (d && rect) {
+          // 会话拖拽：本地渲染跟随（60fps），每次移动上报 Rust 重排胶囊
+          if (d.mode === "move") {
+            const next = clampRect({
+              x: d.rect.x + e.clientX - d.sx,
+              y: d.rect.y + e.clientY - d.sy,
+              w: d.rect.w,
+              h: d.rect.h,
+            });
+            setRect(next);
+            report(next);
+            return;
+          }
+          // 缩放：抓到的边跟随光标，对侧边锚定；最小 8px、钳在本屏内
+          const { hit } = d;
+          const s = d.rect;
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
+          let n: Rect = { ...s };
+          if (hit.h === "w") {
+            const nx = Math.max(0, Math.min(s.x + (e.clientX - d.sx), s.x + s.w - 8));
+            n.x = nx;
+            n.w = s.w + (s.x - nx);
+          } else if (hit.h === "e") {
+            n.w = Math.max(8, Math.min(s.w + (e.clientX - d.sx), vw - s.x));
+          }
+          if (hit.v === "n") {
+            const ny = Math.max(0, Math.min(s.y + (e.clientY - d.sy), s.y + s.h - 8));
+            n.y = ny;
+            n.h = s.h + (s.y - ny);
+          } else if (hit.v === "s") {
+            n.h = Math.max(8, Math.min(s.h + (e.clientY - d.sy), vh - s.y));
+          }
+          const next = clampRect(n);
+          setRect(next);
+          report(next);
+          return;
+        }
+        // 无拖拽：悬停边命中刷新游标（边带 = 缩放、其余 = move）
+        if (rect) {
+          setHoverCursor(cursorFor(hitEdge(rect, e.clientX, e.clientY)));
+          return;
+        }
+        if (sel && !rect) setSel({ ...sel, cx: e.clientX, cy: e.clientY });
       }}
       onMouseUp={() => {
-        if (drag) finish(normDrag(drag.sx, drag.sy, drag.cx, drag.cy));
+        if (rect) {
+          // 拖拽收尾：上报终值（move / resize 同路），选区保持
+          const d = drag.current;
+          drag.current = null;
+          if (d) report(rect);
+          return;
+        }
+        if (done.current || !sel) return;
+        const r = normDrag(sel.sx, sel.sy, sel.cx, sel.cy);
+        setSel(null);
+        if (r.w >= 8 && r.h >= 8) {
+          // 选区确认：本窗原位切会话模式（选区洞保留），静默截图与胶囊由
+          // Rust 驱动（截图失败时 Rust 关窗终止 + 报错）。白环画在矩形外侧，
+          // 遮罩显示期间截图洞内也是屏幕原始内容
+          setRect(r);
+          invoke("ocr_region_selected", { x: r.x, y: r.y, w: r.w, h: r.h }).catch(() =>
+            finishCancel()
+          );
+        } else {
+          finishCancel();
+        }
       }}
     >
-      {/* 选区前整屏淡暗提示截屏模式（对齐 screencapture -i 的即时反馈）；
-          拖拽后由选区的 box-shadow 接管变暗（洞外暗、洞内清晰） */}
-      {!rect && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.15)" }} />}
-      {rect && (
-        <div
-          style={{
-            position: "fixed",
-            left: rect.x,
-            top: rect.y,
-            width: rect.w,
-            height: rect.h,
-            border: "1px solid #4f8cff",
-            boxShadow: "0 0 0 100000px rgba(0, 0, 0, 0.3)",
-            background: "transparent",
-            pointerEvents: "none",
-          }}
-        />
+      {hole ? (
+        <div style={holeStyle(hole, rect ? "move" : "crosshair")} />
+      ) : (
+        // 选区前整屏淡暗提示截屏模式（对齐 screencapture -i 的即时反馈）
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.15)" }} />
       )}
     </div>
   );
@@ -187,20 +319,6 @@ function FrameSession() {
     invoke("snip_frame_move", { x: r.x, y: r.y, w: r.w, h: r.h }).catch(() => undefined);
   }, []);
 
-  const clampRect = useCallback((r: Rect): Rect => {
-    // 钳制在本屏视口内（Rust 侧同规则双保险）
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const w = Math.max(8, Math.min(r.w, vw));
-    const h = Math.max(8, Math.min(r.h, vh));
-    return {
-      w,
-      h,
-      x: Math.max(0, Math.min(r.x, vw - w)),
-      y: Math.max(0, Math.min(r.y, vh - h)),
-    };
-  }, []);
-
   // 拖拽中的选区矩形（起点 → 当前光标归一化，钳在本屏视口内）。
   // 注意不做 8px 最小尺寸钳制——那是会话拖动的规则；选区阶段必须保留
   // 真实尺寸让 mouseup 的过小阈值（误触取消）能生效
@@ -219,21 +337,6 @@ function FrameSession() {
   // 构造——勿在渲染期对可能为 null 的洞直接取属性（首帧 rect/sel 均为
   // null，无条件构造曾在渲染层抛 TypeError，页面全程空白，2026-11-04）
   const hole = rect ?? sel;
-  const holeStyle = (h: Rect): CSSProperties => ({
-    position: "fixed",
-    left: h.x,
-    top: h.y,
-    width: h.w,
-    height: h.h,
-    // 白环用外扩 box-shadow 画在矩形外侧：洞内像素不被遮罩污染，静默截图
-    // 即屏幕原始内容；贴浅色内容时靠外圈暗晕区分边界（Snipaste 同款），
-    // 选区外的整幅变暗由最后一个 100000px shadow 承担
-    boxShadow:
-      "0 0 0 1.5px #ffffff, 0 0 0 2.5px rgba(0, 0, 0, 0.35), 0 0 8px rgba(0, 0, 0, 0.45), 0 0 0 100000px rgba(0, 0, 0, 0.3)",
-    background: "transparent",
-    cursor: rect ? "move" : "crosshair",
-    pointerEvents: "none",
-  });
 
   return (
     <div
@@ -336,7 +439,7 @@ function FrameSession() {
       }}
     >
       {hole ? (
-        <div style={holeStyle(hole)} />
+        <div style={holeStyle(hole, rect ? "move" : "crosshair")} />
       ) : (
         // 选区前整屏淡暗提示截图模式（对齐 Overlay 的即时反馈）
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.15)", pointerEvents: "none" }} />

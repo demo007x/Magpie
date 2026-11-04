@@ -1,5 +1,6 @@
-//! OCR 助手进程（双平台）：macOS = screencapture 框选 + Vision 识别；
-//! Windows = Windows.Media.Ocr 识别（框选由主应用遮罩窗完成，不走助手）。
+//! OCR 助手进程（双平台）：macOS = Vision 识别 + 框选截图（--capture）；
+//! Windows = BitBlt 静默截屏（--snap，框选由主应用遮罩窗完成）+
+//! Windows.Media.Ocr 识别。
 //!
 //! 设计为独立进程：平台 OCR 栈的异常或崩溃只会影响本进程，
 //! 主应用通过 stdout 拿结果，任何失败都优雅降级（绝不波及主应用）。
@@ -11,7 +12,8 @@
 //!
 //! 用法：
 //!   ocr_helper --capture <图片输出路径>   （仅 macOS）框选截图并 OCR
-//!   ocr_helper <图片路径>                 直接 OCR 指定图片（调试用）
+//!   ocr_helper --snap x,y,w,h <out.png>   （仅 Windows）静默截屏不识别
+//!   ocr_helper <图片路径>                 直接 OCR 指定图片
 
 #[cfg(target_os = "macos")]
 mod macos {
@@ -338,20 +340,6 @@ mod windows_impl {
         }
     }
 
-    /// 一体模式：截屏 + OCR（主应用遮罩窗完成选区后调用）
-    pub fn snap_ocr(spec: &str, out: &Path) -> Result<String, String> {
-        set_dpi_aware();
-        let parts: Vec<i32> = spec
-            .split(',')
-            .map(|s| s.trim().parse::<i32>().map_err(|e| format!("坐标参数错误: {e}")))
-            .collect::<Result<_, _>>()?;
-        if parts.len() != 4 {
-            return Err("坐标参数格式应为 x,y,w,h".into());
-        }
-        capture_region_to_png(parts[0], parts[1], parts[2], parts[3], out)?;
-        ocr_image_file(out)
-    }
-
     pub fn ocr_image_file(path: &Path) -> Result<String, String> {
         let engine = pick_engine()?;
         let png = prepare_png_bytes(path)?;
@@ -398,7 +386,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let usage = || {
         eprintln!("usage: ocr_helper --capture <image-output-path>   (仅 macOS：框选+OCR)");
-        eprintln!("       ocr_helper --snap-ocr x,y,w,h <out.png>    (仅 Windows：截屏+OCR)");
+        eprintln!("       ocr_helper --snap x,y,w,h <out.png>        (仅 Windows：静默截屏)");
         eprintln!("       ocr_helper <image-path>                    (直接 OCR 指定图片)");
     };
     if args.len() < 2 {
@@ -455,10 +443,11 @@ fn main() {
                 usage();
                 std::process::exit(2);
             };
-            let parts: Vec<i32> = spec
-                .split(',')
-                .map(|s| s.trim().parse::<i32>().map_err(|e| format!("坐标参数错误: {e}")))
-                .collect::<Result<_, _>>()?;
+            // main() 返回 ()，不能用 ?：解析失败直接按 ERR: 退出码 1 报告
+            let Ok(parts): Result<Vec<i32>, _> = spec.split(',').map(|s| s.trim().parse::<i32>()).collect() else {
+                eprintln!("ERR:坐标参数格式应为 x,y,w,h");
+                std::process::exit(1);
+            };
             if parts.len() != 4 {
                 eprintln!("ERR:坐标参数格式应为 x,y,w,h");
                 std::process::exit(1);
@@ -466,22 +455,6 @@ fn main() {
             windows_impl::set_dpi_aware();
             match windows_impl::capture_region_to_png(parts[0], parts[1], parts[2], parts[3], std::path::Path::new(out)) {
                 Ok(()) => {}
-                Err(e) => {
-                    eprintln!("ERR:{e}");
-                    std::process::exit(1);
-                }
-            }
-        } else if mode == "--snap-ocr" {
-            let Some(spec) = args.get(2) else {
-                usage();
-                std::process::exit(2);
-            };
-            let Some(out) = args.get(3) else {
-                usage();
-                std::process::exit(2);
-            };
-            match windows_impl::snap_ocr(spec, std::path::Path::new(out)) {
-                Ok(t) => print!("{t}"),
                 Err(e) => {
                     eprintln!("ERR:{e}");
                     std::process::exit(1);

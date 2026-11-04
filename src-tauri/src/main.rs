@@ -152,10 +152,11 @@ pub fn resolve_default_translate_service(app: &tauri::AppHandle) -> String {
 
 /// 识图取字流程（托盘菜单与全局快捷键共用）：
 /// action 不为空时随流程携带自动执行的动作（识图翻译/解释/总结）。
-/// Windows：遮罩窗事件驱动（选区回调续跑识别）；
-/// macOS：自绘遮罩框选——触发即全屏变暗、在遮罩上拖出选区、松手静默截图
-/// （选区框与截后遮罩同一窗同一视觉，无系统框选段与遮罩补现的闪变），
-/// 随后按槽位分流（无动作 = 截图挂起进胶囊会话；有动作 = 立即识别执行）
+/// 两平台同构：自绘遮罩框选——触发即全屏变暗、在遮罩上拖出选区、松手静默
+/// 截图（选区框与截后遮罩同一窗同一视觉），随后按槽位分流（无动作 = 截图
+/// 挂起进胶囊会话；有动作 = 立即识别执行）。截图实现分平台：Windows 为
+/// helper 子进程 BitBlt（遮罩窗事件驱动，见 ocr::win_region）；macOS 为
+/// screencapture -R（见 floating::snip）
 fn start_ocr_flow(app: tauri::AppHandle, action: Option<&'static str>) {
     eprintln!(
         "[magpie:ocr] 识图取字开始{}",

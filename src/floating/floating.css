@@ -28,6 +28,12 @@
   --accent-strong: #5e5ce6;
   --accent-soft: rgba(94, 92, 230, 0.1);
   --accent-active: rgba(94, 92, 230, 0.16);
+  /* 正文选中高亮（::selection）：中性墨色低透明 tint——选中是操作反馈，
+     不给内容染色（品牌紫 tint 在暗底上浑浊发紫，2026-11-05 用户否掉） */
+  --selection: rgba(28, 28, 46, 0.12);
+  /* 原文 hover 可编辑暗示：中性、比选中更淡（品牌紫整片罩在暗底上发紫，
+     2026-11-05 用户否掉） */
+  --edit-hint: rgba(28, 28, 46, 0.04);
   --on-accent: #ffffff;
   --err: #e5484d;
   --pulse: #ee8c2a; /* 呼吸/进行中指示：暖橙（区别品牌靛紫与错误红） */
@@ -67,6 +73,8 @@
     --accent-strong: #a6a4ff; /* 深底上的选中文字/图标色（对比度 > 7:1） */
     --accent-soft: rgba(134, 132, 255, 0.14);
     --accent-active: rgba(134, 132, 255, 0.22); /* 选中态背景 tint */
+    --selection: rgba(255, 255, 255, 0.16);
+    --edit-hint: rgba(255, 255, 255, 0.05);
     --on-accent: #ffffff;
     --err: #ff6b61;
     --pulse: #ff9f0a;
@@ -107,6 +115,10 @@
   --accent-strong: #5e5ce6;
   --accent-soft: rgba(94, 92, 230, 0.1);
   --accent-active: rgba(94, 92, 230, 0.16);
+  --selection: rgba(28, 28, 46, 0.12);
+  /* 原文 hover 可编辑暗示：中性、比选中更淡（品牌紫整片罩在暗底上发紫，
+     2026-11-05 用户否掉） */
+  --edit-hint: rgba(28, 28, 46, 0.04);
   --on-accent: #ffffff;
   --err: #e5484d;
   --pulse: #ee8c2a;
@@ -135,6 +147,8 @@
   --accent-strong: #a6a4ff;
   --accent-soft: rgba(134, 132, 255, 0.14);
   --accent-active: rgba(134, 132, 255, 0.22);
+  --selection: rgba(255, 255, 255, 0.16);
+  --edit-hint: rgba(255, 255, 255, 0.05);
   --on-accent: #ffffff;
   --err: #ff6b61;
   --pulse: #ff9f0a;
@@ -145,6 +159,14 @@
   --ink-border: transparent;
   --ink-text: #1c1c24;
   --ink-accent: #5e5ce6;
+}
+
+/* 正文可选中区域（原文 contentEditable / 结果 / 提取列表 / 面板体）的选中
+   高亮：中性墨色低透明 tint 替代浏览器默认蓝紫——不带色相，亮色压墨、
+   暗色提亮，两个主题下都只表达「选中了」而不改变内容的色彩印象
+   （品牌紫方案在暗底上浑浊发紫，2026-11-05 用户否掉） */
+::selection {
+  background: var(--selection);
 }
 
 * {
@@ -982,10 +1004,12 @@ body,
   word-break: break-word;
 }
 
-/* 可编辑暗示：hover 时极淡的品牌底色（原文是 contentEditable，
-   可就地改字后再执行动作——此前没有任何视觉暗示） */
+/* 可编辑暗示：hover 时极淡的中性底色（原文是 contentEditable，
+   可就地改字后再执行动作——此前没有任何视觉暗示）。原为品牌紫 tint
+  （--hov），整片罩在原文区上带色相、暗底发紫（2026-11-05 用户否掉）——
+   改中性墨/白且比原 tint 更淡，只是「有反馈」而非「变色」 */
 .ocr-source:hover {
-  background: var(--hov);
+  background: var(--edit-hint);
 }
 
 /* 可编辑原文（contentEditable）：去掉默认聚焦描边，保持与面板无缝 */

@@ -228,9 +228,15 @@ pub fn spawn_worker(app: AppHandle, rx: Receiver<CaptureEvent>) {
                     floating::dismiss_ocr_if_unpinned(&app);
                 }
                 CaptureEvent::PlainClick { x, y } => {
-                    // 点击浮动条/识别面板本身：不 dismiss（避免点面板反而被隐藏）
+                    // 点击浮动条/识别面板/截图遮罩本身：不 dismiss（避免点面板
+                    // 反而被隐藏）。遮罩上的取消由遮罩页自己判定（点选区外发
+                    // cancel 命令）——Windows 拖选被自身闸门拒绝后兜底的
+                    // PlainClick 落点必在遮罩上，不抑制会把会话胶囊误杀
                     let in_ocr = floating::ocr_rect_contains(&app, x, y, 8.0);
-                    if floating::rect_contains(&app, x, y, 4.0) || in_ocr {
+                    if floating::rect_contains(&app, x, y, 4.0)
+                        || in_ocr
+                        || floating::snip::mask_rect_contains(&app, x, y, 4.0)
+                    {
                         continue;
                     }
                     if floating::is_visible(&app) {
