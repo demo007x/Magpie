@@ -160,8 +160,8 @@ pub(crate) fn monitor_rect(win: &WebviewWindow, x: f64, y: f64) -> (f64, f64, f6
         return (
             pos.x as f64 / s,
             pos.y as f64 / s,
-            pos.x as f64 + size.width as f64 / s,
-            pos.y as f64 + size.height as f64 / s,
+            (pos.x as f64 + size.width as f64) / s,
+            (pos.y as f64 + size.height as f64) / s,
         );
     }
     (0.0, 0.0, 1920.0, 1080.0)

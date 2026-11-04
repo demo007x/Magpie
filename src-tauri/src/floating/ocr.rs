@@ -8,7 +8,7 @@ use tauri::LogicalSize;
 use serde_json::json;
 
 use crate::capture::debug_log;
-use super::{clamp_move_window, show_without_activation, snap_pos, WindowPos};
+use super::{clamp_move_window, monitor_rect, show_without_activation, snap_pos, WindowPos};
 use super::bar::{FloatingState, update_hover_feed};
 
 // ---- OCR 独立窗口：钉住状态 + 待显示结果（事件可能早于 webview 就绪，先存后取） ----
@@ -230,8 +230,34 @@ pub fn set_selection_pending(text: String, action_id: String, service: Option<St
     RESULT_BELOW_ANCHOR.store(true, Ordering::Relaxed);
 }
 
+/// 首次识图的落屏锚点：最近框选矩形的中心（macOS，全局逻辑坐标）——
+/// 框选发生在哪个屏，结果就落哪个屏。取不到（超时/无记录/非 macOS）
+/// 返回 None，调用方回退主屏居中。8s 窗口覆盖「框选 → 识别子进程 → 面板就绪」全程
+fn first_ocr_anchor() -> Option<(f64, f64)> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::capture::macos::last_snip_rect(std::time::Duration::from_millis(8000))
+            .map(|(x, y, w, h)| (x + w / 2.0, y + h / 2.0))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+/// 主显示器逻辑矩形（取不到时 1920x1080 兜底）——无任何锚点时的落屏范围
+fn primary_rect(win: &WebviewWindow) -> (f64, f64, f64, f64) {
+    if let Ok(Some(m)) = win.primary_monitor() {
+        let s = m.scale_factor();
+        let (px, py) = (m.position().x as f64, m.position().y as f64);
+        let (pw, ph) = (m.size().width as f64, m.size().height as f64);
+        return (px / s, py / s, (px + pw) / s, (py + ph) / s);
+    }
+    (0.0, 0.0, 1920.0, 1080.0)
+}
+
 /// 更新待显示结果的识别文本（两段式推送：先图后文的第二段）
-/// OCR 窗口内容就绪：定位到主屏水平居中、上方 1/3 处并显示（不激活本进程）。
+/// OCR 窗口内容就绪：按操作发生的屏定位并显示（不激活本进程）。
 /// 顺序保证"先渲染后显示"——用户看不到白屏/动画。
 #[tauri::command]
 pub fn ocr_window_ready(window: WebviewWindow) {
@@ -239,10 +265,13 @@ pub fn ocr_window_ready(window: WebviewWindow) {
         return;
     }
     // 定位三级优先级：
-    // 1. 记忆位置（会话镜像 / 上次持久化）——窗口原地复用，「钉在喜欢的位置」
-    // 2. 划词导流：胶囊窗口正下方（左对齐 + 8pt 间隔）
-    // 3. 首次识图：主屏居中偏上
-    // 用胶囊窗口实际矩形（而非光标锚点），屏边翻转定位时也能精确对齐
+    // 1. 记忆位置（会话镜像 / 上次持久化）——窗口原地复用，「钉在喜欢的位置」，
+    //    锚定记忆点所在屏（记忆屏已断开时 monitor_rect 回退主屏）
+    // 2. 划词导流：胶囊窗口正下方（左对齐 + 8pt 间隔），落胶囊所在屏
+    // 3. 首次识图：框选矩形中心所在屏居中偏上；无框选记录回退主屏
+    // 多屏纪律：钳制与落位一律用 monitor_rect（全局逻辑矩形，macOS 上是
+    // 排除菜单栏/Dock 的可见区域）——按主屏整幅尺寸钳制会把副屏操作的结果
+    // 窗拉去主屏或推出屏外（2026-11-04 多显示器截半报告的根源）
     let below_anchor = RESULT_BELOW_ANCHOR.swap(false, Ordering::Relaxed);
     {
         let saved = crate::settings::current(&window.app_handle());
@@ -278,45 +307,50 @@ pub fn ocr_window_ready(window: WebviewWindow) {
         let r = *st.lock().unwrap();
         (r.x, r.y, r.h)
     };
-    let (mw, mh) = window
-        .primary_monitor()
-        .ok()
-        .flatten()
-        .map(|m| {
-            let sc = m.scale_factor();
-            let sz = m.size();
-            (sz.width as f64 / sc, sz.height as f64 / sc)
-        })
-        .unwrap_or((1920.0, 1080.0));
-    let size_l = window.inner_size().map(|v| LogicalSize::new(v.width as f64 / 2.0, v.height as f64 / 2.0)).unwrap_or(LogicalSize::new(420.0, 340.0));
-    let (wx, wy) = (size_l.width, size_l.height);
+    // 窗口逻辑尺寸：直接取刚确立的用户尺寸（LAST_RESULT_SIZE 已是逻辑坐标，
+    // 勿再用物理尺寸除以写死缩放系数——在缩放比例非 2x 的屏上会算小一半，
+    // 钳制形同虚设，窗口被推出屏外）
+    let (wx, wy) = match *LAST_RESULT_SIZE.lock().unwrap() {
+        Some(sz) => sz,
+        None => (420.0, 340.0),
+    };
+    // 落屏锚点与位置优先级一一对应：记忆点 / 胶囊底缘 / 框选中心
+    let (m_l, m_t, m_r, m_b) = if let Some((lx, ly)) = last {
+        monitor_rect(&window, lx, ly)
+    } else if below_anchor {
+        monitor_rect(&window, cap_x, cap_y + cap_h)
+    } else if let Some((ax, ay)) = first_ocr_anchor() {
+        monitor_rect(&window, ax, ay)
+    } else {
+        primary_rect(&window)
+    };
     let (nx, ny) = if let Some((lx, ly)) = last {
-        // 记忆位置：夹取在主屏内（跨屏记忆点落在副屏外时回退主屏）
-        (lx.clamp(0.0, (mw - wx).max(0.0)), ly.clamp(0.0, (mh - wy).max(0.0)))
+        // 记忆位置：夹取在其所在屏内
+        (
+            lx.clamp(m_l, (m_r - wx).max(m_l)),
+            ly.clamp(m_t, (m_b - wy).max(m_t)),
+        )
     } else if below_anchor {
         // 胶囊正下方：左对齐、8pt 间隔；下方放不下翻转到胶囊上方
-        let nx = cap_x.clamp(0.0, (mw - wx).max(0.0));
+        let nx = cap_x.clamp(m_l, (m_r - wx).max(m_l));
         let ny_top = cap_y + cap_h + 8.0;
-        let ny = if ny_top + wy > mh {
-            (cap_y - wy - 8.0).max(0.0)
+        let ny = if ny_top + wy > m_b {
+            (cap_y - wy - 8.0).max(m_t)
         } else {
             ny_top
         };
         (nx, ny)
     } else {
-        ((mw - wx) / 2.0, (mh - wy) / 3.0)
+        // 首次识图：锚定屏内水平居中、上方 1/3 处
+        (
+            m_l + ((m_r - m_l) - wx).max(0.0) / 2.0,
+            m_t + ((m_b - m_t) - wy).max(0.0) / 3.0,
+        )
     };
-    if let Ok(Some(m)) = window.primary_monitor() {
-        let s = m.scale_factor();
-        let pos = m.position();
-        let (sx, sy) = snap_pos(
-            &window,
-            pos.x as f64 / s + nx,
-            pos.y as f64 / s + ny,
-        );
-        let _ = window.set_position(LogicalPosition::new(sx, sy));
-        persist_result_pos(&window.app_handle(), (nx, ny));
-    }
+    // monitor_rect 返回的已是全局逻辑坐标，直接吸附落位（勿再加屏原点偏移）
+    let (sx, sy) = snap_pos(&window, nx, ny);
+    let _ = window.set_position(LogicalPosition::new(sx, sy));
+    persist_result_pos(&window.app_handle(), (nx, ny));
     let _ = show_without_activation(&window);
     update_hover_feed(window.app_handle());
 }
