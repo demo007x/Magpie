@@ -230,19 +230,15 @@ pub fn set_selection_pending(text: String, action_id: String, service: Option<St
     RESULT_BELOW_ANCHOR.store(true, Ordering::Relaxed);
 }
 
-/// 首次识图的落屏锚点：最近框选矩形的中心（macOS，全局逻辑坐标）——
-/// 框选发生在哪个屏，结果就落哪个屏。取不到（超时/无记录/非 macOS）
-/// 返回 None，调用方回退主屏居中。8s 窗口覆盖「框选 → 识别子进程 → 面板就绪」全程
-fn first_ocr_anchor() -> Option<(f64, f64)> {
-    #[cfg(target_os = "macos")]
-    {
-        crate::capture::macos::last_snip_rect(std::time::Duration::from_millis(8000))
-            .map(|(x, y, w, h)| (x + w / 2.0, y + h / 2.0))
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        None
-    }
+/// 截图会话（snip）的结果落屏锚点：选区矩形中心（全局逻辑坐标）。截图会话
+/// 可以持续任意久（用户对着胶囊犹豫再点动作），事件钩子的拖选矩形会过期，
+/// 落屏锚点必须显式传递——选区在哪个屏，结果窗落哪个屏（与划词导流的
+/// 胶囊锚点同一纪律）。消费式取走（ocr_window_ready 定位时读一次）
+static SNIP_RESULT_ANCHOR: Mutex<Option<(f64, f64)>> = Mutex::new(None);
+
+/// 设置截图会话的结果落屏锚点（snip 流程推送结果前调用）
+pub(crate) fn set_result_anchor(point: (f64, f64)) {
+    *SNIP_RESULT_ANCHOR.lock().unwrap() = Some(point);
 }
 
 /// 主显示器逻辑矩形（取不到时 1920x1080 兜底）——无任何锚点时的落屏范围
@@ -264,15 +260,17 @@ pub fn ocr_window_ready(window: WebviewWindow) {
     if window.label() != "ocr" {
         return;
     }
-    // 定位三级优先级：
+    // 定位优先级：
     // 1. 记忆位置（会话镜像 / 上次持久化）——窗口原地复用，「钉在喜欢的位置」，
     //    锚定记忆点所在屏（记忆屏已断开时 monitor_rect 回退主屏）
     // 2. 划词导流：胶囊窗口正下方（左对齐 + 8pt 间隔），落胶囊所在屏
-    // 3. 首次识图：框选矩形中心所在屏居中偏上；无框选记录回退主屏
+    // 3. 截图会话：选区矩形中心所在屏居中偏上（显式锚点，见 SNIP_RESULT_ANCHOR）
+    // 4. 都没有（访达选图/钉图识别等）：主屏居中偏上
     // 多屏纪律：钳制与落位一律用 monitor_rect（全局逻辑矩形，macOS 上是
     // 排除菜单栏/Dock 的可见区域）——按主屏整幅尺寸钳制会把副屏操作的结果
     // 窗拉去主屏或推出屏外（2026-11-04 多显示器截半报告的根源）
     let below_anchor = RESULT_BELOW_ANCHOR.swap(false, Ordering::Relaxed);
+    let snip_anchor = SNIP_RESULT_ANCHOR.lock().unwrap().take();
     {
         let saved = crate::settings::current(&window.app_handle());
         let mut pos_m = LAST_RESULT_POS.lock().unwrap();
@@ -314,12 +312,12 @@ pub fn ocr_window_ready(window: WebviewWindow) {
         Some(sz) => sz,
         None => (420.0, 340.0),
     };
-    // 落屏锚点与位置优先级一一对应：记忆点 / 胶囊底缘 / 框选中心
+    // 落屏锚点与位置优先级一一对应：记忆点 / 胶囊底缘 / 截图选区中心
     let (m_l, m_t, m_r, m_b) = if let Some((lx, ly)) = last {
         monitor_rect(&window, lx, ly)
     } else if below_anchor {
         monitor_rect(&window, cap_x, cap_y + cap_h)
-    } else if let Some((ax, ay)) = first_ocr_anchor() {
+    } else if let Some((ax, ay)) = snip_anchor {
         monitor_rect(&window, ax, ay)
     } else {
         primary_rect(&window)
@@ -341,7 +339,7 @@ pub fn ocr_window_ready(window: WebviewWindow) {
         };
         (nx, ny)
     } else {
-        // 首次识图：锚定屏内水平居中、上方 1/3 处
+        // 截图会话/兜底：锚定屏内水平居中、上方 1/3 处
         (
             m_l + ((m_r - m_l) - wx).max(0.0) / 2.0,
             m_t + ((m_b - m_t) - wy).max(0.0) / 3.0,

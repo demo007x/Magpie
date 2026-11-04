@@ -71,7 +71,7 @@ Rust 侧 `src-tauri/src/`：
 
 - 决策记录（为什么不用 Electron/LangChain、为什么无剪贴板等）见 `docs/04-技术选型.md`（ADR），翻案先改 ADR。
 - 变更纪律：用户可见的行为改动记入开发中的 `docs/release/release-v<版本号>.md` 对应板块（见下）；项目现状描述 → README「功能」清单；贡献流程与 PR 规范见 `CONTRIBUTING.md`（面向人类贡献者，与本文件约定一致）。
-- 需求记录（`docs/release/release-v<版本号>.md`，版本号 = 下一版，同一时刻只有一个开发中的 release 文件）：三板块 `Added`（新增）/`Changed`（行为、文案、交互变更）/`Fixed`（修复）；需求、想法、issue 链接、关键交互决策在提出时记入对应板块，条目为 checkbox + 一句验收要点，落地时勾选；纯内部改动（重构、性能、注释）不记；不抄实现细节（那属于代码注释与 docs/02）。
+- 需求记录（`docs/release/release-v<版本号>.md`，版本号 = 下一版，同一时刻只有一个开发中的 release 文件）：三板块 `Added`（新增）/`Changed`（行为、文案、交互变更）/`Fixed`（修复）；需求、想法、issue 链接、关键交互决策在提出时记入对应板块，条目为 checkbox + 一句验收要点，落地时勾选；纯内部改动（重构、性能、注释）不记；不抄实现细节（那属于代码注释与 docs/02）。**Fixed 只记「上一发版就存在」的 bug**：本开发周期内随新功能引入、又在本周期内修掉的 bug（自生自灭）不记——release 文件记录的是相对上一发版的变化，用户从来没见过的问题没有"修复"可言（教训见代码注释，2026-11-04 截图胶囊六条自生自灭条目曾被清理）。
 - CHANGELOG 纪律：**开发阶段绝不修改 `CHANGELOG.md`**（文件无 Unreleased 段）；仅当用户明确指令发版并给出版本号时，从 release 文件**已勾选**条目生成带日期的版本节（`## [x.y.z] - YYYY-MM-DD`）：Keep a Changelog 格式、英文，只用 `Added`/`Changed`/`Fixed` 三节，**每一项可以有多条**，逐条压缩为用户视角（用户能看见什么），不照抄 release 原文，不写实现细节与草稿。
 - 发版清单：① 按上条从 release 文件生成版本节；② 版本号三处同步 `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`，`cargo check` 刷新 `Cargo.lock`；③ release 文件状态改「已发布」后冻结（CHANGELOG.md 是对外记录的唯一权威，release 文件是内部需求/验收源）。
 - CI 门禁（`.github/workflows/ci.yml`）：push 到 main/win_pc 及 PR 自动跑双平台验证——macOS（arm64 编译链接 + 测试 + x86_64 交叉编译）与 Windows（x64 编译链接 + 测试）。**push 后以 CI 判决为准**：`gh run watch --exit-status` 后台跟踪（交叉编译只在 CI 跑，不在本机），失败用 `gh run view <id> --log-failed` 读日志修复重推；**CI 未绿不得声称改动完成或已验证**。CI 射程限于编译/链接/单测层，运行时问题（窗口、时序、渲染）仍靠真机验证清单兜底（射程边界见 ci.yml 头注释）。

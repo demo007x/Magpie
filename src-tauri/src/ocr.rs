@@ -11,52 +11,9 @@ use tauri::Emitter;
 #[cfg(target_os = "windows")]
 use tauri::AppHandle;
 
-#[cfg(target_os = "macos")]
-use crate::capture::CaptureMuteGuard;
-
-/// 交互式框选屏幕区域 → PNG 临时文件。阻塞调用（在 spawn_blocking 线程执行）。
-/// 取消 / 权限缺失 = Err。仅 macOS（系统 screencapture 交互框选；
-/// Windows 走 win_region 遮罩窗事件驱动流程）
-#[cfg(target_os = "macos")]
-pub fn capture_region_to_file() -> Result<std::path::PathBuf, String> {
-    // 截图框选本身是一次鼠标拖选：静音捕获管线，防止被误判为划词
-    //（此前会触发 AX 查询 → 截图模态会话内 ObjC 异常 → 进程 abort）
-    let _mute = CaptureMuteGuard::new();
-    eprintln!("[ocr] 静音已开启，等待框选…");
-
-    // 屏幕录制权限预检：缺失时无法截取其他应用内容，先给引导
-    if !screen_capture_preflight() {
-        eprintln!("[ocr] 缺少屏幕录制权限，打开系统设置");
-        let _ = Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?ScreenCapture")
-            .spawn();
-        return Err("需要屏幕录制权限\n已打开系统设置，授权后重试".into());
-    }
-
-    let dir = std::env::temp_dir();
-    let image = dir.join(format!("magpie-capture-{}-{}.png", std::process::id(), timestamp_ms()));
-    let _ = std::fs::remove_file(&image);
-
-    // 框选截图（系统原生 ⌘⇧4 交互；-x 静音快门声）
-    let status = Command::new("screencapture")
-        .args(["-x", "-i"])
-        .arg(&image)
-        .status()
-        .map_err(|e| format!("无法启动截图: {e}"))?;
-    if !(status.success() && image.exists()) {
-        eprintln!("[ocr] 截图已取消");
-        return Err("截图已取消".into());
-    }
-    Ok(image)
-}
-
-#[cfg(target_os = "macos")]
-fn timestamp_ms() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0)
-}
+// 交互式系统框选（screencapture -i）已于 2026-11-04 退役：框选挪到自绘遮罩上
+// （floating::snip），选区框与截后遮罩同一窗同一视觉，无「先系统框选、松手后
+// 补遮罩」的闪变；静默截图走 snap_region（snip.rs）。
 
 /// 用助手子进程识别图片文字（Vision；子进程隔离 ObjC 异常）。
 /// 助手直连模式：`ocr_helper <图片路径>`，文本走 stdout。
@@ -169,6 +126,66 @@ pub fn push_ocr_result(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
     );
+}
+
+/// 识别并一次性推送结果：识图快捷键流程后半段与截图胶囊动作执行（snip_execute）
+/// 的共用管线。「正在识别…」无条件立即常驻（不设延时阈值），填补串行化的
+/// 感知空窗；成功 → 撤场让位面板，失败 → 原位换装为错误两段话术。
+/// 「未识别到文字」先走自愈重截（快速手势可能截到遮罩淡出/页面动画未稳的
+/// 过渡帧，整图发虚被判空——见 retry_region_capture 注释）：按事件钩子记录的
+/// 拖选矩形延迟静默重截再识别，成功即正常展示。
+/// 自愈未成（或非空识别错误）：证据落用户日志（stderr 仅 dev 可见）：尺寸 +
+/// 路径。「未识别到文字」时**保留**截图供事后复核（删文件 = 删证据）。
+/// run = 识别后自动执行的动作（None = 只出文本面板）
+pub async fn recognize_and_push(
+    app: &tauri::AppHandle,
+    image: PathBuf,
+    action: Option<String>,
+    service: Option<String>,
+) {
+    eprintln!("[magpie:ocr] 截图完成，开始识别");
+    crate::toast::show_toast_sticky(app, "正在识别…", "progress");
+    let run = action.map(|a| (a, service.clone()));
+    let img = image.clone(); // 识别在闭包内消费，image 留给失败清理与钉图
+    match tauri::async_runtime::spawn_blocking(move || recognize_file(&img)).await {
+        Ok(Ok(text)) => {
+            eprintln!("[magpie:ocr] 成功：len={}", text.len());
+            crate::toast::hide_toast(app);
+            push_ocr_result(app, text, image, run);
+        }
+        Ok(Err(e)) => {
+            eprintln!("[magpie:ocr] 失败：{e}");
+            // 「未识别到文字」自愈重截仅 macOS（Windows 框选是自家遮罩窗 +
+            // BitBlt 一次成帧，无过渡帧问题，见 retry_region_capture 注释）
+            #[cfg(target_os = "macos")]
+            if e == "未识别到文字" {
+                if let Some((text, retry_image)) = retry_region_capture() {
+                    crate::toast::hide_toast(app);
+                    push_ocr_result(app, text, retry_image, run);
+                    let _ = std::fs::remove_file(&image); // 原糊图已无价值
+                    return;
+                }
+            }
+            let dims = image::image_dimensions(&image)
+                .map(|(w, h)| format!("{w}x{h}"))
+                .unwrap_or_else(|_| "?".into());
+            crate::user_log(&format!(
+                "[ocr] 识别失败：{e}；截图 {dims} {}",
+                image.display()
+            ));
+            if e != "未识别到文字" {
+                let _ = std::fs::remove_file(&image);
+            }
+            // 统一话术：主行说发生了什么，次行说该怎么办（toast 两段式）
+            let msg = if e == "未识别到文字" {
+                "未检测到文字\n重新框选，确认区域内有清晰的文字".to_string()
+            } else {
+                e.clone()
+            };
+            crate::toast::show_toast(app, &msg, "err");
+        }
+        Err(e) => eprintln!("[magpie:ocr] 任务失败: {e}"),
+    }
 }
 
 /// macOS 26+ 兼容：中文识别模型改为按需资源——系统更新后首次识别中文会
@@ -362,42 +379,29 @@ mod win_region {
             end_session();
             return;
         }
-        let (action, service) = PENDING.lock().unwrap().take().unwrap_or((None, None));
+        let _ = PENDING.lock().unwrap().take(); // 会话存续标记；动作由胶囊选择
         *SNAP_MUTE.lock().unwrap() = None; // 截屏交互结束，解除静音
 
         let app2 = app.clone();
         std::thread::spawn(move || {
-            // 「正在识别…」在框选结束即弹出：此前的实现等 helper 子进程跑完
-            // 截屏+识别才弹，最耗时的时段反而没有任何提示（toast 慢的根因）
-            crate::toast::show_toast_sticky(&app2, "正在识别…", "progress");
-            match snap_ocr_capture(rx, ry, rw, rh) {
-                // 文本随子进程一次取回——此前把 stdout 丢弃后再起一个子进程
-                // 对同一张图重新识别，双进程双识别（结果慢的根因）
-                Ok((image, Some(text))) => {
-                    crate::toast::hide_toast(&app2);
-                    super::push_ocr_result(
-                        &app2,
-                        text,
-                        image,
-                        action.map(|a| (a.to_string(), Some(service.clone().unwrap_or_default()))),
+            // 只截屏不识别（截图胶囊流程，对齐 macOS snip）：识别在用户点
+            // 胶囊动作后由 snip_execute → recognize_and_push 进行——框选阶段
+            // 永不报「未检测到文字」（没字是选完动作后才知道的事）
+            match snap_capture_only(rx, ry, rw, rh) {
+                Ok(image) => {
+                    // 胶囊锚点/会话矩形用全局逻辑坐标（页面坐标已是逻辑值，
+                    // 加显示器逻辑原点；物理矩形只进 BitBlt）
+                    let lrect = (org.x as f64 / s + x, org.y as f64 / s + y, w, h);
+                    crate::floating::snip::store_session(image, lrect);
+                    let _ = app2.emit_to(
+                        "floating",
+                        "snip://captured",
+                        serde_json::json!({
+                            "x": lrect.0, "y": lrect.1, "w": lrect.2, "h": lrect.3
+                        }),
                     );
                 }
-                Ok((image, None)) => {
-                    // 截屏成功但无可识别文字：留证后引导。Windows 侧尚未观察到
-                    // 此失败（macOS 的过渡帧根因在此架构上不存在——BitBlt 一次
-                    // 成帧、遮罩是自家窗口），留图为真出现时提供判据，不做无据修复
-                    let dims = image::image_dimensions(&image)
-                        .map(|(w, h)| format!("{w}x{h}"))
-                        .unwrap_or_else(|_| "?".into());
-                    crate::user_log(&format!(
-                        "[ocr][win] 识别失败：未识别到文字；截图 {dims} {}",
-                        image.display()
-                    ));
-                    crate::toast::hide_toast(&app2);
-                    toast_err(&app2, "未检测到文字\n重新框选，确认区域内有清晰的文字");
-                }
                 Err(e) => {
-                    crate::toast::hide_toast(&app2);
                     toast_err(&app2, &e);
                 }
             }
@@ -415,7 +419,9 @@ mod win_region {
     /// 返回 (图片路径, 识别文本)：截屏成功但无可识别文字 = Ok((路径, None))
     /// （helper 以 ERR:未识别到文字 退出，但 PNG 已在 OCR 前落盘）。
     /// 文本必须在此一次取回——调用方不再二次起进程识别
-    fn snap_ocr_capture(x: i32, y: i32, w: i32, h: i32) -> Result<(PathBuf, Option<String>), String> {
+    /// 只截屏不识别（截图胶囊流程：截图与识别分离——识别在用户选动作后
+    /// 由 snip_execute 经 recognize_and_push 进行）。文本返回恒为空占位
+    fn snap_capture_only(x: i32, y: i32, w: i32, h: i32) -> Result<PathBuf, String> {
         let helper = super::helper_path()?;
         let image = std::env::temp_dir().join(format!(
             "magpie-capture-{}-{}.png",
@@ -426,7 +432,7 @@ mod win_region {
                 .unwrap_or(0)
         ));
         let mut cmd = Command::new(&helper);
-        cmd.arg("--snap-ocr")
+        cmd.arg("--snap")
             .arg(format!("{x},{y},{w},{h}"))
             .arg(&image);
         #[cfg(target_os = "windows")]
@@ -441,22 +447,13 @@ mod win_region {
         let output = cmd
             .output()
             .map_err(|e| format!("无法启动截屏进程: {e}"))?;
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if !output.status.success() {
-            let reason = stderr
-                .strip_prefix("ERR:")
-                .map(|s| s.to_string())
-                .unwrap_or(stderr);
-            if reason == "未识别到文字" && image.exists() {
-                return Ok((image, None));
-            }
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let reason = stderr.strip_prefix("ERR:").unwrap_or(&stderr).to_string();
+            let _ = std::fs::remove_file(&image);
             return Err(reason);
         }
-        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if text.is_empty() {
-            return Err("识别结果为空".into());
-        }
-        Ok((image, Some(text)))
+        Ok(image)
     }
 }
 
@@ -502,8 +499,8 @@ pub fn start_region_capture_windows(
     });
 }
 
-// 非 Windows 编译期的接线空桩：macOS 走 capture_region_to_file，此函数在
-// macOS 下无调用方（dead_code 警告属预期）——保留以稳定跨平台分发签名，
+// 非 Windows 编译期的接线空桩：macOS 走自绘遮罩框选（floating::snip），此函数
+// 在 macOS 下无调用方（dead_code 警告属预期）——保留以稳定跨平台分发签名，
 // Windows 侧接线（main.rs 的识图流程按 cfg 分发）在 M2 接入
 #[cfg(not(target_os = "windows"))]
 #[allow(dead_code)]

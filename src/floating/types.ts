@@ -26,8 +26,11 @@ export const EXTRACT_GROUPS: Array<{ id: keyof ExtractGroups; label: string }> =
 ];
 
 // 状态机：Bar（胶囊） → Result（流式面板）/ Extract（多值列表）；dismiss/新选区回收
+// Snip（截图胶囊）：框选完成、动作未选——四件套动作点击走 snip_execute（识别
+// 后再执行），不走 runAction（无文本源）；dismiss/新划词由 useCaptureSession 清理
 export type Phase =
   | { kind: "bar" }
+  | { kind: "snip" }
   | {
       kind: "extract";
       /** 主要实体类型（决定面板图标） */

@@ -112,6 +112,10 @@ extern "C" fn tap_callback(
         if code != KEY_ESC || unsafe { CGEventGetIntegerValueField(ev, 8) } != 0 {
             return ev;
         }
+        // Esc 转发给截图遮罩流程（若进行中）：遮罩是非 key 窗口收不到键盘，
+        // 选区/会话的取消只能靠 tap 全局转发——在回调内即时处理（轻量锁 +
+        // 事件消息），不走 worker 队列，保证立即响应
+        crate::floating::snip::esc_pressed();
         code
     } else {
         0

@@ -42,6 +42,7 @@ pub mod chrome;
 pub mod material;
 pub mod ocr;
 pub mod pops;
+pub mod snip;
 
 pub use bar::{
     apply_drag, apply_hover_tracking, clamp_move_window, end_drag, is_visible,
@@ -187,6 +188,32 @@ pub fn place(win: &WebviewWindow, ax: f64, ay: f64, w: f64, h: f64) -> (f64, f64
     } else {
         // 下方：卡片顶 = ay + 14；下方也放不下钳回屏内
         (ay + 14.0 - FLOAT_PAD).min((m_b - h).max(m_t))
+    };
+    snap_pos(win, nx, ny)
+}
+
+/// 选区矩形 → 胶囊位置：右下角锚定（胶囊右缘对齐选区右缘、顶边距选区底缘
+/// 8pt），下方放不下翻到选区上方（底边距选区顶缘 8pt），钳制在选区所在屏
+/// 可见区域内。截图胶囊（snip://captured）与划词胶囊（place，光标上方）并列
+/// 的第二种锚定形态
+pub fn place_rect(
+    win: &WebviewWindow,
+    rx: f64,
+    ry: f64,
+    rw: f64,
+    rh: f64,
+    w: f64,
+    h: f64,
+) -> (f64, f64) {
+    // 屏命中判定点取选区右下角内缩 1px：必落在框选所在屏（角点外扩可能
+    // 落入两屏间隙/邻屏，钳制范围就错了）
+    let (m_l, m_t, m_r, m_b) = monitor_rect(win, rx + rw - 1.0, ry + rh - 1.0);
+    let nx = (rx + rw - w).clamp(m_l, (m_r - w).max(m_l));
+    let ny_below = ry + rh + 8.0;
+    let ny = if ny_below + h <= m_b {
+        ny_below
+    } else {
+        (ry - h - 8.0).max(m_t)
     };
     snap_pos(win, nx, ny)
 }

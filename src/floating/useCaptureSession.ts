@@ -41,7 +41,7 @@ export function useCaptureSession(opts: {
   sourceAppRef: MutableRefObject<string>;
   sourcePidRef: MutableRefObject<number>;
   setText: (t: string) => void;
-  setPending: (p: { x: number; y: number } | null) => void;
+  setPending: (p: { x: number; y: number; rect?: [number, number, number, number] } | null) => void;
   setPhase: (p: Phase | ((prev: Phase) => Phase)) => void;
   setOcrPinnedState: (v: boolean) => void;
   setUsedTranslate: (v: string | null) => void;
@@ -49,6 +49,9 @@ export function useCaptureSession(opts: {
   runAction: (id: string, service?: string, source?: string) => void;
   showExtractPanel: (rawText: string, sourcePid?: number) => void;
   resetGhostStates: () => void;
+  /** 截图胶囊会话（snip://captured）挂起标记：dismiss/新划词时据此先调
+      snip_cancel 清理挂起截图，防临时文件泄漏 */
+  snipRef: MutableRefObject<boolean>;
 }) {
   const o = opts;
 
@@ -68,6 +71,11 @@ export function useCaptureSession(opts: {
       }
       o.capturedAtRef.current = performance.now();
       o.resetGhostStates();
+      // 挂起中的截图胶囊被新事件取代：先清理挂起截图（新划词/新截图都适用）
+      if (o.snipRef.current) {
+        o.snipRef.current = false;
+        invoke("snip_cancel").catch(() => undefined);
+      }
       // 清除上一个操作可能残留的焦点态（避免新胶囊里按钮呈现选中样式）
       (document.activeElement as HTMLElement | null)?.blur?.();
       // 新选区使进行中的流失效（否则 streamingRef 卡住，dismiss 会被误拦）
@@ -146,9 +154,44 @@ export function useCaptureSession(opts: {
       else unlisteners.push(un);
     });
 
+    // 截图胶囊：框选完成（截图已拍、动作未选）——胶囊浮在选区右下角。
+    // payload = 框选矩形（全局逻辑坐标），锚点取右下角；setPhase 驱动胶囊
+    // 渲染四件套动作（snip phase），点击走 snip_execute（识别后再执行）
+    listen<{ x: number; y: number; w: number; h: number }>("snip://captured", (e) => {
+      // 钉图窗口与划词流无关；OCR 结果窗不参与胶囊选择态（事件也是 emit_to floating 定向的）
+      if (IS_PIN || IS_OCR) return;
+      o.capturedAtRef.current = performance.now();
+      o.resetGhostStates();
+      o.setMenu(null);
+      o.dwellRef.current = null;
+      o.hoverLeftAtRef.current = null;
+      o.runIdRef.current++;
+      o.streamingRef.current = false;
+      o.snipRef.current = true;
+      const r = e.payload;
+      o.setPending({
+        x: r.x + r.w,
+        y: r.y + r.h,
+        rect: [r.x, r.y, r.w, r.h],
+      });
+      // 屏幕矩形：二级浮层贴边翻转的判定基准（同普通划词路径）
+      invoke<ScreenRect>("screen_rect_at", { x: r.x + r.w, y: r.y + r.h })
+        .then((sr) => (o.screenRef.current = sr))
+        .catch(() => undefined);
+      o.setPhase({ kind: "snip" });
+    }).then((un) => {
+      if (listenCancelled) un();
+      else unlisteners.push(un);
+    });
+
     listen("selection://dismiss", () => {
       // 钉图窗口不受划词 dismiss 影响
       if (IS_PIN) return;
+      // 截图胶囊挂起中：先清理挂起截图再收胶囊（点空白 = 放弃本次截图）
+      if (o.snipRef.current) {
+        o.snipRef.current = false;
+        invoke("snip_cancel").catch(() => undefined);
+      }
       // OCR 窗口钉住：忽略 dismiss（Rust 侧同样不会隐藏窗口）
       if (IS_OCR && o.ocrPinnedRef.current) {
         invoke("ui_debug_log", { msg: "忽略 dismiss：OCR 已钉住" }).catch(() => undefined);

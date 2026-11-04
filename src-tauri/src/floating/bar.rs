@@ -9,7 +9,7 @@ use serde_json::json;
 
 use crate::capture::debug_log;
 
-use super::{place, show_without_activation, snap_pos, monitor_rect, WindowPos, DEFAULT_W, DEFAULT_H};
+use super::{place, place_rect, show_without_activation, snap_pos, monitor_rect, WindowPos, DEFAULT_W, DEFAULT_H};
 use super::pops::hide_pops;
 use super::ocr::ocr_visible;
 use super::pops::{pops_visible, pop_rect_contains};
@@ -33,6 +33,9 @@ pub struct FloatingRect {
     pub w: f64,
     pub h: f64,
     pub visible: bool,
+    /// 截图胶囊会话（snip://captured）的框选矩形：Some = 胶囊按选区右下角
+    /// 锚定（place_rect），展开二级浮层重排时仍按此锚定，不回退光标位
+    pub snip_rect: Option<(f64, f64, f64, f64)>,
 }
 
 pub type FloatingState = Mutex<FloatingRect>;
@@ -237,6 +240,7 @@ pub fn show_floating_bar(
     height: Option<f64>,
     cards: Option<Vec<MaterialCard>>,
     dark: Option<bool>,
+    snip_rect: Option<(f64, f64, f64, f64)>,
 ) -> Result<WindowPos, String> {
     let win = window(&app)?;
     // 新选区 = 新胶囊：展开中的二级浮层一并收起（Windows 分离卡；macOS 单窗自然重置）
@@ -245,7 +249,11 @@ pub fn show_floating_bar(
     // 下限只需兜底极小值：窗口高度必须贴合表面，否则表面下缘落在窗口
     // 内部、原生圆角裁不到，胶囊下角会变直角
     let h = height.unwrap_or(DEFAULT_H).max(24.0);
-    let (nx, ny) = place(&win, x, y, w, h);
+    // 截图胶囊：按框选矩形右下角锚定；普通划词：光标上方锚定
+    let (nx, ny) = match snip_rect {
+        Some((rx, ry, rw, rh)) => super::place_rect(&win, rx, ry, rw, rh, w, h),
+        None => place(&win, x, y, w, h),
+    };
     win.set_size(LogicalSize::new(w, h))
         .map_err(|e| e.to_string())?;
     win.set_position(LogicalPosition::new(nx, ny))
@@ -271,6 +279,7 @@ pub fn show_floating_bar(
         w,
         h,
         visible: true,
+        snip_rect,
     };
     update_hover_feed(&app);
     Ok(WindowPos { x: nx, y: ny })
@@ -305,6 +314,11 @@ pub fn resize_floating(
                 wy.clamp(m_t, (m_b - h).max(m_t)),
             );
             (sx, sy)
+        }
+        // 截图胶囊会话：仍按框选矩形右下角锚定（展开二级浮层重排不回退光标位）
+        _ if r.snip_rect.is_some() => {
+            let (rx, ry, rw, rh) = r.snip_rect.unwrap();
+            place_rect(&win, rx, ry, rw, rh, w, h)
         }
         _ => place(&win, ax, ay, w, h),
     };

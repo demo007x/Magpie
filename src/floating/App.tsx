@@ -231,7 +231,15 @@ export default function App() {
   if (IS_PIN) return <PinView />;
 
   const [text, setText] = useState("");
-  const [pending, setPending] = useState<{ x: number; y: number } | null>(null);
+  // 胶囊锚点：普通划词 = 光标锚点 (x,y)；截图胶囊 = 选区右下角 + 框选矩形
+  // rect（Rust show_floating_bar 据此走 place_rect 右下角锚定）
+  const [pending, setPending] = useState<{
+    x: number;
+    y: number;
+    rect?: [number, number, number, number];
+  } | null>(null);
+  // 截图胶囊会话挂起标记（snip://captured 置位，事件闭包经 opts 读取最新值）
+  const snipRef = useRef(false);
   // OCR 面板钉住：钉住后忽略 dismiss（ref 供事件闭包读最新值）
   const [ocrPinned, setOcrPinned] = useState(false);
   const ocrPinnedRef = useRef(false);
@@ -680,8 +688,11 @@ export default function App() {
   actionsRef.current = actions;
 
   // 动态上下文按钮：检测到实体才出现，渲染在胶囊最前（对本条选中内容而言，
-  // 它比常驻动作更相关）；与常驻动作互不挤占——8 个常驻 + 1 个上下文 = 9 个可见
+  // 它比常驻动作更相关）；与常驻动作互不挤占——8 个常驻 + 1 个上下文 = 9 个可见。
+  // 截图胶囊会话无文本源，不参与实体提取（text 状态是上一轮划词残留，须挡住）
+  const snipMode = phase.kind === "snip";
   const ctxEntry: BarEntry | null = (() => {
+    if (snipMode) return null;
     if (extracted.total === 1) {
       const g = extracted.groups;
       const single =
@@ -729,8 +740,29 @@ export default function App() {
   // 胶囊固定显示前 4 个动作（顺序 = 设置页 actionOrder），其余收进最右 ⌄N；
   // 不足 5 个时无收纳入口，胶囊自然收窄
   const CAPSULE_MAX = Math.max(2, Math.min(8, capsuleMax));
-  const topEntries = barEntries.slice(0, CAPSULE_MAX);
-  const restEntries = barEntries.slice(CAPSULE_MAX);
+  // 截图胶囊会话（snip://captured）：固定四件套，不走动作注册表——动作语义
+  // 是「先识别再执行」（snip_execute，Rust 侧识别后导流），与划词胶囊的
+  // 「对文本执行」不同源；可用性口径与常驻动作一致（翻译看启用服务、
+  // AI 动作看默认模型）。识别文字无门槛，恒显示
+  const snipRun = (actionId: string) => {
+    setPhase({ kind: "bar" });
+    invoke("snip_execute", { actionId }).catch(() => undefined);
+    invoke("hide_floating_bar").catch(() => undefined);
+  };
+  const snipEntries: BarEntry[] = [
+    { id: "ocr", label: "识别文字", onClick: () => snipRun("ocr") },
+  ];
+  if (enabledTranslates.length > 0) {
+    snipEntries.push({ id: "translate", label: "翻译", onClick: () => snipRun("translate") });
+  }
+  if (hasUsableModel) {
+    snipEntries.push(
+      { id: "explain", label: "解释", onClick: () => snipRun("explain") },
+      { id: "summarize", label: "总结", onClick: () => snipRun("summarize") },
+    );
+  }
+  const topEntries = snipMode ? snipEntries : barEntries.slice(0, CAPSULE_MAX);
+  const restEntries = snipMode ? [] : barEntries.slice(CAPSULE_MAX);
 
   // OCR 子菜单渲染值：活动菜单优先；纯收起的退场窗口（menu=null）用 fading
   // 续挂旧内容淡出（.m-out + .mflow.still）。切换（menu 已是新值）不续挂
@@ -1175,6 +1207,8 @@ export default function App() {
         y: pending.y,
         width: tw,
         height: th,
+        // 截图胶囊：传框选矩形，Rust 按右下角锚定（place_rect）；普通划词传 null
+        snipRect: pending.rect ?? null,
         ...materialPayload,
       })
         .then((pos) => {
@@ -1552,10 +1586,11 @@ export default function App() {
     const cacheKey = `${id}:${serviceOverride ?? ""}:${system}:${source}`;
     const cached = cacheGet(cacheKey);
     if (cached !== null && (phase.kind === "ocr" || sourceOverride !== undefined)) {
-      // 缓存命中：跳过请求直接展示
+      // 缓存命中：跳过请求直接展示（plain 显式清 false——上一轮机器翻译
+      // 可能残留 true，AI 动作的 markdown 输出不能按纯文本渲染）
       setPhase((p) =>
         p.kind === "ocr"
-          ? { ...p, actionId: id, output: cached, streaming: false, error: null }
+          ? { ...p, actionId: id, output: cached, streaming: false, error: null, plain: false }
           : p,
       );
       return;
@@ -1565,7 +1600,9 @@ export default function App() {
     // 函数式更新：紧随 pending 消费的 auto-run 不会读到旧 phase
     if (phase.kind === "ocr" || sourceOverride !== undefined) {
       setPhase((p) =>
-        p.kind === "ocr" ? { ...p, actionId: id, output: "", streaming: true, error: null } : p,
+        p.kind === "ocr"
+          ? { ...p, actionId: id, output: "", streaming: true, error: null, plain: false }
+          : p,
       );
     } else {
       // 划词 AI 结果导流到独立结果窗口（默认钉住，胶囊下方弹出）。
@@ -1682,6 +1719,7 @@ export default function App() {
     runAction,
     showExtractPanel,
     resetGhostStates,
+    snipRef,
   });
 
   const backToBar = () => {
@@ -1802,7 +1840,7 @@ export default function App() {
               <span>{flashId === e.id ? flashMsg : e.label}</span>
             </button>
             {((e.id === "search" && enabledEngines.length > 1) ||
-              (e.id === "translate" && enabledTranslates.length > 1) ||
+              (e.id === "translate" && enabledTranslates.length > 1 && !snipMode) ||
               (e.id === "obsidian" && e.hasMenu)) && (
                 <button
                   className="chev"

@@ -21,7 +21,7 @@ const SHORTCUT_ITEMS: Array<{
     key: "ocrShortcut",
     label: "识图取字",
     default: "Alt+S",
-    desc: "框选屏幕任意区域识别文字，可复制、钉住原图或继续翻译。",
+    desc: "框选屏幕任意区域，松手弹出动作条，选动作后识别；结果可复制、钉住原图。",
   },
   {
     key: "ocrTranslateShortcut",

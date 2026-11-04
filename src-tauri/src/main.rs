@@ -136,110 +136,42 @@ const OCR_SHORTCUT_SLOTS: [(&str, OcrSlot); 5] = [
 /// 各槽位当前注册的全局快捷键（流程见 OcrSlot）；handler 据此比对触发
 pub struct OcrShortcuts(pub std::sync::Mutex<Vec<(Shortcut, OcrSlot)>>);
 
+/// 按设置解析默认翻译服务（default 不在启用列表则顺延到首个启用项）。
+/// 无启用服务传空串，前端提示「未启用翻译服务」。识图快捷键流程与
+/// 截图胶囊动作（snip_execute）共用——显式随 pending 传递，不依赖结果窗
+/// 前端的设置加载时序（与划词导流由浮动条侧解析 service 同理）
+pub fn resolve_default_translate_service(app: &tauri::AppHandle) -> String {
+    let s = settings::current(app);
+    let d = s.translate.default;
+    if s.translate.enabled.iter().any(|e| e == &d) {
+        d
+    } else {
+        s.translate.enabled.first().cloned().unwrap_or_default()
+    }
+}
+
 /// 识图取字流程（托盘菜单与全局快捷键共用）：
-/// 后台线程执行框选+识别，完成后推给 OCR 独立窗口（原图供「钉图」）。
-/// action 不为空时随 pending 携带自动执行的动作（识图翻译/解释/总结）
+/// action 不为空时随流程携带自动执行的动作（识图翻译/解释/总结）。
+/// Windows：遮罩窗事件驱动（选区回调续跑识别）；
+/// macOS：自绘遮罩框选——触发即全屏变暗、在遮罩上拖出选区、松手静默截图
+/// （选区框与截后遮罩同一窗同一视觉，无系统框选段与遮罩补现的闪变），
+/// 随后按槽位分流（无动作 = 截图挂起进胶囊会话；有动作 = 立即识别执行）
 fn start_ocr_flow(app: tauri::AppHandle, action: Option<&'static str>) {
     eprintln!(
         "[magpie:ocr] 识图取字开始{}",
         action.map_or(String::new(), |a| format!("（自动执行 {a}）"))
     );
-    // 翻译动作：此处按设置解析默认翻译服务（default 不在启用列表则顺延到首个启用项），
-    // 显式随 pending 传递——结果窗口设置可能尚未加载完，不能依赖前端自行解析默认值
-    //（与划词导流由浮动条侧解析 service 同理）。无启用服务传空串，前端提示「未启用翻译服务」。
-    let service = action.filter(|a| *a == "translate").map(|_| {
-        let s = settings::current(&app);
-        let d = s.translate.default;
-        if s.translate.enabled.iter().any(|e| e == &d) {
-            d
-        } else {
-            s.translate.enabled.first().cloned().unwrap_or_default()
-        }
-    });
-    // Windows：无系统级框选命令，流程由遮罩窗事件驱动（选区回调续跑识别）
     #[cfg(target_os = "windows")]
-    ocr::start_region_capture_windows(&app, action, service);
-    #[cfg(not(target_os = "windows"))]
-    tauri::async_runtime::spawn(async move {
-        let image = match tauri::async_runtime::spawn_blocking(ocr::capture_region_to_file).await
-        {
-            Ok(Ok(image)) => image,
-            Ok(Err(e)) => {
-                eprintln!("[magpie:ocr] 失败：{e}");
-                // 取消是正常交互，不弹提示；其余失败走全局 toast 窗口
-                //（主窗口隐藏时也能看到）
-                if e != "截图已取消" {
-                    toast::show_toast(&app, &e, "err");
-                }
-                return;
-            }
-            Err(e) => {
-                eprintln!("[magpie:ocr] 任务失败: {e}");
-                return;
-            }
-        };
-        // 识别完成后一次性呈现（识别级别 Fast，通常亚秒级）：
-        // 面板出现即有结果，失败则只有 toast——没有「弹出又消失」的闪烁。
-        // 「正在识别…」无条件立即常驻（不设延时阈值），填补串行化的感知空窗；
-        // 成功 → 撤场让位面板，失败 → 原位换装为错误两段话术
-        eprintln!("[magpie:ocr] 截图完成，开始识别");
-        toast::show_toast_sticky(&app, "正在识别…", "progress");
-        let img = image.clone(); // 识别在闭包内消费，image 留给失败清理与钉图
-        match tauri::async_runtime::spawn_blocking(move || ocr::recognize_file(&img)).await {
-            Ok(Ok(text)) => {
-                eprintln!("[magpie:ocr] 成功：len={}", text.len());
-                toast::hide_toast(&app);
-                ocr::push_ocr_result(
-                    &app,
-                    text,
-                    image,
-                    action.map(|a| (a.to_string(), Some(service.clone().unwrap_or_default()))),
-                );
-            }
-            Ok(Err(e)) => {
-                eprintln!("[magpie:ocr] 失败：{e}");
-                // 「未识别到文字」先走自愈重截（快速手势可能截到遮罩淡出/页面
-                // 动画未稳的过渡帧，整图发虚被判空——见 retry_region_capture 注释）：
-                // 按事件钩子记录的拖选矩形延迟静默重截再识别，成功即正常展示
-                if e == "未识别到文字" {
-                    if let Some((text, retry_image)) = ocr::retry_region_capture() {
-                        toast::hide_toast(&app);
-                        ocr::push_ocr_result(
-                            &app,
-                            text,
-                            retry_image,
-                            action.map(|a| (a.to_string(), Some(service.clone().unwrap_or_default()))),
-                        );
-                        let _ = std::fs::remove_file(&image); // 原糊图已无价值
-                        return;
-                    }
-                }
-                // 自愈未成（或非空识别错误）：证据落用户日志（stderr 仅 dev 可见）：
-                // 尺寸 + 路径。「未识别到文字」时**保留**截图供事后复核（删文件 =
-                // 删证据）；其余失败照常清理
-                let dims = image::image_dimensions(&image)
-                    .map(|(w, h)| format!("{w}x{h}"))
-                    .unwrap_or_else(|_| "?".into());
-                user_log(&format!(
-                    "[ocr] 识别失败：{e}；截图 {dims} {}",
-                    image.display()
-                ));
-                if e != "未识别到文字" {
-                    let _ = std::fs::remove_file(&image);
-                }
-                if e != "截图已取消" {
-                    // 统一话术：主行说发生了什么，次行说该怎么办（toast 两段式）
-                    let msg = if e == "未识别到文字" {
-                        "未检测到文字\n重新框选，确认区域内有清晰的文字".to_string()
-                    } else {
-                        e.clone()
-                    };
-                    toast::show_toast(&app, &msg, "err");
-                }
-            }
-            Err(e) => eprintln!("[magpie:ocr] 任务失败: {e}"),
-        }
-    });
+    {
+        // 翻译动作：此处按设置解析默认翻译服务，显式随 pending 传递——结果
+        // 窗口设置可能尚未加载完，不能依赖前端自行解析默认值
+        let service = action
+            .filter(|a| *a == "translate")
+            .map(|_| resolve_default_translate_service(&app));
+        ocr::start_region_capture_windows(&app, action, service);
+    }
+    #[cfg(target_os = "macos")]
+    floating::snip::begin_selection(&app, action);
 }
 
 /// 访达选图取字：文件选择 → 识别 → OCR 独立窗口。结果链路（toast 话术、
@@ -820,6 +752,11 @@ fn main() {
             floating::pops::set_floating_pops,
             floating::pops::pop_ready,
             floating::pops::floating_pick,
+            floating::snip::snip_execute,
+            floating::snip::snip_cancel,
+            floating::snip::snip_region_selected,
+            floating::snip::snip_region_cancel,
+            floating::snip::snip_frame_move,
             floating::ocr::move_ocr,
             ocr::ocr_region_selected,
             ocr::ocr_region_cancel,

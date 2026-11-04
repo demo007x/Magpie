@@ -260,7 +260,7 @@ mod windows_impl {
 
     /// 进程级 Per-Monitor DPI v2：GDI 坐标才是物理像素（主应用由 tao 设置，
     /// helper 独立进程必须自设，否则截屏坐标被虚拟化错位）
-    fn set_dpi_aware() {
+    pub fn set_dpi_aware() {
         use windows::Win32::UI::HiDpi::{
             SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
         };
@@ -270,7 +270,7 @@ mod windows_impl {
     }
 
     /// GDI BitBlt 截取屏幕区域 → PNG（物理像素坐标，虚屏坐标系支持多显示器）
-    fn capture_region_to_png(x: i32, y: i32, w: i32, h: i32, out: &Path) -> Result<(), String> {
+    pub fn capture_region_to_png(x: i32, y: i32, w: i32, h: i32, out: &Path) -> Result<(), String> {
         use windows::Win32::Graphics::Gdi::{
             BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits,
             GetWindowDC, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
@@ -444,7 +444,34 @@ fn main() {
 
     #[cfg(target_os = "windows")]
     {
-        if mode == "--snap-ocr" {
+        if mode == "--snap" {
+            // 只截屏不识别（截图胶囊流程：截图与识别分离，识别在用户选动作后
+            // 经 <image-path> 模式进行）
+            let Some(spec) = args.get(2) else {
+                usage();
+                std::process::exit(2);
+            };
+            let Some(out) = args.get(3) else {
+                usage();
+                std::process::exit(2);
+            };
+            let parts: Vec<i32> = spec
+                .split(',')
+                .map(|s| s.trim().parse::<i32>().map_err(|e| format!("坐标参数错误: {e}")))
+                .collect::<Result<_, _>>()?;
+            if parts.len() != 4 {
+                eprintln!("ERR:坐标参数格式应为 x,y,w,h");
+                std::process::exit(1);
+            }
+            windows_impl::set_dpi_aware();
+            match windows_impl::capture_region_to_png(parts[0], parts[1], parts[2], parts[3], std::path::Path::new(out)) {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("ERR:{e}");
+                    std::process::exit(1);
+                }
+            }
+        } else if mode == "--snap-ocr" {
             let Some(spec) = args.get(2) else {
                 usage();
                 std::process::exit(2);

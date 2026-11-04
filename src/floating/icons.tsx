@@ -14,6 +14,7 @@ import {
   NotebookPen,
   Phone,
   ScanSearch,
+  ScanText,
   Search,
   Sparkles,
   X,
@@ -34,6 +35,7 @@ export const ICONS: Record<string, ReactNode> = {
   date: <CalendarDays size={14} strokeWidth={1.75} />,
   obsidian: <NotebookPen size={14} strokeWidth={1.75} />,
   addr: <MapPin size={14} strokeWidth={1.75} />,
+  ocr: <ScanText size={14} strokeWidth={1.75} />,
   __extract: <ScanSearch size={14} strokeWidth={1.75} />,
   // 自定义动作共用一枚图标：用户自己起的名字已经是辨识度，不做图标选择器
   __custom: <Sparkles size={14} strokeWidth={1.75} />,

@@ -377,19 +377,30 @@ export function useSynHover(opts: {
     // Rust 侧离开边沿：光标划出全部 hover 目标窗口的瞬间补发给最后命中的
     // 窗口（本窗口若非目标则收不到；Windows 分离卡下胶囊文档看不到弹层窗口
     // 边界，光标从弹层直接划走时收不到 mouseleave）。mouseleave 已先记过
-    // 时刻时保留较早值，收起从真正离开那刻起算
+    // 时刻时保留较早值，收起从真正离开那刻起算。
+    // 离开即摘合成 hover：hover://move 只在命中目标窗口时才发，光标划到
+    // 桌面/结果窗/截图遮罩后再无 move 事件来摘类——高亮会挂在最后命中的
+    // 动作上不消失（用户看到的「鼠标离开后选中色还在」）
+    const clearSynHover = () => {
+      synHoverRef.current?.classList.remove("syn-hover");
+      synHoverRef.current = null;
+    };
     listen("hover://left", () => {
       if (hoverLeftAtRef.current === null) hoverLeftAtRef.current = performance.now();
+      clearSynHover();
     }).then((un) => {
       if (listenCancelled) un();
       else unlisteners.push(un);
     });
 
     // 收起判定的离开/回归边沿：离开窗口记时刻（心跳到点收起浮层，清驻留计时），
-    // 回到窗口即撤销——与 App 的 suspendPointer 同用一对 document 级事件
+    // 回到窗口即撤销——与 App 的 suspendPointer 同用一对 document 级事件。
+    // 离开视口同样摘合成 hover（跨窗口移动如 胶囊→结果窗 不产生 hover://left
+    // 边沿——目标是另一个窗口，本窗口收到的离开信号只有这条）
     const markHoverLeft = () => {
-      hoverLeftAtRef.current = performance.now();
+      if (hoverLeftAtRef.current === null) hoverLeftAtRef.current = performance.now();
       dwellRef.current = null;
+      clearSynHover();
     };
     const markHoverInside = () => {
       hoverLeftAtRef.current = null;
