@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- 本文件仅在发版时依据 docs/release/release-vX.Y.Z.md 的已勾选条目生成版本节，开发阶段勿改 -->
 
+## [0.1.20] - 2026-11-05
+
+### Added
+
+- Screen capture reworked into an in-app "action capsule" flow: triggering 识图取字 or the OCR translate/explain/summarize shortcuts dims the screen instantly, dragging draws the selection with a blue border, and releasing captures it silently — no system-capture flash. The four actions (Recognize Text / Translate / Explain / Summarize) appear as a capsule at the selection's bottom-right and recognition runs only after you pick one; the selection can be dragged with the capsule following (actions re-capture the new area), and clicking outside the selection or an accidental tiny drag cancels and cleans up. The translate/explain/summarize shortcuts skip the capsule and run right after release, and the main window stays hidden throughout.
+- The capture selection can be resized from its edges and corners: an 8 px grab zone around the border shows a resize cursor, dragging resizes with the opposite edge anchored (8 px minimum, clamped to the screen), and the capsule follows while actions capture the resized area.
+
+### Changed
+
+- The 识图取字 shortcut description in Settings now reads "Select any area of the screen, pick an action, then recognize", matching the new flow.
+- The result window's original-text area now uses neutral highlight colours: text selection and the hover hint are a faint ink/paper tint with no blue-purple hue in either theme; selecting and correcting the original text work exactly as before.
+
+### Fixed
+
+- On multi-monitor setups the result window no longer lands on the wrong screen or gets cut in half at a screen edge: it now opens on the screen where the action happened and is clamped to that screen's visible area, with remembered positions tied to their screen.
+
 ## [0.1.19] - 2026-10-27
 
 ### Fixed

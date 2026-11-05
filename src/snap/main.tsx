@@ -32,7 +32,7 @@ type EdgeHit = { h: "" | "w" | "e"; v: "" | "n" | "s" };
 const EDGE_BAND = 8;
 
 // 光标位置 → 边命中（距离按到边线的绝对距离算，内侧外侧同等对待——
-// 白环画在矩形外侧，抓「可见的环」时落点常在矩形外 1-2px）。
+// 描边画在矩形外侧，抓「可见的环」时落点常在矩形外 1-2px）。
 // 窄矩形两边带重叠时取更近的一侧
 function hitEdge(r: Rect, x: number, y: number): EdgeHit {
   const dW = Math.abs(x - r.x);
@@ -82,11 +82,11 @@ function clampRect(r: Rect): Rect {
   };
 }
 
-// 洞样式（Overlay 与 FrameSession 共用）：白环用外扩 box-shadow 画在矩形
-// 外侧——洞内像素不被遮罩污染，静默截图即屏幕原始内容。双色发丝环（白线
-// 兜深色内容、外侧黑带兜浅色内容，缺一不可）但整体压轻：粗描边在深色内容
-// 上像外来贴纸（2026-11-05 用户反馈「割裂」）；选区外的整幅变暗由最后一个
-// 100000px shadow 承担
+// 洞样式（Overlay 与 FrameSession 共用）：描边用外扩 box-shadow 画在矩形
+// 外侧——洞内像素不被遮罩污染，静默截图即屏幕原始内容。2px 蓝色强调线
+// （微信/QQ 截图同款思路，深浅内容上都清晰；初版双色发丝环在浅色内容
+// 边上显脏，随本功能迭代内改定），无光晕无黑带；选区外的整幅变暗由
+// 最后一个 100000px shadow 承担
 function holeStyle(h: Rect, cursor: string): CSSProperties {
   return {
     position: "fixed",
@@ -95,7 +95,7 @@ function holeStyle(h: Rect, cursor: string): CSSProperties {
     width: h.w,
     height: h.h,
     boxShadow:
-      "0 0 0 1px rgba(255, 255, 255, 0.85), 0 0 0 2.5px rgba(0, 0, 0, 0.32), 0 0 10px rgba(0, 0, 0, 0.4), 0 0 0 100000px rgba(0, 0, 0, 0.3)",
+      "0 0 0 2px rgba(59, 130, 246, 0.95), 0 0 0 100000px rgba(0, 0, 0, 0.3)",
     background: "transparent",
     cursor,
     pointerEvents: "none",
@@ -103,7 +103,7 @@ function holeStyle(h: Rect, cursor: string): CSSProperties {
 }
 
 // 两阶段同一窗（与 macOS snip-frame 会话段同构）：
-// - 选区阶段：整屏淡暗提示，按下拖出选区（白环实时跟随、画在矩形外侧——
+// - 选区阶段：整屏淡暗提示，按下拖出选区（描边实时跟随、画在矩形外侧——
 //   洞内像素不被遮罩污染，Rust 松手后静默截图），过小（<8px）= 取消
 // - 会话阶段（rect 非空）：松手上报 ocr_region_selected 后遮罩原位无缝切
 //   会话模式（选区洞保留、洞外变暗），动作胶囊由 floating 窗口渲染在选区
@@ -239,7 +239,7 @@ function Overlay() {
         setSel(null);
         if (r.w >= 8 && r.h >= 8) {
           // 选区确认：本窗原位切会话模式（选区洞保留），静默截图与胶囊由
-          // Rust 驱动（截图失败时 Rust 关窗终止 + 报错）。白环画在矩形外侧，
+          // Rust 驱动（截图失败时 Rust 关窗终止 + 报错）。描边画在矩形外侧，
           // 遮罩显示期间截图洞内也是屏幕原始内容
           setRect(r);
           invoke("ocr_region_selected", { x: r.x, y: r.y, w: r.w, h: r.h }).catch(() =>
@@ -263,13 +263,13 @@ function Overlay() {
 // 截图胶囊遮罩（snip-frame，macOS 截图胶囊会话）：铺满框选所在屏的交互
 // 遮罩窗——洞外半透明变暗、洞内清晰（巨大 box-shadow 挖洞，与 Overlay 同款
 // 手法）。两个阶段同一窗无缝过渡（无闪变）：
-// - 选区阶段（rect=null）：触发即整屏淡暗提示，按下拖出选区（白环实时跟随），
+// - 选区阶段（rect=null）：触发即整屏淡暗提示，按下拖出选区（描边实时跟随），
 //   松手 ≥8px invoke snip_region_selected（静默截图后 Rust 发 snip://frame
 //   切到会话模式），过小 = snip_region_cancel 整段取消
 // - 会话阶段（rect 非空）：选区可拖动，页面本地渲染洞/描边跟随（60fps），
 //   每次移动 invoke snip_frame_move 让 Rust 重排右下角胶囊（实时跟随）；
 //   点击选区外 = 取消会话（snip_cancel）。
-// 白环用外扩 box-shadow 画在矩形外侧：洞内像素不被遮罩污染，静默截图即
+// 描边用外扩 box-shadow 画在矩形外侧：洞内像素不被遮罩污染，静默截图即
 // 屏幕原始内容。与 Windows 框选交互窗（Overlay）共用 snap.html 入口，按
 // 窗口 label 分流
 function FrameSession() {
