@@ -83,8 +83,9 @@ function clampRect(r: Rect): Rect {
 }
 
 // 洞样式（Overlay 与 FrameSession 共用）：白环用外扩 box-shadow 画在矩形
-// 外侧——洞内像素不被遮罩污染，静默截图即屏幕原始内容；贴浅色内容时靠
-// 外圈暗晕区分边界（Snipaste 同款），选区外的整幅变暗由最后一个
+// 外侧——洞内像素不被遮罩污染，静默截图即屏幕原始内容。双色发丝环（白线
+// 兜深色内容、外侧黑带兜浅色内容，缺一不可）但整体压轻：粗描边在深色内容
+// 上像外来贴纸（2026-11-05 用户反馈「割裂」）；选区外的整幅变暗由最后一个
 // 100000px shadow 承担
 function holeStyle(h: Rect, cursor: string): CSSProperties {
   return {
@@ -94,7 +95,7 @@ function holeStyle(h: Rect, cursor: string): CSSProperties {
     width: h.w,
     height: h.h,
     boxShadow:
-      "0 0 0 1.5px #ffffff, 0 0 0 2.5px rgba(0, 0, 0, 0.35), 0 0 8px rgba(0, 0, 0, 0.45), 0 0 0 100000px rgba(0, 0, 0, 0.3)",
+      "0 0 0 1px rgba(255, 255, 255, 0.85), 0 0 0 2.5px rgba(0, 0, 0, 0.32), 0 0 10px rgba(0, 0, 0, 0.4), 0 0 0 100000px rgba(0, 0, 0, 0.3)",
     background: "transparent",
     cursor,
     pointerEvents: "none",

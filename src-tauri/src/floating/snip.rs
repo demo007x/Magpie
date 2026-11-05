@@ -263,10 +263,21 @@ fn close_frame(app: &AppHandle) {
     }
 }
 
+/// 关闭 Windows 遮罩窗（label 不存在时静默——macOS 编译下恒不存在）
+fn close_snap_frame(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("snap") {
+        let _ = w.close();
+    }
+}
+
 /// 选区阶段终止（误触取消/截图失败/自动动作收尾）：关遮罩、放静音、清待续。
-/// 主窗口不还原（见 hide_main_for_session 注释——保持隐藏）
+/// 主窗口不还原（见 hide_main_for_session 注释——保持隐藏）。
+/// Windows 遮罩窗同路关闭：cancel_all 的部分触发源不经 win_region::cancel
+///（worker 的 Escape 事件 → dismiss → snip_cancel），不在这里关会留下残留
+/// 遮罩吞点击、幂等闸门拦死后续触发（2026-11-05 复查发现）
 fn end_session(app: &AppHandle) {
     close_frame(app);
+    close_snap_frame(app);
     *SNIP_MUTE.lock().unwrap() = None;
     *SELECT.lock().unwrap() = None;
 }
