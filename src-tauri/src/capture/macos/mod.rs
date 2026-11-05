@@ -100,9 +100,12 @@ extern "C" fn tap_callback(
             }
         }
     }
-    // 截图取词等系统交互期间静音：screencapture 的框选拖选会被误判为划词。
-    // 只静音鼠标事件——Esc 收起浮动条不该被截图模态吞掉
-    if !is_key && capture_muted() {
+    // 截图取词等系统交互期间静音：框选拖选会被误判为划词。只静音点击/拖选
+    // 手势——MouseMoved 例外放行：截图胶囊会话（静音期持整个会话）的合成
+    // hover 依赖全局鼠标位置流，掐掉它胶囊按钮就没有 hover 色（2026-11-05
+    // 实测）。detect 线程的 MouseMoved 分支只做 hover 转发、无 AX 查询，
+    // 放行无害；选区阶段 feed 未开时在 detect 层照常丢弃
+    if !is_key && kind != EV_MOUSE_MOVED && capture_muted() {
         return ev;
     }
     // 键盘通道只放行 Esc 按下（且排除长按自动重复）：其余按键即刻丢弃，

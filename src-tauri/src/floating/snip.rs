@@ -17,7 +17,6 @@
 //! 自家遮罩上的拖选也是拖选手势，不静音会误触发划词管线），Windows 选区
 //! 交互段持有、会话段解除（胶囊 hover 依赖捕获管线转发，同一处见上）。
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, LogicalPosition, Manager, WebviewWindow};
@@ -48,7 +47,9 @@ struct SnipSession {
     /// 页面（遮罩窗视口）坐标 ↔ 全局逻辑坐标的换算基准
     mon: (f64, f64, f64, f64),
     /// 所在屏缩放：Windows 执行动作时按新矩形 BitBlt 重截，逻辑 → 物理
-    /// 坐标换算用（macOS 恒 1.0——snap_region 直收逻辑坐标，不参与）
+    /// 坐标换算用（macOS 恒 1.0——snap_region 直收逻辑坐标，不参与）。
+    /// 仅 Windows 读写（macOS 编译下无读取方，门控防 dead_code 告警）
+    #[cfg(target_os = "windows")]
     scale: f64,
 }
 
@@ -70,39 +71,18 @@ static SNIP_MUTE: Mutex<Option<CaptureMuteGuard>> = Mutex::new(None);
 #[cfg(target_os = "macos")]
 static SNIP_APP: Mutex<Option<AppHandle>> = Mutex::new(None);
 
-/// 会话开始时主窗口的可见性（退出时据此还原）：遮罩窗的 webview 创建/加载
-/// 会激活 NSApp（WebKit 已知行为），激活把应用的关键窗口（主窗口）整组提到
-/// 前面，盖住同层级的遮罩（2026-11-04 实测：Ctrl+S 后主窗口压住遮罩无法框选）。
-/// 会话期间遮罩铺满全屏，主窗口本就被盖住——隐藏它无感知且让激活无可提升的
-/// 窗口；结束按原可见性还原（orderFrontRegardless，不抢焦点）
-static SNIP_MAIN_HIDDEN: AtomicBool = AtomicBool::new(false);
-
-/// 主窗口可见则隐藏（主线程执行；在 show_frame 之前派发，主队列 FIFO 保证
-/// 先隐藏后建遮罩，激活无可提升的关键窗口）
+/// 遮罩窗的 webview 创建/加载会激活 NSApp（WebKit 已知行为），激活把应用的
+/// 关键窗口（主窗口）整组提到前面，盖住同层级的遮罩（2026-11-04 实测：Ctrl+S
+/// 后主窗口压住遮罩无法框选）。会话期间隐藏主窗口——遮罩铺满全屏本就看不见
+/// 它，且激活无可提升的窗口。**只隐藏不还原**（2026-11-05 用户反馈：点动作后
+/// 主窗口跟着弹出是噪音——识别结果才是用户要的）：会话结束后保持隐藏，需要
+/// 时从托盘/程序坞打开
 #[cfg(target_os = "macos")]
 fn hide_main_for_session(app: &AppHandle) {
     let a = app.clone();
     let _ = app.run_on_main_thread(move || {
-        let Some(w) = a.get_webview_window("main") else {
-            return;
-        };
-        if w.is_visible().unwrap_or(false) {
-            let _ = w.hide();
-            SNIP_MAIN_HIDDEN.store(true, Ordering::Relaxed);
-        }
-    });
-}
-
-/// 会话结束时还原主窗口（orderFrontRegardless = 只置前不激活，用户当前
-/// 应用不失焦）。任何结束路径（执行/取消/Esc/错误收尾）都必须调用
-fn restore_main_if_hidden(app: &AppHandle) {
-    if !SNIP_MAIN_HIDDEN.swap(false, Ordering::Relaxed) {
-        return;
-    }
-    let a = app.clone();
-    let _ = app.run_on_main_thread(move || {
         if let Some(w) = a.get_webview_window("main") {
-            let _ = super::show_without_activation(&w);
+            let _ = w.hide();
         }
     });
 }
@@ -186,7 +166,8 @@ pub fn begin_selection(app: &AppHandle, action: Option<&'static str>) {
         *SELECT.lock().unwrap() = Some(SelectState { action, mon });
         *SNIP_MUTE.lock().unwrap() = Some(CaptureMuteGuard::new());
         // 先隐藏主窗口再建遮罩（同在主队列 FIFO 执行，顺序保证）：遮罩 webview
-        // 创建会激活本应用，主窗口若可见会被整组提到遮罩上面（见 SNIP_MAIN_HIDDEN）
+        // 创建会激活本应用，主窗口若可见会被整组提到遮罩上面
+        //（见 hide_main_for_session 注释——只隐藏不还原）
         hide_main_for_session(&app);
         show_frame(&app, mon);
     });
@@ -282,13 +263,12 @@ fn close_frame(app: &AppHandle) {
     }
 }
 
-/// 选区阶段终止（误触取消/截图失败/自动动作收尾）：关遮罩、放静音、清待续、
-/// 还原主窗口
+/// 选区阶段终止（误触取消/截图失败/自动动作收尾）：关遮罩、放静音、清待续。
+/// 主窗口不还原（见 hide_main_for_session 注释——保持隐藏）
 fn end_session(app: &AppHandle) {
     close_frame(app);
     *SNIP_MUTE.lock().unwrap() = None;
     *SELECT.lock().unwrap() = None;
-    restore_main_if_hidden(app);
 }
 
 /// 选区完成（页面在 mouseup 上报，页面坐标 = 遮罩窗视口逻辑坐标）：
@@ -365,6 +345,7 @@ pub fn snip_region_selected(
                         rect,
                         origin: rect,
                         mon,
+                        #[cfg(target_os = "windows")]
                         scale: 1.0,
                     });
                 }
@@ -489,10 +470,9 @@ pub fn snip_execute(app: AppHandle, action_id: String) {
     // 选区洞（对齐 macOS 视觉），随本命令一起收场
     #[cfg(target_os = "windows")]
     crate::ocr::finish_windows_snap_session(&app);
-    // 会话结束：放静音、清选区阶段残留、还原主窗口
+    // 会话结束：放静音、清选区阶段残留。主窗口不还原（保持隐藏）
     *SNIP_MUTE.lock().unwrap() = None;
     *SELECT.lock().unwrap() = None;
-    restore_main_if_hidden(&app);
     let Some(session) = SNIP.lock().unwrap().take() else {
         return;
     };
