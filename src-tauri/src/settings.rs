@@ -262,9 +262,9 @@ impl Default for ObsidianConfig {
             daily_file_name: "yyyy-MM-DD".into(),
             task_file: String::new(),
             card_folder: "Cards".into(),
-            excerpt_template: "- **{time}** · 来源：{source}\n  > {text}".into(),
+            excerpt_template: "- **{time}** · {source}\n  > {text}".into(),
             task_template: "- [ ] {text} {dueTag}".into(),
-            card_template: "- **{time}** · 来源：{source}\n  > {text}".into(),
+            card_template: "- **{time}** · {source}\n  > {text}".into(),
         }
     }
 }

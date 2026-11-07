@@ -100,7 +100,7 @@ export const DEFAULT_PROMPTS_ZH: Record<AiActionId, string> = {
 今天是 {date}，解析日期时间以此为基准。
 
 提取规则：
-- 用户消息开头的「来源页面：…」行只是辅助上下文（供理解事件背景），不要把它计入 urls 或任何组——只有选中正文里出现的链接才算
+- 用户消息开头的「Source page: …」行只是辅助上下文（供理解事件背景），不要把它计入 urls 或任何组——只有选中正文里出现的链接才算
 - events（日历事件）：文本中含日期或时间的事项，每个独立活动/阶段各一条。title 只写活动或阶段的简短名称（如「作品征集」「Coffee Talk」，尽量不超过 20 字），禁止把整段原文抄作 title；原文没有可辨识的名称时省略 title。日期区间拆成 start 与 end（如「征集 10.12—10.31」→ start 为今年-10-12、end 为今年-10-31）。时间段必须挂靠到就近的日期（如「10月31日 10:00-19:00」→ 同一天的 10:00 与 19:00，不得解析成今天或明天）。原文没写具体时间的用纯日期格式 YYYY-MM-DD（全天），禁止编造 12:00 之类的时间；有明确时间的用 YYYY-MM-DDTHH:mm。end 可省略。
 - places（地点）：现实可导航的地名、场所、商圈、场馆，按原文照抄。
 - urls / emails / tels / codes：文本中出现的链接、邮箱、电话号码、数字验证码，一律原文照抄，不补全、不改写。验证码只收明确用作口令/校验码的 4-8 位数字；年份、编号（如 #001）、日期时间的数字碎片都不是验证码。
@@ -160,7 +160,7 @@ Today is {date}; resolve all dates and times against this reference.
 
 Extraction rules:
 - A "Source page: ..." line at the start of the user message is context only (to understand the event background); never count it into urls or any group — only links appearing in the selected body count
-- events (calendar events): items containing a date or time, one entry per distinct activity/stage. title is only the short name of the activity or stage (e.g. "作品征集", "Coffee Talk", ideally ≤ 20 characters); never copy a whole sentence as title; omit title when the source has no recognizable name. Split date ranges into start and end (e.g. "征集 10.12—10.31" → start this-year-10-12, end this-year-10-31). A time span must attach to its nearest date (e.g. "10月31日 10:00-19:00" → 10:00 and 19:00 on that same day, never today or tomorrow). Without an explicit time use plain date format YYYY-MM-DD (all-day); never invent times like 12:00; with an explicit time use YYYY-MM-DDTHH:mm. end may be omitted.
+- events (calendar events): items containing a date or time, one entry per distinct activity/stage. title is only the short name of the activity or stage (e.g. "Call for entries", "Coffee Talk", ideally ≤ 20 characters); never copy a whole sentence as title; omit title when the source has no recognizable name. Split date ranges into start and end (e.g. "Submissions Oct 12—Oct 31" → start this-year-10-12, end this-year-10-31). A time span must attach to its nearest date (e.g. "Oct 31, 10:00-19:00" → 10:00 and 19:00 on that same day, never today or tomorrow). Without an explicit time use plain date format YYYY-MM-DD (all-day); never invent times like 12:00; with an explicit time use YYYY-MM-DDTHH:mm. end may be omitted.
 - places (locations): real, navigable place names, venues, districts, landmarks — copy them as written.
 - urls / emails / tels / codes: links, e-mail addresses, phone numbers and numeric verification codes appearing in the text are copied verbatim — no completion, no rewriting. Only 4-8 digit numbers explicitly used as passwords / verification codes count as codes; years, reference numbers (e.g. #001) and digit fragments of dates or times are not codes.
 - When unsure, leave it out; use an empty array for any category with nothing in it.

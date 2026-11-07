@@ -593,7 +593,7 @@ export default function App() {
           {
             role: "user",
             content: sourceUrl
-              ? `来源页面：${sourceUrl}\n\n${rawText.slice(0, 4000)}`
+              ? `Source page: ${sourceUrl}\n\n${rawText.slice(0, 4000)}`
               : rawText.slice(0, 4000),
           },
         ],

@@ -7,6 +7,7 @@
 // - 链接/邮箱/电话/验证码这类精确形态由正则兜底：AI 返回值必须过同一套校验才被采纳，
 //   AI 空组/失败/未配置时整组回落 textContext 正则 + 系统识别（NSDataDetector/NLTagger）
 import { effectivePrompt } from "./actions";
+import { getLocale } from "./i18n";
 import { extractEmail, extractTel, extractUrl } from "./textContext";
 
 /** 一个日历事件：startUnix/endUnix 为本地 unix 秒；allDay = 原文未给具体时间（纯日期） */
@@ -59,6 +60,7 @@ function cleanStrings(arr: unknown, validate?: (v: string) => boolean): string[]
 
 /** 构建提取用 system 提示词：defaultPrompt("extract")（随界面语言）或用户自定义（提示词页），
  * 替换 {date} 占位符为当天日期（含星期）——模型不知道「今天」，相对时间换算需要基准。
+ * 日期格式随界面语言：zh =「2026-11-07 星期六」，en =「2026-11-07 (Saturday)」。
  * 自定义模板丢了 {date} 也不补救：所见即所发，效果差是改坏者自己的责任 */
 export function buildExtractPrompt(
   actionPrompts?: Record<string, string>,
@@ -66,6 +68,12 @@ export function buildExtractPrompt(
 ): string {
   const p = (n: number) => String(n).padStart(2, "0");
   const today = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+  if (getLocale() === "en") {
+    const weekday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][
+      now.getDay()
+    ];
+    return effectivePrompt("extract", actionPrompts).replace("{date}", `${today} (${weekday})`);
+  }
   const weekday = "日一二三四五六"[now.getDay()];
   return effectivePrompt("extract", actionPrompts).replace("{date}", `${today} 星期${weekday}`);
 }
