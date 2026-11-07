@@ -20,6 +20,18 @@
   --danger: #d92f2f;
   --ok: #1f9d4d;
   --bad: #d92f2f;
+  /* 侧栏导航图标（每项一色，全低饱和；选中态统一转白，见 .nav-item.active） */
+  --ic-capture: #3478f6;
+  --ic-shortcuts: #5e5ce6;
+  --ic-model: #0e7490;
+  --ic-prompts: #e8833a;
+  --ic-translate: #2fa84f;
+  --ic-search: #64748b;
+  --ic-obsidian: #7c3aed;
+  --ic-blocklist: #e5484d;
+  --ic-general: #64748b;
+  --ic-perms: #b8860b;
+  --ic-about: #64748b;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -38,6 +50,18 @@
     --danger: #ff6b61;
     --ok: #32ad62;
     --bad: #ff6b61;
+    /* 暗底上整体提亮一档，保住色相可辨 */
+    --ic-capture: #6ea8ff;
+    --ic-shortcuts: #9494f0;
+    --ic-model: #45aebf;
+    --ic-prompts: #f09d5c;
+    --ic-translate: #58c271;
+    --ic-search: #94a3b8;
+    --ic-obsidian: #a78bfa;
+    --ic-blocklist: #f06a6e;
+    --ic-general: #94a3b8;
+    --ic-perms: #d4a72c;
+    --ic-about: #94a3b8;
   }
 }
 
@@ -79,6 +103,18 @@
   --danger: #ff6b61;
   --ok: #32ad62;
   --bad: #ff6b61;
+  /* 与系统暗色（媒体查询块）同款提亮 */
+  --ic-capture: #6ea8ff;
+  --ic-shortcuts: #9494f0;
+  --ic-model: #45aebf;
+  --ic-prompts: #f09d5c;
+  --ic-translate: #58c271;
+  --ic-search: #94a3b8;
+  --ic-obsidian: #a78bfa;
+  --ic-blocklist: #f06a6e;
+  --ic-general: #94a3b8;
+  --ic-perms: #d4a72c;
+  --ic-about: #94a3b8;
 }
 
 /* 强制暗色时与系统暗色同款的灰度抗锯齿（原媒体查询只覆盖跟随系统的路径） */
@@ -193,6 +229,20 @@ body {
   display: inline-flex;
   color: var(--sec);
 }
+
+/* 每项低饱和色相（色值见 :root 的 --ic-*，暗色提亮一档）；
+   选中态的白必须放在这些规则之后——同特异性靠源码顺序取胜 */
+.nav-item[data-nav="capture"] .nav-ic { color: var(--ic-capture); }
+.nav-item[data-nav="shortcuts"] .nav-ic { color: var(--ic-shortcuts); }
+.nav-item[data-nav="model"] .nav-ic { color: var(--ic-model); }
+.nav-item[data-nav="prompts"] .nav-ic { color: var(--ic-prompts); }
+.nav-item[data-nav="translate"] .nav-ic { color: var(--ic-translate); }
+.nav-item[data-nav="search"] .nav-ic { color: var(--ic-search); }
+.nav-item[data-nav="obsidian"] .nav-ic { color: var(--ic-obsidian); }
+.nav-item[data-nav="blocklist"] .nav-ic { color: var(--ic-blocklist); }
+.nav-item[data-nav="general"] .nav-ic { color: var(--ic-general); }
+.nav-item[data-nav="perms"] .nav-ic { color: var(--ic-perms); }
+.nav-item[data-nav="about"] .nav-ic { color: var(--ic-about); }
 
 .nav-item:hover {
   background: var(--hov);

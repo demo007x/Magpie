@@ -19,6 +19,7 @@ import {
 import {
   ACTIONS,
 } from "../shared/actions";
+import { t, useLocale } from "../shared/i18n";
 import {
   translateMissingReason,
 } from "../shared/translate";
@@ -85,6 +86,7 @@ export const allActionIds = (s: Settings) =>
 /// 看起来就像按钮没反应（提示只做文案级，不弹 toast——重）。
 
 export default function App() {
+  useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
   const [page, setPage] = useState<Page>("model");
   // 应用版本：运行时读取 tauri.conf.json 的权威值（不再手写，避免与配置漂移）
   const [appVersion, setAppVersion] = useState("");
@@ -142,6 +144,29 @@ export default function App() {
     setAppearance(mode); // 主窗口即时反馈（Rust 广播回来值相同，幂等）
     applyAppearance(mode);
     invoke("set_appearance", { theme: mode }).catch(() => undefined);
+  };
+
+  // 界面语言（auto=跟随系统 | zh | en）：偏好存 settings.uiLocale，切换走
+  // set_ui_locale（Rust 落盘 + 广播 locale://changed + 托盘重建）。主窗口
+  // 文案经 shared/i18n 的 locale store 渲染——initLocale 在 main.tsx 已挂
+  // locale://changed 监听，这里只需维护 seg 高亮的偏好镜像
+  const [uiLocale, setUiLocale] = useState<string>("auto");
+
+  useEffect(() => {
+    invoke<{ uiLocale?: string }>("get_settings")
+      .then((s) => setUiLocale(s.uiLocale ?? "auto"))
+      .catch(() => undefined);
+    const unLocale = listen<string>("locale://changed", (e) => {
+      setUiLocale(e.payload);
+    });
+    return () => {
+      unLocale.then((f) => f()).catch(() => undefined);
+    };
+  }, []);
+
+  const setUiLocalePref = (pref: string) => {
+    setUiLocale(pref); // 主窗口即时反馈（Rust 广播回来值相同，幂等）
+    invoke("set_ui_locale", { locale: pref }).catch(() => undefined);
   };
 
   /** 结果窗口预设档位（逻辑坐标），横竖两个方向 × 紧凑/宽敞两个量级：
@@ -208,7 +233,7 @@ export default function App() {
     if (!s) return;
     invoke("save_settings", { settings: s })
       .then(() => setSaved(true))
-      .catch((e) => toast(`保存失败：${e}`, "err"));
+      .catch((e) => toast(t("main.saveFailed", { error: String(e) }), "err"));
   }, []);
 
   // 动作开关/顺序/搜索引擎变更实时推送到浮动条（无需等保存）
@@ -258,19 +283,19 @@ export default function App() {
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
       })
-      .catch((e) => toast(`保存失败：${e}`, "err"));
+      .catch((e) => toast(t("main.saveFailed", { error: String(e) }), "err"));
   };
 
 
-  if (!settings) return <div className="loading">正在载入…</div>;
+  if (!settings) return <div className="loading">{t("main.loading")}</div>;
 
   return (
     <div className="shell">
       <aside className="side">
         <div className="brand">
-          <img className="mark" src={markIcon} alt="拾趣" />
+          <img className="mark" src={markIcon} alt={t("main.appName")} />
           <div className="brand-text">
-            <div className="brand-name">拾趣</div>
+            <div className="brand-name">{t("main.appName")}</div>
             <div className="brand-ver">{appVersion || "—"}</div>
           </div>
         </div>
@@ -281,28 +306,29 @@ export default function App() {
               // 「这是设置 App」推断的后缀；品牌名（Obsidian）保留原文。
               // 平台能力门控：本平台没有的能力不显示（winVmac Windows 约定）——
               // 划词/黑名单随 capture_status.captureAvailable 自动显隐
-              ["capture", "划词", captureReady],
-              ["shortcuts", "快捷键", true],
-              ["model", "模型", true],
-              ["prompts", "提示词", true],
-              ["translate", "翻译", true],
-              ["search", "搜索", true],
-              ["obsidian", "Obsidian", true],
-              ["blocklist", "黑名单", captureReady],
-              ["general", "通用", true],
-              ["perms", "权限", IS_MAC],
-              ["about", "关于", true],
+              ["capture", "nav.capture", captureReady],
+              ["shortcuts", "nav.shortcuts", true],
+              ["model", "nav.model", true],
+              ["prompts", "nav.prompts", true],
+              ["translate", "nav.translate", true],
+              ["search", "nav.search", true],
+              ["obsidian", "nav.obsidian", true],
+              ["blocklist", "nav.blocklist", captureReady],
+              ["general", "nav.general", true],
+              ["perms", "nav.perms", IS_MAC],
+              ["about", "nav.about", true],
             ] as Array<[Page, string, boolean]>
           )
             .filter(([, , show]) => show)
-            .map(([id, label]) => (
+            .map(([id, labelKey]) => (
               <button
                 key={id}
+                data-nav={id}
                 className={`nav-item ${page === id ? "active" : ""}`}
                 onClick={() => setPage(id)}
               >
                 <span className="nav-ic">{NAV_ICONS[id]}</span>
-                {label}
+                {t(labelKey)}
               </button>
             ))}
         </nav>
@@ -348,6 +374,8 @@ export default function App() {
             saveNow={saveNow}
             appearance={appearance}
             setAppearanceMode={setAppearanceMode}
+            uiLocale={uiLocale}
+            setUiLocale={setUiLocalePref}
           />
         )}
         {page === "about" && (

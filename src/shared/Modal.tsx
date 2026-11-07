@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import { t } from "./i18n";
 
 /** 全应用共用的模态容器：遮罩 + 卡片 + 标题 + Esc / 点遮罩关闭 + Tab 焦点循环。
  *
@@ -77,7 +78,7 @@ export function Modal({
       >
         <header className="modal-head">
           <h2>{title}</h2>
-          <button className="modal-x" aria-label="关闭" onClick={onClose}>
+          <button className="modal-x" aria-label={t("common.close")} onClick={onClose}>
             <X size={14} strokeWidth={1.75} />
           </button>
         </header>
@@ -93,7 +94,8 @@ export function Modal({
 export function Confirm({
   title,
   text,
-  confirmLabel = "删除",
+  confirmLabel,
+
   onCancel,
   onConfirm,
 }: {
@@ -111,10 +113,10 @@ export function Confirm({
       footer={
         <>
           <button className="btn sm" onClick={onCancel}>
-            取消
+            {t("common.cancel")}
           </button>
           <button className="btn sm danger" onClick={onConfirm}>
-            {confirmLabel}
+            {confirmLabel ?? t("common.delete")}
           </button>
         </>
       }

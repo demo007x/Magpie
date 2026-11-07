@@ -2,13 +2,15 @@
 import { Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import type { PageProps } from "./types";
+import { t, useLocale } from "../../shared/i18n";
 
 export default function BlocklistPage({ settings, patch, save, saved }: PageProps) {
+  useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
   return (
           <>
-            <h1>禁用应用</h1>
+            <h1>{t("blocklist.title")}</h1>
             <p className="page-hint">
-              列表内的应用在划词时不显示浮动条。「选择应用…」添加，条目右侧图标移除。更改需保存后生效。
+              {t("blocklist.hint")}
             </p>
 
             <div className="card">
@@ -16,9 +18,9 @@ export default function BlocklistPage({ settings, patch, save, saved }: PageProp
                 <div className="row-between tight">
                   <div>
                     <div className="row-title" style={{ color: "var(--sec)" }}>
-                      暂无禁用应用
+                      {t("blocklist.emptyTitle")}
                     </div>
-                    <div className="row-sub">列表为空，所有应用划词时均显示浮动条。</div>
+                    <div className="row-sub">{t("blocklist.emptySub")}</div>
                   </div>
                 </div>
               ) : (
@@ -27,8 +29,8 @@ export default function BlocklistPage({ settings, patch, save, saved }: PageProp
                     <div className="row-title">{name}</div>
                     <button
                       className="row-del"
-                      title="移出禁用列表"
-                      aria-label="移出禁用列表"
+                      title={t("blocklist.removeTitle")}
+                      aria-label={t("blocklist.removeTitle")}
                       onClick={() =>
                         patch({
                           appBlacklist: settings.appBlacklist.filter((_, idx) => idx !== i),
@@ -53,14 +55,14 @@ export default function BlocklistPage({ settings, patch, save, saved }: PageProp
                       .catch(() => undefined);
                   }}
                 >
-                  选择应用…
+                  {t("blocklist.pickApp")}
                 </button>
               </div>
             </div>
 
             <div className="save-bar">
               <button className="btn primary" onClick={save}>
-                {saved ? "已保存" : "保存更改"}
+                {saved ? t("common.saved") : t("common.saveChanges")}
               </button>
             </div>
     </>

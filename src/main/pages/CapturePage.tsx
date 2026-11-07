@@ -10,14 +10,16 @@ import { CONTEXT_ACTION_IDS, CUSTOM_ID_PREFIX } from "../../shared/actions";
 import { isAiAction } from "../App";
 import type { CustomAction } from "../../shared/types";
 import { SquarePen } from "lucide-react";
-import { ACTION_DESC, ACTION_LABELS } from "./labels";
+import { actionDesc, actionLabel } from "./labels";
 import { allActionIds } from "../App";
 import { CUSTOM_ICON_CHOICES, customIconNode } from "../../shared/icons";
 import type { PageProps } from "./types";
+import { t, useLocale } from "../../shared/i18n";
 
 const IS_MAC = /Mac/i.test(navigator.platform);
 
 export default function CapturePage({ settings, patch, saveNow }: PageProps) {
+  useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
   // 智能提取的前提：默认模型服务已配置（密钥与模型名齐备）——未配置时开关禁用，
   // 与浮动条 AI 动作的显示闸同一判据
   const smartExtractReady = settings
@@ -145,7 +147,7 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
     patch({
       customActions: [
         ...settings.customActions,
-        { id, name: "新动作", prompt: "", enabled: true },
+        { id, name: t("capture.newAction"), prompt: "", enabled: true },
       ],
       // 行序表补上新 id：追加在末尾，用户拖把手调整（与搜索引擎「添加」一致）
       actionOrder: [...allActionIds(settings), id],
@@ -170,12 +172,12 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
   /** 试跑：走默认模型服务（Rust 读的是已落盘的配置，未保存的改动不生效） */
   const runTry = (c: CustomAction) => {
     if (!c.prompt.trim()) {
-      setTryRun({ id: c.id, out: "", running: false, error: "先填提示词" });
+      setTryRun({ id: c.id, out: "", running: false, error: t("capture.tryNeedPrompt") });
       return;
     }
     const sample = (trySample[c.id] ?? "").trim();
     if (!sample) {
-      setTryRun({ id: c.id, out: "", running: false, error: "先填试跑样例" });
+      setTryRun({ id: c.id, out: "", running: false, error: t("capture.tryNeedSample") });
       return;
     }
     const runId = ++tryRunRef.current;
@@ -207,20 +209,21 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
 
   return (
           <>
-            <h1>划词</h1>
+            <h1>{t("nav.capture")}</h1>
             <p className="page-hint">
-              设定浮动条显示哪些动作及其排列顺序：拖动把手调序，开关停用某项。开关、顺序与自定义动作的编辑即时生效并自动保存。
+              {t("capture.hint")}
               <br />
-              「提取信息」仅在所选文字含网址 / 邮箱 / 电话 / 验证码 / 日期
-              {IS_MAC ? " / 地点" : ""}时出现。
+              {t("capture.extractHint", {
+                addr: IS_MAC ? t("capture.extractHintAddr") : "",
+              })}
             </p>
 
-            <h2 className="sec">胶囊</h2>
+            <h2 className="sec">{t("capture.capsuleSec")}</h2>
             <div className="card">
               <div className="row-between">
                 <div className="row-title">
-                  显示动作数
-                  <span className="action-desc">默认 4（可设 2–8）</span>
+                  {t("capture.showCount")}
+                  <span className="action-desc">{t("capture.showCountHint")}</span>
                 </div>
                 <div className="row-ctl">
                   <button
@@ -250,12 +253,11 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
               </div>
             </div>
 
-            <h2 className="sec">动作</h2>
+            <h2 className="sec">{t("capture.actionsSec")}</h2>
             {Object.values(settings.actions).every((v) => v === false) &&
               !settings.customActions.some((c) => c.enabled) && (
               <div className="all-off-note">
-                所有动作均已关闭：划词后浮动条将不再出现。主窗口仍可从菜单栏图标进入，
-                打开任一开关即可恢复。
+                {t("capture.allOff")}
               </div>
             )}
             <div className="card">
@@ -275,31 +277,31 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
                       <div className="row-title">
                         <span
                           className="grip"
-                          title="拖动排序"
+                          title={t("common.dragToSort")}
                           onMouseDown={(e) => onGripDown(e, k)}
                         >
                           <GripVertical size={13} strokeWidth={1.75} />
                         </span>
                         {c && (
-                          <span className="row-ic" title="动作图标">
+                          <span className="row-ic" title={t("capture.iconAlt")}>
                             {customIconNode(c.icon, 14) ?? <Sparkles size={14} strokeWidth={1.75} />}
                           </span>
                         )}
-                        {c ? c.name || "未命名" : ACTION_LABELS[k]}
+                        {c ? c.name || t("common.unnamed") : actionLabel(k)}
                         {c ? (
-                          <span className="tag mine">我的</span>
+                          <span className="tag mine">{t("capture.tagMine")}</span>
                         ) : (
                           isAiAction(k) && <span className="tag ai">AI</span>
                         )}
                         <span className="action-desc">
-                          {c ? (c.prompt.trim() ? "" : "未填提示词") : ACTION_DESC[k]}
+                          {c ? (c.prompt.trim() ? "" : t("common.promptNotSet")) : actionDesc(k)}
                         </span>
                       </div>
                       <div className="row-ctl">
                         {c && (
                           <button
                             className="svc-chev"
-                            title="编辑动作（名称、图标、提示词、试跑）"
+                            title={t("capture.editActionTitle")}
                             onClick={() => openActionModal(k)}
                           >
                             <SquarePen size={13} strokeWidth={2} />
@@ -324,7 +326,7 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
                                 !e.target.checked &&
                                 Object.values(settings.actions).filter(Boolean).length <= 1
                               ) {
-                                toast("至少保留一个动作", "err");
+                                toast(t("capture.keepOneAction"), "err");
                                 return;
                               }
                               patch({
@@ -348,21 +350,21 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
                 disabled={customActions.length >= CUSTOM_MAX}
                 title={
                   customActions.length >= CUSTOM_MAX
-                    ? `最多 ${CUSTOM_MAX} 个自定义动作`
-                    : "新建一个自定义 AI 动作"
+                    ? t("capture.customMax", { max: CUSTOM_MAX })
+                    : t("capture.customAddTitle")
                 }
                 onClick={addCustom}
               >
                 <Plus size={13} strokeWidth={2} />
-                新建 AI 动作
+                {t("capture.addCustom")}
               </button>
             </div>
 
-            <h2 className="sec">提取信息</h2>
+            <h2 className="sec">{t("capture.extractSec")}</h2>
             {/* 智能提取是「怎么提取」的模式，不是「提取什么」的功能——分段控件
                 置于节标题下、卡外（用户定稿 2026-10-24）；注释只陈述不解释 */}
             <div className="mode-line">
-              <div className="seg" role="radiogroup" aria-label="提取方式">
+              <div className="seg" role="radiogroup" aria-label={t("capture.extractModeAria")}>
                 <button
                   className={smartExtractReady && settings.smartExtract ? "on" : ""}
                   disabled={!smartExtractReady}
@@ -371,7 +373,7 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
                     saveNow?.();
                   }}
                 >
-                  AI 理解
+                  {t("capture.modeAi")}
                 </button>
                 <button
                   className={!(smartExtractReady && settings.smartExtract) ? "on" : ""}
@@ -380,24 +382,24 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
                     saveNow?.();
                   }}
                 >
-                  系统识别
+                  {t("capture.modeSystem")}
                 </button>
               </div>
               <span className="mode-note">
                 {/* 说明跟随所选选项（一行只说一件事）；AI 未配置时提示配置入口 */}
                 {!smartExtractReady
-                  ? "AI 理解需先在「模型」页配置服务"
+                  ? t("capture.modeAiHint")
                   : settings.smartExtract
-                    ? "识别更准，需要配置模型"
-                    : "不用配置，本机直接识别"}
+                    ? t("capture.modeAiOnHint")
+                    : t("capture.modeSystemHint")}
               </span>
             </div>
             <div className="card">
               {contextIds.map((k) => (
                 <div key={k} className="row-between sep action-row context-row">
                   <div className="row-title">
-                    {ACTION_LABELS[k]}
-                    <span className="action-desc">{ACTION_DESC[k]}</span>
+                    {actionLabel(k)}
+                    <span className="action-desc">{actionDesc(k)}</span>
                   </div>
                   <div className="row-ctl">
                     <label className="switch">
@@ -427,7 +429,9 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
               const running = tryRun?.id === c.id && tryRun.running;
               return (
                 <Modal
-                  title={`自定义动作「${c.name || "未命名"}」`}
+                  title={t("capture.customModalTitle", {
+                    name: c.name || t("common.unnamed"),
+                  })}
                   onClose={closeActionModal}
                   footer={
                     <>
@@ -441,37 +445,37 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
                           removeCustom(c.id);
                         }}
                       >
-                        {delArm ? "确认删除？" : "删除"}
+                        {delArm ? t("capture.confirmDelete") : t("common.delete")}
                       </button>
                       <button className="btn primary sm" onClick={closeActionModal}>
-                        完成
+                        {t("common.done")}
                       </button>
                     </>
                   }
                 >
                   <label className="field">
-                    <span>名称（显示在胶囊按钮上，建议不超过 6 字）</span>
+                    <span>{t("capture.nameField")}</span>
                     <input
                       value={c.name}
                       maxLength={8}
-                      placeholder="如：术语直译"
+                      placeholder={t("capture.namePh")}
                       onChange={(e) => updateCustom(c.id, { name: e.target.value })}
                     />
                   </label>
                   <label className="field">
-                    <span>提示词（发给模型的指令，所选文字随后附带，无需占位符）</span>
+                    <span>{t("capture.promptField")}</span>
                     <textarea
                       className="prompt-input in-field"
                       spellCheck={false}
                       rows={5}
-                      placeholder="例：把下面的文本译成中文，保留英文术语并在括号内附原文，只输出译文。"
+                      placeholder={t("capture.promptPh")}
                       value={c.prompt}
                       onChange={(e) => updateCustom(c.id, { prompt: e.target.value })}
                     />
                   </label>
                   <div className="field">
-                    <span>图标（显示在胶囊按钮左侧）</span>
-                    <div className="icon-tabs" role="tablist" aria-label="图标分组">
+                    <span>{t("capture.iconField")}</span>
+                    <div className="icon-tabs" role="tablist" aria-label={t("capture.iconTabsAria")}>
                       {CUSTOM_ICON_CHOICES.map((g) => (
                         <button
                           key={g.group}
@@ -488,13 +492,13 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
                       const group = CUSTOM_ICON_CHOICES.find((g) => g.group === iconTab);
                       if (!group) return null;
                       return (
-                        <div className="icon-grid" role="radiogroup" aria-label={`图标 · ${group.group}`}>
+                        <div className="icon-grid" role="radiogroup" aria-label={t("capture.iconGroupAria", { group: group.group })}>
                           {group.group === CUSTOM_ICON_CHOICES[0].group && (
                             <button
                               type="button"
                               className={`icon-cell ${!c.icon ? "on" : ""}`}
-                              title="默认"
-                              aria-label="默认图标"
+                              title={t("common.default")}
+                              aria-label={t("capture.iconDefaultAria")}
                               onClick={() => updateCustom(c.id, { icon: undefined })}
                             >
                               <Sparkles size={16} strokeWidth={1.75} />
@@ -518,11 +522,11 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
                   </div>
                   <div className="try-block">
                     <label className="field">
-                      <span>试跑：样例（作为所选文字发给模型，不保存）</span>
+                      <span>{t("capture.trySampleField")}</span>
                       <textarea
                         className="prompt-input in-field try-sample"
                         spellCheck={false}
-                        placeholder="粘贴一段待处理的文字，例如：The committee deferred the decision pending further audit evidence."
+                        placeholder={t("capture.trySamplePh")}
                         value={trySample[c.id] ?? ""}
                         onChange={(e) => setTrySample((m) => ({ ...m, [c.id]: e.target.value }))}
                       />
@@ -533,7 +537,7 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
                       </pre>
                     )}
                     <button className="btn sm" disabled={running} onClick={() => runTry(c)}>
-                      {running ? "生成中…" : "试跑"}
+                      {running ? t("capture.generating") : t("capture.tryRun")}
                     </button>
                   </div>
                 </Modal>

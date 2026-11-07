@@ -12,6 +12,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { POPS_EXTERNAL } from "./env";
 import type { HoverMenuId } from "./env";
 import type { SearchEngine } from "../shared/types";
+import { engineDisplayName } from "../shared/engineNames";
+import { t, useLocale } from "../shared/i18n";
 
 // 弹层同步的入参类型：数据端（服务/引擎/收纳清单）与状态端（menu、服务选择）
 // 全部由 App 渲染期闭包提供，签名依赖在 App 处声明（见 hook 内 effect 注释）
@@ -52,23 +54,27 @@ export function usePopsSync(opts: {
     setUsedEngine,
   } = opts;
 
+  // 界面语言：订阅 locale store。语言切换经渲染期 t() 得到新文案，并把 locale
+  // 计入同步 effect 依赖——仅词典文案变化（如 Obsidian 目标名）也重推 payload
+  const locale = useLocale();
+
   const menuItemsFor = (kind: string) =>
     kind === "translate"
       ? enabledTranslates.map((s) => ({
           key: s.id,
-          label: s.label,
+          label: t(s.label), // 服务 label 是 i18n 键（tsvc.*.label），同步前解析
           on: s.id === (usedTranslate ?? defaultTranslateId ?? null),
         }))
       : kind === "search"
         ? enabledEngines.map((en) => ({
             key: en.name,
-            label: en.name,
+            label: engineDisplayName(en.name), // 展示层映射内置中文名；key 保持原名供高亮匹配
             on: en.name === (usedEngine ?? defaultEngineName ?? null),
           }))
         : [
-            { key: "note", label: "笔记", on: true },
-            { key: "task", label: "任务", on: false },
-            { key: "card", label: "卡片", on: false },
+            { key: "note", label: t("floating.targetNote"), on: true },
+            { key: "task", label: t("floating.targetTask"), on: false },
+            { key: "card", label: t("floating.targetCard"), on: false },
           ];
   // 行 ⌄ 的判定（动态，非 barEntries.hasMenu）：翻译行=多个翻译服务、
   // 搜索行=多个引擎、Obsidian 行=已配置 vault——macOS 面板渲染、Windows
@@ -147,9 +153,10 @@ export function usePopsSync(opts: {
       rowY: null,
       data: { type: "menu", kind, items: menuItemsFor(kind) },
     }).catch(() => undefined);
-    // panelData/menuItemsFor 是渲染期闭包：数据变化由上面的签名依赖表达
+    // panelData/menuItemsFor 是渲染期闭包：数据变化由上面的签名依赖表达；
+    // locale 不进签名（面板/菜单文案不含全部标签），语言切换靠它触发重推
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menu, panelSig, translateSig, enginesSig, usedTranslate, usedEngine, defaultTranslateId, defaultEngineName]);
+  }, [menu, panelSig, translateSig, enginesSig, usedTranslate, usedEngine, defaultTranslateId, defaultEngineName, locale]);
 
   // 行侧菜单展开（Windows 分离卡）：pmenu 锚点 rowY 只有面板窗口知道，随
   // menu-toggle 点击 / row-hover 上报带来；面板 payload 一并重发让 pchev

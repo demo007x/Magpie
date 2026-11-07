@@ -328,6 +328,9 @@ pub struct Settings {
     /// 应用外观："auto"（跟随系统，默认）| "light" | "dark"
     #[serde(default)]
     pub appearance: String,
+    /// 界面语言："auto"（跟随系统：中文系统→中文、其余→英文；默认）| "zh" | "en"
+    #[serde(default = "default_ui_locale")]
+    pub ui_locale: String,
     /// 智能提取：「提取信息」面板中日期/地点等语义信息优先由 AI 理解
     ///（需已配置默认模型服务）；关闭或未配置时走系统识别（NSDataDetector/NLTagger）
     #[serde(default = "default_true")]
@@ -355,6 +358,10 @@ fn default_file_ocr_shortcut() -> String {
 }
 
 fn default_appearance() -> String {
+    "auto".into()
+}
+
+fn default_ui_locale() -> String {
     "auto".into()
 }
 
@@ -392,6 +399,7 @@ impl Default for Settings {
             result_window_size: None,
             result_window_pinned: true,
             appearance: default_appearance(),
+            ui_locale: default_ui_locale(),
             smart_extract: true,
         }
     }
@@ -538,4 +546,19 @@ pub fn set_appearance(app: AppHandle, theme: String) {
     }
     patch(&app, |s| s.appearance = theme);
     apply_appearance(&app);
+}
+
+/// 界面语言切换：校验 → 落盘 → 更新 Rust 侧现行语言 → 广播偏好 → 托盘重建。
+/// 广播的是偏好值而非生效值——auto 下 TS 侧按 navigator.language、Rust 侧按
+/// sys-locale 各自解析，规则同源（i18n::resolve_auto）
+#[tauri::command]
+pub fn set_ui_locale(app: AppHandle, locale: String) {
+    if !matches!(locale.as_str(), "auto" | "zh" | "en") {
+        return;
+    }
+    patch(&app, |s| s.ui_locale = locale.clone());
+    crate::i18n::set_active(crate::i18n::effective_from_pref(&locale));
+    let _ = app.emit("locale://changed", locale);
+    // 托盘菜单文案随语言重建（与快捷键变更后重建同一先例）
+    let _ = crate::rebuild_tray_menu(&app);
 }

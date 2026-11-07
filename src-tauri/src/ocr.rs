@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use tauri::Emitter;
+
+use crate::i18n::t;
 // Windows 识图流程（下方 cfg(windows) 函数）使用裸 AppHandle；
 // macOS 编译路径无此使用，按平台门控导入避免 unused 警告
 #[cfg(target_os = "windows")]
@@ -24,7 +26,7 @@ pub fn recognize_file(path: &Path) -> Result<String, String> {
     let output = Command::new(&helper)
         .arg(path)
         .output()
-        .map_err(|e| format!("无法启动 OCR 助手: {e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.ocrHelperLaunch")))?;
     eprintln!("[ocr] 助手退出：status={}", output.status);
 
     if !output.status.success() {
@@ -35,7 +37,8 @@ pub fn recognize_file(path: &Path) -> Result<String, String> {
             return Err(reason.to_string());
         }
         return Err(format!(
-            "文本识别失败{}",
+            "{}{}",
+            t("err.recognizeFailed"),
             if stderr.is_empty() {
                 String::new()
             } else {
@@ -46,7 +49,7 @@ pub fn recognize_file(path: &Path) -> Result<String, String> {
 
     let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if text.is_empty() {
-        return Err("未识别到文字".into());
+        return Err(t("ocr.noText").into());
     }
     eprintln!("[ocr] 识别成功：len={}", text.len());
     Ok(text)
@@ -145,7 +148,7 @@ pub async fn recognize_and_push(
     service: Option<String>,
 ) {
     eprintln!("[magpie:ocr] 截图完成，开始识别");
-    crate::toast::show_toast_sticky(app, "正在识别…", "progress");
+    crate::toast::show_toast_sticky(app, t("toast.recognizing"), "progress");
     let run = action.map(|a| (a, service.clone()));
     let img = image.clone(); // 识别在闭包内消费，image 留给失败清理与钉图
     match tauri::async_runtime::spawn_blocking(move || recognize_file(&img)).await {
@@ -159,7 +162,7 @@ pub async fn recognize_and_push(
             // 「未识别到文字」自愈重截仅 macOS（Windows 框选是自家遮罩窗 +
             // BitBlt 一次成帧，无过渡帧问题，不做无据修复）
             #[cfg(target_os = "macos")]
-            if e == "未识别到文字" {
+            if e == t("ocr.noText") {
                 if let Some((text, retry_image)) = retry_region_capture() {
                     crate::toast::hide_toast(app);
                     push_ocr_result(app, text, retry_image, run);
@@ -174,12 +177,12 @@ pub async fn recognize_and_push(
                 "[ocr] 识别失败：{e}；截图 {dims} {}",
                 image.display()
             ));
-            if e != "未识别到文字" {
+            if e != t("ocr.noText") {
                 let _ = std::fs::remove_file(&image);
             }
             // 统一话术：主行说发生了什么，次行说该怎么办（toast 两段式）
-            let msg = if e == "未识别到文字" {
-                "未检测到文字\n重新框选，确认区域内有清晰的文字".to_string()
+            let msg = if e == t("ocr.noText") {
+                t("toast.noTextHint").to_string()
             } else {
                 e.clone()
             };
@@ -240,10 +243,10 @@ pub fn push_text_to_ocr_window(app: &tauri::AppHandle, text: String, image: Opti
 }
 
 fn helper_path() -> Result<std::path::PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|e| format!("无法定位应用目录: {e}"))?;
+    let exe = std::env::current_exe().map_err(|e| format!("{}: {e}", t("err.appDirLocate")))?;
     let dir = exe
         .parent()
-        .ok_or_else(|| "无法定位应用目录".to_string())?;
+        .ok_or_else(|| t("err.appDirLocate").to_string())?;
     // Windows 上 std 不会为带目录的路径自动补 .exe，显式声明
     #[cfg(target_os = "windows")]
     return Ok(dir.join("ocr_helper.exe"));
@@ -276,6 +279,7 @@ mod win_region {
     use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
     use crate::capture::{debug_log, CaptureMuteGuard};
+    use crate::i18n::t;
     use std::time::Duration;
 
     /// 待续流程：(自动执行动作, 翻译服务)。region_selected 后消费
@@ -319,7 +323,7 @@ mod win_region {
             .monitor_from_point(px as f64, py as f64)
             .ok()
             .flatten()
-            .ok_or_else(|| "无法定位光标所在显示器".to_string())?;
+            .ok_or_else(|| t("toast.noMonitor").to_string())?;
         let s = mon.scale_factor();
         let (pos, size) = (mon.position(), mon.size());
         // 残留旧窗先关（异常退出可能留下）。close 是异步销毁——必须等窗口
@@ -509,7 +513,7 @@ mod win_region {
         }
         let output = cmd
             .output()
-            .map_err(|e| format!("无法启动截屏进程: {e}"))?;
+            .map_err(|e| format!("{}: {e}", t("err.snapProcLaunch")))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             let reason = stderr.strip_prefix("ERR:").unwrap_or(&stderr).to_string();

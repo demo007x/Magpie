@@ -5,6 +5,8 @@
 
 use std::path::{Component, Path, PathBuf};
 
+use crate::i18n::t;
+
 /// vault 相对路径安全拼接：拒绝 `..` 逃逸与绝对路径注入
 fn safe_join(vault: &str, rel: &str) -> Option<PathBuf> {
     let rel = rel.trim().trim_start_matches(['/', '\\']);
@@ -35,11 +37,11 @@ pub fn obsidian_append(
 
     let vault = crate::settings::current(&app).obsidian.vault_path;
     if vault.trim().is_empty() {
-        return Err("未配置 Obsidian vault 目录".into());
+        return Err(t("err.vaultNotConfigured").into());
     }
-    let path = safe_join(&vault, &rel_path).ok_or_else(|| "路径不合法".to_string())?;
+    let path = safe_join(&vault, &rel_path).ok_or_else(|| t("err.invalidPath").to_string())?;
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("无法创建目录：{e}"))?;
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", t("err.mkdirFailed")))?;
     }
 
     let needs_sep = std::fs::metadata(&path).map(|m| m.len() > 0).unwrap_or(false);
@@ -47,12 +49,12 @@ pub fn obsidian_append(
         .create(true)
         .append(true)
         .open(&path)
-        .map_err(|e| format!("无法打开文件：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.fileOpenFailed")))?;
     if needs_sep {
         f.write_all(b"\n").map_err(|e| e.to_string())?;
     }
     f.write_all(content.as_bytes())
-        .map_err(|e| format!("写入失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.writeFailed")))?;
     if !content.ends_with('\n') {
         f.write_all(b"\n").map_err(|e| e.to_string())?;
     }

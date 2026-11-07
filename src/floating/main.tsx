@@ -5,6 +5,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import App from "./App";
 import PopCard from "./pops";
 import { interceptExternalLinks } from "../shared/external-links";
+import { initLocale, t } from "../shared/i18n";
 import "./floating.css";
 
 // dev 专用自愈：结果窗/胶囊窗常驻后台，隐藏时 WebView2 被系统节流，vite 的
@@ -23,6 +24,9 @@ if (import.meta.hot) {
 
 // 应用内链接一律外部打开（结果窗译文里的 URL 等），webview 永不自行导航
 interceptExternalLinks();
+
+// 界面语言：拉取设置算生效语言并挂 locale://changed（不阻塞首帧，拉到后整体刷新）
+void initLocale();
 
 // 平台根类：Windows 上窗口阴影（DWM 矩形投影）在透明窗上不渲染，
 // 悬浮感由 CSS 自绘接管（floating.css 的 html.win 规则，对齐 toast.css 先例）；
@@ -98,7 +102,7 @@ class FloatingBoundary extends React.Component<
             maxWidth: 360,
           }}
         >
-          界面异常：{String(this.state.error.message ?? this.state.error)}
+          {t("floating.uiError", { msg: String(this.state.error.message ?? this.state.error) })}
         </div>
       );
     }

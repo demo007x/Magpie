@@ -1,6 +1,7 @@
-// 通用页：主题（跟随系统/亮/暗）、登录自启、程序坞图标（macOS）、结果窗默认尺寸。
+// 通用页：主题（跟随系统/亮/暗）、界面语言（跟随系统/中/英）、登录自启、程序坞图标（macOS）、结果窗默认尺寸。
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "../../shared/toast";
+import { t, useLocale } from "../../shared/i18n";
 import type { PageProps } from "./types";
 
 const IS_MAC = /Mac/i.test(navigator.platform);
@@ -8,18 +9,21 @@ const IS_MAC = /Mac/i.test(navigator.platform);
 interface GeneralProps extends Omit<PageProps, "save"> {
   appearance: string;
   setAppearanceMode: (mode: string) => void;
+  uiLocale: string;
+  setUiLocale: (pref: string) => void;
 }
 
   const RESULT_SIZE_PRESETS: { label: string; size: [number, number] }[] = [
-    { label: "紧凑·横", size: [560, 320] },
-    { label: "紧凑·竖", size: [400, 560] },
-    { label: "宽敞·横", size: [560, 480] },
-    { label: "宽敞·竖", size: [480, 800] },
+    { label: "general.sizeCompactH", size: [560, 320] },
+    { label: "general.sizeCompactV", size: [400, 560] },
+    { label: "general.sizeRoomyH", size: [560, 480] },
+    { label: "general.sizeRoomyV", size: [480, 800] },
   ];
 
 
 
-export default function GeneralPage({ settings, patch, saveNow, appearance, setAppearanceMode }: GeneralProps) {
+export default function GeneralPage({ settings, patch, saveNow, appearance, setAppearanceMode, uiLocale, setUiLocale }: GeneralProps) {
+  useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
   const applyResultPreset = (size: [number, number]) => {
     invoke("apply_result_preset", { width: size[0], height: size[1] }).catch(() => undefined);
     // save_settings 提交的是本地全量 settings——本地不同步的话，其他页面的保存会回退预设
@@ -27,22 +31,19 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
   };
   return (
           <>
-            <h1>通用</h1>
-            <p className="page-hint">主题、启动、程序坞与结果窗口的应用级设置，除注明外更改即时生效。</p>
-            <h2 className="sec">主题</h2>
+            <h1>{t("nav.general")}</h1>
+            <p className="page-hint">{t("general.hint")}</p>
+            <h2 className="sec">{t("general.themeSec")}</h2>
             <div className="card">
               <div className="row-between">
                 <div>
-                  <div className="row-title">应用外观</div>
-                  <div className="row-sub">
-                    亮色、暗色或跟随系统自动切换。即时生效，覆盖浮动条、识别面板与提示。
-                  </div>
+                  <div className="row-title">{t("general.appearance")}</div>
                 </div>
-                <div className="seg" role="radiogroup" aria-label="应用外观">
+                <div className="seg" role="radiogroup" aria-label={t("general.appearance")}>
                   {[
-                    ["auto", "跟随系统"],
-                    ["light", "亮色"],
-                    ["dark", "暗色"],
+                    ["auto", t("general.appearanceAuto")],
+                    ["light", t("general.appearanceLight")],
+                    ["dark", t("general.appearanceDark")],
                   ].map(([value, label]) => (
                     <button
                       key={value}
@@ -56,13 +57,42 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
               </div>
             </div>
 
-            <h2 className="sec">启动</h2>
+            <h2 className="sec">{t("general.languageSec")}</h2>
             <div className="card">
               <div className="row-between">
                 <div>
-                  <div className="row-title">登录时自动启动</div>
+                  <div className="row-title">{t("general.uiLocaleTitle")}</div>
                   <div className="row-sub">
-                    登录后自动在菜单栏运行拾趣，无需手动打开。
+                    {t("general.uiLocaleSub")}
+                  </div>
+                </div>
+                <div className="seg" role="radiogroup" aria-label={t("general.uiLocaleTitle")}>
+                  {(
+                    [
+                      ["auto", t("general.uiLocaleAuto")],
+                      ["zh", "中文"],
+                      ["en", "English"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      className={uiLocale === value ? "on" : ""}
+                      onClick={() => setUiLocale(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <h2 className="sec">{t("general.launchSec")}</h2>
+            <div className="card">
+              <div className="row-between">
+                <div>
+                  <div className="row-title">{t("general.launchAtLogin")}</div>
+                  <div className="row-sub">
+                    {t("general.launchAtLoginSub")}
                   </div>
                 </div>
                 <label className="switch">
@@ -73,7 +103,9 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
                       const enabled = e.target.checked;
                       invoke("set_launch_at_login", { enabled })
                         .then(() => patch({ launchAtLogin: enabled }))
-                        .catch((err) => toast(`设置失败：${err}`, "err"));
+                        .catch((err) =>
+                          toast(t("general.setFailed", { error: String(err) }), "err"),
+                        );
                     }}
                   />
                   <span className="knob" />
@@ -84,13 +116,13 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
             {/* 程序坞为 macOS 概念：Windows 无程序坞，整节隐藏（能力门控） */}
             {IS_MAC && (
             <>
-            <h2 className="sec">程序坞</h2>
+            <h2 className="sec">{t("general.dockSec")}</h2>
             <div className="card">
               <div className="row-between">
                 <div>
-                  <div className="row-title">在程序坞中显示图标</div>
+                  <div className="row-title">{t("general.dockIcon")}</div>
                   <div className="row-sub">
-                    开启后程序坞同时显示图标；关闭仅保留菜单栏，退出用菜单栏右键。
+                    {t("general.dockIconSub")}
                   </div>
                 </div>
                 <label className="switch">
@@ -109,16 +141,13 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
             </>
             )}
 
-            <h2 className="sec">结果窗口</h2>
+            <h2 className="sec">{t("general.resultSec")}</h2>
             <div className="card">
               <div className="row-between">
                 <div>
-                  <div className="row-title">默认尺寸</div>
-                  <div className="row-sub">
-                    预设四种大小，点选立即作用于结果窗口。
-                  </div>
+                  <div className="row-title">{t("general.resultSize")}</div>
                 </div>
-                <div className="seg sized" role="radiogroup" aria-label="结果窗口默认尺寸">
+                <div className="seg sized" role="radiogroup" aria-label={t("general.resultSize")}>
                   {RESULT_SIZE_PRESETS.map((p) => {
                     const rs = settings.resultWindowSize;
                     const active =
@@ -131,7 +160,7 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
                         className={active ? "on" : ""}
                         onClick={() => applyResultPreset(p.size)}
                       >
-                        {p.label}
+                        {t(p.label)}
                         <small>
                           {p.size[0]} × {p.size[1]}
                         </small>

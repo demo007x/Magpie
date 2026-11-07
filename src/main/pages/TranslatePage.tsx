@@ -8,6 +8,7 @@ import { toast } from "../../shared/toast";
 import { Confirm } from "../../shared/Modal";
 import { TRANSLATE_SERVICES, translateService, type TranslateService } from "../../shared/translate";
 import type { PageProps } from "./types";
+import { t, useLocale } from "../../shared/i18n";
 
 export default function TranslatePage({
   settings,
@@ -23,6 +24,7 @@ export default function TranslatePage({
   svcOpen: Record<string, boolean>;
   setSvcOpen: (f: (m: Record<string, boolean>) => Record<string, boolean>) => void;
 }) {
+  useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
   // ---- 翻译服务排序（拖拽，同引擎列表） ----
   const svcRowEls = useRef<Map<string, HTMLDivElement>>(new Map());
   const [svcDragId, setSvcDragId] = useState<string | null>(null);
@@ -40,13 +42,13 @@ export default function TranslatePage({
   // 凭据保留（用量耗尽时先停不删配置）
   const translateRows: TranslateService[] = (() => {
     if (!settings) return [];
-    const t = settings.translate;
+    const cfg = settings.translate;
     const regIdx = (id: string) => TRANSLATE_SERVICES.findIndex((s) => s.id === id);
     const okey = (id: string) => {
-      const i = t.order.indexOf(id);
+      const i = cfg.order.indexOf(id);
       return i >= 0 ? i : TRANSLATE_SERVICES.length + regIdx(id);
     };
-    return [...new Set([...t.order, ...t.enabled])]
+    return [...new Set([...cfg.order, ...cfg.enabled])]
       .map((id) => translateService(id))
       .filter((s): s is TranslateService => !!s)
       .sort((a, b) => okey(a.id) - okey(b.id));
@@ -114,7 +116,7 @@ export default function TranslatePage({
     if (!settings) return;
     const cur = settings.translate;
     if (cur.enabled.length <= 1) {
-      toast("至少保留一个翻译服务", "err");
+      toast(t("translate.keepOne"), "err");
       return;
     }
     const enabled = cur.enabled.filter((x) => x !== id);
@@ -168,12 +170,12 @@ export default function TranslatePage({
 
   return (
           <>
-            <h1>翻译</h1>
+            <h1>{t("nav.translate")}</h1>
             <p className="page-hint">
-              「添加服务」选择服务商，添加即启用；开关可随时停用，配置保留；密钥在行内填写，「默认」为单击直达项，拖动调整顺序；译文方向自动识别。点「保存更改」永久生效。
+              {t("translate.hint")}
             </p>
 
-            <h2 className="sec">服务</h2>
+            <h2 className="sec">{t("model.servicesSec")}</h2>
             <div className="card">
               {translateRows.map((svc) => (
                 <div
@@ -189,21 +191,21 @@ export default function TranslatePage({
                   <div className="svc-main">
                     <span
                       className="grip"
-                      title="拖动排序"
+                      title={t("common.dragToSort")}
                       onMouseDown={(e) => onSvcGripDown(e, svc.id)}
                     >
                       <GripVertical size={13} strokeWidth={1.75} />
                     </span>
                     <div className="svc-content">
                       <div className="svc-head">
-                        <div className="row-title">{svc.label}</div>
+                        <div className="row-title">{t(svc.label)}</div>
                         <div className="row-ctl">
                           <label
                             className="radio sm"
                             title={
                               settings.translate.enabled.includes(svc.id)
-                                ? "设为默认翻译服务"
-                                : "启用后才可设为默认"
+                                ? t("translate.setDefaultTitle")
+                                : t("common.setDefaultDisabled")
                             }
                           >
                             <input
@@ -215,9 +217,9 @@ export default function TranslatePage({
                                 patch({ translate: { ...settings.translate, default: svc.id } })
                               }
                             />
-                            默认
+                            {t("common.default")}
                           </label>
-                          <label className="switch" title="启用后进入「翻译」展开列表">
+                          <label className="switch" title={t("translate.enableHint")}>
                             <input
                               type="checkbox"
                               checked={settings.translate.enabled.includes(svc.id)}
@@ -227,11 +229,11 @@ export default function TranslatePage({
                           </label>
                           <button
                             className="row-del"
-                            title="移除该服务"
-                            aria-label={`移除${svc.label}`}
+                            title={t("translate.removeSvcTitle")}
+                            aria-label={t("translate.removeSvcAria", { name: t(svc.label) })}
                             onClick={() => {
                               if (settings.translate.enabled.length <= 1) {
-                                toast("至少保留一个翻译服务", "err");
+                                toast(t("translate.keepOne"), "err");
                                 return;
                               }
                               setConfirmDelSvc(svc.id);
@@ -241,14 +243,18 @@ export default function TranslatePage({
                           </button>
                           <button
                             className={`svc-chev ${svcOpen[svc.id] ? "open" : ""}`}
-                            title={svcOpen[svc.id] ? "收起配置" : "展开配置"}
+                            title={
+                              svcOpen[svc.id]
+                                ? t("translate.collapseCfg")
+                                : t("translate.expandCfg")
+                            }
                             onClick={() => setSvcOpen((m) => ({ ...m, [svc.id]: !m[svc.id] }))}
                           >
                             <ChevronDown size={13} strokeWidth={2} />
                           </button>
                         </div>
                       </div>
-                      <div className="row-sub">{svc.blurb}</div>
+                      <div className="row-sub">{t(svc.blurb)}</div>
 
                       {svc.auth === "ai" && (
                         <div className={`svc-body ${svcOpen[svc.id] ? "open" : ""}`}>
@@ -259,7 +265,7 @@ export default function TranslatePage({
                                   className="btn sm"
                                   onClick={() => setPage("model")}
                                 >
-                                  前往模型服务
+                                  {t("translate.goModel")}
                                 </button>
                               </div>
                             </div>
@@ -276,7 +282,7 @@ export default function TranslatePage({
                                   key={f.field}
                                   className={`field ${svc.fields.length === 1 ? "wide" : ""}`}
                                 >
-                                  <span>{f.label}</span>
+                                  <span>{t(f.label)}</span>
                                   <input
                                     type={f.secret ? "password" : "text"}
                                     value={
@@ -287,7 +293,7 @@ export default function TranslatePage({
                                     onChange={(e) =>
                                       updateCred(svc.id, f.field, e.target.value)
                                     }
-                                    placeholder={f.placeholder}
+                                    placeholder={t(f.placeholder)}
                                   />
                                 </label>
                               ))}
@@ -300,7 +306,7 @@ export default function TranslatePage({
                                     )
                                   }
                                 >
-                                  {svc.docsLabel}
+                                  {t(svc.docsLabel)}
                                 </button>
                               </div>
                             </div>
@@ -314,7 +320,8 @@ export default function TranslatePage({
               {TRANSLATE_SERVICES.some((s) => !addedServiceIds.has(s.id)) && (
                 <div className="card-foot">
                   <button className="btn sm" onClick={() => setSvcPickerOpen((v) => !v)}>
-                    <Plus size={13} strokeWidth={2} /> {svcPickerOpen ? "收起" : "添加服务"}
+                    <Plus size={13} strokeWidth={2} />{" "}
+                    {svcPickerOpen ? t("common.collapse") : t("common.addService")}
                   </button>
                 </div>
               )}
@@ -334,7 +341,7 @@ export default function TranslatePage({
                           setSvcPickerOpen(false);
                         }}
                       >
-                        {added ? `✓ ${s.label}` : s.label}
+                        {added ? `✓ ${t(s.label)}` : t(s.label)}
                       </button>
                     );
                   })}
@@ -344,7 +351,7 @@ export default function TranslatePage({
 
             <div className="save-bar">
               <button className="btn primary" onClick={save}>
-                {saved ? "已保存" : "保存更改"}
+                {saved ? t("common.saved") : t("common.saveChanges")}
               </button>
             </div>
 
@@ -354,8 +361,8 @@ export default function TranslatePage({
                 if (!svc) return null;
                 return (
                   <Confirm
-                    title="移除翻译服务"
-                    text={`移除「${svc.label}」？已填写的密钥会一并删除；停用可保留配置。`}
+                    title={t("translate.removeTitle")}
+                    text={t("translate.removeText", { name: t(svc.label) })}
                     onCancel={() => setConfirmDelSvc(null)}
                     onConfirm={() => removeTranslate(confirmDelSvc)}
                   />

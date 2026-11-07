@@ -5,6 +5,7 @@ import type { MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ScanSearch } from "lucide-react";
+import { t, useLocale } from "../shared/i18n";
 import { CheckIcon, CloseIcon, CopyIcon } from "./icons";
 
 // 钉图四周透明出血（给投影留渲染空间）：与 floating.css .pin 的 padding、
@@ -12,6 +13,8 @@ import { CheckIcon, CloseIcon, CopyIcon } from "./icons";
 const PAD = 12;
 
 export default function PinView() {
+  // 界面语言：订阅 locale store（aria-label 渲染期 t() 取词）
+  useLocale();
   const [data, setData] = useState<{ url: string; scale: number } | null>(null);
   // 实时屏幕缩放系数：payload 快照只作初值——窗口刚创建未落屏时 scale_factor
   // 取不到、Rust 兜底 2.0，在 @1x 屏上会把图按一半尺寸渲染（浏览器插值缩小，
@@ -176,16 +179,16 @@ export default function PinView() {
       <div className="pin-tools">
         <button
           className="tool"
-          aria-label="识别文字"
+          aria-label={t("floating.snipOcr")}
           disabled={busy}
           onClick={recognize}
         >
           <ScanSearch size={13} strokeWidth={1.75} />
         </button>
-        <button className="tool" aria-label="复制图片" onClick={copyImage}>
+        <button className="tool" aria-label={t("floating.ariaCopyImage")} onClick={copyImage}>
           {copied ? CheckIcon : CopyIcon}
         </button>
-        <button className="tool" aria-label="关闭" onClick={() => invoke("close_pin").catch(() => undefined)}>
+        <button className="tool" aria-label={t("common.close")} onClick={() => invoke("close_pin").catch(() => undefined)}>
           {CloseIcon}
         </button>
       </div>

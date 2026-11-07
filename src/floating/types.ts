@@ -15,14 +15,15 @@ export type ExtractGroups = {
   addr: string[];
 };
 
-// 分组顺序/文案（渲染与 dominantGroup 共用）
+// 分组顺序/文案（渲染与 dominantGroup 共用）。label 是 i18n 键（floating.group.*），
+// 渲染端 t() 解析
 export const EXTRACT_GROUPS: Array<{ id: keyof ExtractGroups; label: string }> = [
-  { id: "tel", label: "电话" },
-  { id: "email", label: "邮箱" },
-  { id: "link", label: "链接" },
-  { id: "code", label: "验证码" },
-  { id: "date", label: "日期" },
-  { id: "addr", label: "地点" },
+  { id: "tel", label: "floating.group.tel" },
+  { id: "email", label: "floating.group.email" },
+  { id: "link", label: "floating.group.link" },
+  { id: "code", label: "floating.group.code" },
+  { id: "date", label: "floating.group.date" },
+  { id: "addr", label: "floating.group.addr" },
 ];
 
 // 状态机：Bar（胶囊） → Result（流式面板）/ Extract（多值列表）；dismiss/新选区回收

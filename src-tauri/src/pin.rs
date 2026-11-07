@@ -18,6 +18,7 @@ use base64::Engine;
 use serde::Serialize;
 use tauri::{AppHandle, LogicalSize, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+use crate::i18n::t;
 use crate::ocr;
 
 /// 钉图上限：防止误操作连按撑爆窗口资源
@@ -73,12 +74,12 @@ pub async fn pin_from_ocr(window: WebviewWindow) -> Result<(), String> {
 
 fn pin_from_ocr_inner(window: &WebviewWindow) -> Result<(), String> {
     if window.label() != "ocr" {
-        return Err("仅识别面板可钉图".into());
+        return Err(t("err.pinNotFromPanel").into());
     }
     let Some(path) = crate::floating::ocr_peek_image() else {
-        return Err("截图原图已不存在，请重新识别".into());
+        return Err(t("err.pinImageMissing").into());
     };
-    let bytes = std::fs::read(&path).map_err(|e| format!("读取截图失败: {e}"))?;
+    let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", t("err.snapRead")))?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
     let url = format!("data:image/png;base64,{b64}");
     let scale = window.scale_factor().unwrap_or(2.0);
@@ -96,14 +97,15 @@ fn create_pin_window(
     anchor: (f64, f64),
 ) -> Result<(), String> {
     if with_pins(|m| m.len()).unwrap_or(0) >= MAX_PINS {
-        return Err("钉图数量已达上限（8），请先关闭部分钉图".into());
+        return Err(t("err.pinLimit").into());
     }
     let n = PIN_SEQ.fetch_add(1, Ordering::Relaxed);
     let label = format!("pin-{n}");
     // 每颗钉一份文件副本（pin_copy_image / pin_to_ocr 读它）：互不影响原图
     // 与其他钉图，关闭钉图只删自己的副本
     let pin_path = std::env::temp_dir().join(format!("magpie-pin-{n}.png"));
-    std::fs::write(&pin_path, &bytes).map_err(|e| format!("写入钉图文件失败: {e}"))?;
+    std::fs::write(&pin_path, &bytes)
+        .map_err(|e| format!("{}: {e}", t("err.pinWrite")))?;
     with_pins(|m| {
         m.insert(
             label.clone(),
@@ -303,11 +305,12 @@ pub fn close_pin(window: WebviewWindow) {
 pub async fn pin_copy_image(window: WebviewWindow) -> Result<(), String> {
     let path = with_pins(|m| m.get(window.label()).map(|d| d.path.clone())).flatten();
     let Some(path) = path else {
-        return Err("钉图数据不存在".into());
+        return Err(t("err.pinDataMissing").into());
     };
     tauri::async_runtime::spawn_blocking(move || {
-        let bytes = std::fs::read(&path).map_err(|e| format!("读取截图失败: {e}"))?;
-        let img = image::load_from_memory(&bytes).map_err(|e| format!("解码截图失败: {e}"))?;
+        let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", t("err.snapRead")))?;
+        let img = image::load_from_memory(&bytes)
+            .map_err(|e| format!("{}: {e}", t("err.snapDecode")))?;
         let rgba = img.to_rgba8();
         let data = arboard::ImageData {
             width: rgba.width() as usize,
@@ -316,10 +319,10 @@ pub async fn pin_copy_image(window: WebviewWindow) -> Result<(), String> {
         };
         arboard::Clipboard::new()
             .and_then(|mut c| c.set_image(data))
-            .map_err(|e| format!("写入剪贴板失败: {e}"))
+            .map_err(|e| format!("{}: {e}", t("err.clipboardWrite")))
     })
     .await
-    .map_err(|e| format!("任务执行失败: {e}"))?
+    .map_err(|e| format!("{}: {e}", t("err.taskFailed")))?
 }
 
 /// 钉图 → 识别文字：助手子进程离线 OCR 该图，结果推给 OCR 面板
@@ -327,12 +330,12 @@ pub async fn pin_copy_image(window: WebviewWindow) -> Result<(), String> {
 pub async fn pin_to_ocr(window: WebviewWindow) -> Result<(), String> {
     let path = with_pins(|m| m.get(window.label()).map(|d| d.path.clone())).flatten();
     let Some(path) = path else {
-        return Err("钉图数据不存在".into());
+        return Err(t("err.pinDataMissing").into());
     };
     let app = window.app_handle().clone();
     let result = tauri::async_runtime::spawn_blocking(move || ocr::recognize_file(&path))
         .await
-        .map_err(|e| format!("任务执行失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.taskFailed")))?;
     match result {
         Ok(text) => {
             // 原图归钉图窗口所有，不再随 pending 传递

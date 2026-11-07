@@ -10,12 +10,13 @@ export interface ProviderFormEntry {
 
 export interface ProviderPreset {
   id: string;
+  /** 显示名（i18n 键，ppreset.<id>.label）；消费端经 t() 解析 */
   label: string;
   /** 支持的形态与对应端点前缀；首项 = 新建卡的默认形态。
    *  形态来源（2026-10 官方文档核实）：OpenAI/方舟/百炼/OpenRouter 同 base 拼
    *  路径后缀；智谱 Responses 独立基址 /api/v1；其余厂商暂只核实到 chat */
   forms: ProviderFormEntry[];
-  /** 模型名输入框的占位指引（去哪获取） */
+  /** 模型名输入框的占位指引（去哪获取；i18n 键 ppreset.<id>.hint） */
   hint: string;
 }
 
@@ -25,78 +26,78 @@ const C = (baseUrl: string): ProviderFormEntry => ({ form: "chat", baseUrl });
 export const PRESET_PROVIDERS: ProviderPreset[] = [
   {
     id: "deepseek",
-    label: "DeepSeek",
+    label: "ppreset.deepseek.label",
     forms: [C("https://api.deepseek.com")],
-    hint: "模型名见 DeepSeek 开放平台文档",
+    hint: "ppreset.deepseek.hint",
   },
   {
     id: "doubao",
-    label: "火山引擎（豆包）",
+    label: "ppreset.doubao.label",
     forms: [
       C("https://ark.cn-beijing.volces.com/api/v3"),
       R("https://ark.cn-beijing.volces.com/api/v3"),
     ],
-    hint: "模型名或 ep- 开头的接入点，方舟控制台获取",
+    hint: "ppreset.doubao.hint",
   },
   {
     id: "zhipu",
-    label: "智谱",
+    label: "ppreset.zhipu.label",
     forms: [
       C("https://open.bigmodel.cn/api/paas/v4"),
       R("https://open.bigmodel.cn/api/v1"),
     ],
-    hint: "模型名见智谱开放平台",
+    hint: "ppreset.zhipu.hint",
   },
   {
     id: "kimi",
-    label: "Kimi",
+    label: "ppreset.kimi.label",
     forms: [C("https://api.moonshot.cn/v1")],
-    hint: "模型名见 Kimi 开放平台",
+    hint: "ppreset.kimi.hint",
   },
   {
     id: "qwen",
-    label: "通义千问",
+    label: "ppreset.qwen.label",
     forms: [
       C("https://dashscope.aliyuncs.com/compatible-mode/v1"),
       R("https://dashscope.aliyuncs.com/compatible-mode/v1"),
     ],
-    hint: "模型名见阿里云百炼控制台",
+    hint: "ppreset.qwen.hint",
   },
   {
     id: "mimo",
-    label: "小米 MiMo",
+    label: "ppreset.mimo.label",
     forms: [C("https://api.xiaomimimo.com/v1")],
-    hint: "模型名见小米 MiMo 开放平台",
+    hint: "ppreset.mimo.hint",
   },
   {
     id: "siliconflow",
-    label: "硅基流动",
+    label: "ppreset.siliconflow.label",
     forms: [C("https://api.siliconflow.cn/v1")],
-    hint: "模型名见硅基流动模型广场",
+    hint: "ppreset.siliconflow.hint",
   },
   {
     id: "openai",
-    label: "OpenAI",
+    label: "ppreset.openai.label",
     forms: [
       R("https://api.openai.com/v1"),
       C("https://api.openai.com/v1"),
     ],
-    hint: "模型名见 platform.openai.com",
+    hint: "ppreset.openai.hint",
   },
   {
     id: "xai",
-    label: "xAI",
+    label: "ppreset.xai.label",
     forms: [C("https://api.x.ai/v1")],
-    hint: "模型名见 xAI 文档",
+    hint: "ppreset.xai.hint",
   },
   {
     id: "openrouter",
-    label: "OpenRouter",
+    label: "ppreset.openrouter.label",
     forms: [
       C("https://openrouter.ai/api/v1"),
       R("https://openrouter.ai/api/v1"),
     ],
-    hint: "填 slug（厂商/模型 形式），OpenRouter 官网查询",
+    hint: "ppreset.openrouter.hint",
   },
 ];
 

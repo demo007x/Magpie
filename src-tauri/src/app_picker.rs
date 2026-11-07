@@ -80,8 +80,8 @@ pub fn pick_app_bundle() -> Option<String> {
     // bundle id 的稳定性；UIA 侧拿不到 bundle id，exe 名即最稳标识
     #[cfg(target_os = "windows")]
     return rfd::FileDialog::new()
-        .set_title("选择要加入黑名单的应用")
-        .add_filter("应用程序", &["exe", "lnk"])
+        .set_title(crate::i18n::t("picker.blacklistAppTitle"))
+        .add_filter(crate::i18n::t("picker.appFilter"), &["exe", "lnk"])
         .pick_file()
         .and_then(|path| path.file_name().map(|s| s.to_string_lossy().into_owned()));
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -127,7 +127,7 @@ fn pick_impl() -> Option<String> {
 #[tauri::command]
 pub fn pick_vault_dir() -> Option<String> {
     let path = rfd::FileDialog::new()
-        .set_title("选择 Obsidian Vault 目录")
+        .set_title(crate::i18n::t("picker.vaultTitle"))
         .pick_folder()?;
     Some(path.to_string_lossy().into_owned())
 }
@@ -138,9 +138,9 @@ pub fn pick_vault_dir() -> Option<String> {
 /// 见 main.rs::start_file_ocr_flow 的线程模型说明。
 pub fn pick_image_file() -> Option<std::path::PathBuf> {
     rfd::FileDialog::new()
-        .set_title("选择要识别的图片")
+        .set_title(crate::i18n::t("picker.imageTitle"))
         .add_filter(
-            "图片",
+            crate::i18n::t("picker.imageFilter"),
             &["png", "jpg", "jpeg", "heic", "webp", "bmp", "tif", "tiff", "gif"],
         )
         .pick_file()

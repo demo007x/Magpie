@@ -11,10 +11,11 @@ import { toast } from "../../shared/toast";
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import type { Provider } from "../../shared/types";
 import type { PageProps } from "./types";
+import { t, useLocale } from "../../shared/i18n";
 
 const NEW_PROVIDER = (): Provider => ({
   id: `p${Date.now()}`,
-  name: "自定义服务",
+  name: t("model.newProviderName"),
   baseUrl: "",
   apiKey: "",
   model: "",
@@ -22,6 +23,7 @@ const NEW_PROVIDER = (): Provider => ({
 });
 
 export default function ModelPage({ settings, patch, save, saved }: PageProps) {
+  useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
   const [providerOpen, setProviderOpen] = useState<string | null>(null);
   // 「添加服务」预设 chips 面板（与翻译页同款内联交互）
   const [provPickerOpen, setProvPickerOpen] = useState(false);
@@ -38,7 +40,7 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
     if (!settings) return;
     const p: Provider = {
       id: `p${Date.now()}`,
-      name: preset.label,
+      name: t(preset.label),
       baseUrl: preset.forms[0].baseUrl,
       apiKey: "",
       model: "",
@@ -74,12 +76,12 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
 
   return (
           <>
-            <h1>模型服务</h1>
+            <h1>{t("model.title")}</h1>
             <p className="page-hint">
-              添加服务选预设，只填密钥和模型名；设为默认的一项供所有动作使用。密钥仅保存在本机。点「保存更改」永久生效。
+              {t("model.hint")}
             </p>
 
-            <h2 className="sec">服务</h2>
+            <h2 className="sec">{t("model.servicesSec")}</h2>
             {settings.providers.map((p) => {
               const open = providerOpen === p.id;
               // 按地址反查预设（含所在形态项）：命中则给占位指引并决定形态切换是否露出；
@@ -91,12 +93,17 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
                   {/* 折叠卡头：名称 + 模型 + 默认标记，点击展开编辑（与 Prompt 页同形态） */}
                   <div className="prompt-head" onClick={() => setProviderOpen(open ? null : p.id)}>
                     <div className="row-title">
-                      {p.name || "未命名服务"}
-                      <span className="action-desc">{p.model || "未配置模型"}</span>
-                      {settings.defaultProviderId === p.id && <span className="tag ai">默认</span>}
+                      {p.name || t("model.unnamedSvc")}
+                      <span className="action-desc">{p.model || t("model.noModel")}</span>
+                      {settings.defaultProviderId === p.id && (
+                        <span className="tag ai">{t("common.default")}</span>
+                      )}
                     </div>
                     {/* 不持 onClick：点把手冒泡到卡片头统一切换（与 Prompt 页同约定） */}
-                    <button className={`svc-chev ${open ? "open" : ""}`} title={open ? "收起" : "展开编辑"}>
+                    <button
+                      className={`svc-chev ${open ? "open" : ""}`}
+                      title={open ? t("common.collapse") : t("common.expandEdit")}
+                    >
                       <ChevronDown size={13} strokeWidth={2} />
                     </button>
                   </div>
@@ -104,14 +111,14 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
                     <div>
                       <div className="grid">
                         <label className="field">
-                          <span>名称</span>
+                          <span>{t("model.fName")}</span>
                           <input value={p.name} onChange={(e) => patchProvider(p.id, { name: e.target.value })} />
                         </label>
                         <label className="field">
-                          <span>模型</span>
+                          <span>{t("model.fModel")}</span>
                           <input
                             value={p.model}
-                            placeholder={preset?.hint ?? ""}
+                            placeholder={preset ? t(preset.hint) : ""}
                             onChange={(e) => patchProvider(p.id, { model: e.target.value })}
                           />
                         </label>
@@ -120,7 +127,7 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
                             自动带出（不同形态端点前缀可能完全不同，如智谱两形态
                             是两个基址）；未含则保持当前地址由用户自行确认 */}
                         <label className="field">
-                          <span>接口形态</span>
+                          <span>{t("model.fForm")}</span>
                           <div style={{ display: "flex", gap: 14, marginTop: 6 }}>
                             {(["chat", "responses"] as const).map((f) => (
                               <label key={f} className="radio sm">
@@ -136,17 +143,17 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
                                     );
                                   }}
                                 />
-                                {f === "chat" ? "Chat · 通用" : "Responses"}
+                                {f === "chat" ? t("model.formChat") : "Responses"}
                               </label>
                             ))}
                           </div>
                         </label>
                         <label className="field wide">
-                          <span>服务地址</span>
+                          <span>{t("model.fBaseUrl")}</span>
                           <input value={p.baseUrl} onChange={(e) => patchProvider(p.id, { baseUrl: e.target.value })} />
                         </label>
                         <label className="field wide">
-                          <span>API 密钥</span>
+                          <span>{t("model.fApiKey")}</span>
                           <input
                             type="password"
                             value={p.apiKey}
@@ -157,8 +164,8 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
                       </div>
                       <div className="row-between" style={{ marginTop: 10 }}>
                         <div>
-                          <div className="row-title">思考模式</div>
-                          <div className="row-sub">开启后回答更准但更慢，关闭更快。</div>
+                          <div className="row-title">{t("model.thinking")}</div>
+                          <div className="row-sub">{t("model.thinkingSub")}</div>
                         </div>
                         <label className="switch">
                           <input
@@ -177,15 +184,15 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
                             checked={settings.defaultProviderId === p.id}
                             onChange={() => patch({ defaultProviderId: p.id })}
                           />
-                          设为默认
+                          {t("model.setAsDefault")}
                         </label>
                         <button
                           className="row-del"
-                          title="删除该服务"
-                          aria-label="删除该服务"
+                          title={t("model.delSvcTitle")}
+                          aria-label={t("model.delSvcTitle")}
                           onClick={() => {
                             if (settings.providers.length <= 1) {
-                              toast("至少保留一个模型服务", "err");
+                              toast(t("model.keepOne"), "err");
                               return;
                             }
                             setConfirmDelProvider(p.id);
@@ -201,7 +208,8 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
             })}
             <div className="prov-add">
               <button className="btn" onClick={() => setProvPickerOpen((v) => !v)}>
-                <Plus size={13} strokeWidth={2} /> {provPickerOpen ? "收起" : "添加服务"}
+                <Plus size={13} strokeWidth={2} />{" "}
+                {provPickerOpen ? t("common.collapse") : t("common.addService")}
               </button>
               {/* 内联 chips 面板（与翻译页同款交互）：选预设即预填地址/形态/候选模型，
                   点自定义保留手填全项；不置灰已添加项——同一家开两个号是合理需求 */}
@@ -209,11 +217,11 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
                 <div className="svc-chips">
                   {PRESET_PROVIDERS.map((ps) => (
                     <button key={ps.id} className="svc-chip" onClick={() => addProvider(ps)}>
-                      {ps.label}
+                      {t(ps.label)}
                     </button>
                   ))}
                   <button className="svc-chip" onClick={addCustomProvider}>
-                    自定义
+                    {t("common.custom")}
                   </button>
                 </div>
               )}
@@ -221,7 +229,7 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
 
             <div className="save-bar">
               <button className="btn primary" onClick={save}>
-                {saved ? "已保存" : "保存更改"}
+                {saved ? t("common.saved") : t("common.saveChanges")}
               </button>
             </div>
 
@@ -231,8 +239,10 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
                 if (!p) return null;
                 return (
                   <Confirm
-                    title="删除服务"
-                    text={`删除「${p.name || "未命名服务"}」？模型名、服务地址与 API 密钥会一并移除。`}
+                    title={t("model.delConfirmTitle")}
+                    text={t("model.delSvcText", {
+                      name: p.name || t("model.unnamedSvc"),
+                    })}
                     onCancel={() => setConfirmDelProvider(null)}
                     onConfirm={() => removeProvider(confirmDelProvider)}
                   />

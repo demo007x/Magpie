@@ -210,7 +210,11 @@ pub fn announce(app: &AppHandle, info: &UpdateInfo) {
     let _ = app.emit("update://available", info.clone());
     crate::toast::show_toast(
         app,
-        &format!("发现新版本 v{latest}，可到「设置 › 关于」下载"),
+        &format!(
+            "{}v{latest}{}",
+            crate::i18n::t("toast.updateAvailable"),
+            crate::i18n::t("toast.updateAvailableHint")
+        ),
         "info",
     );
 }

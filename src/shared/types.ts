@@ -115,7 +115,7 @@ export interface Settings {
   defaultSearch: string;
   /** 翻译动作的服务配置 */
   translate: TranslateConfig;
-  /** AI 动作提示词覆盖（key = 动作 id；缺省或空 = 跟随内置默认，见 shared/actions.ts DEFAULT_PROMPTS） */
+  /** AI 动作提示词覆盖（key = 动作 id；缺省或空 = 跟随当前界面语言的内置默认，见 shared/actions.ts defaultPrompt） */
   actionPrompts: Record<string, string>;
   /** 是否在 macOS Dock 显示图标（关 = 纯菜单栏常驻模式） */
   showDockIcon: boolean;

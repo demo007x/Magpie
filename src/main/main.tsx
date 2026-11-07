@@ -3,10 +3,14 @@ import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import App from "./App";
 import { interceptExternalLinks } from "../shared/external-links";
+import { initLocale, t } from "../shared/i18n";
 import "./main.css";
 
 // 应用内链接一律外部打开，webview 永不自行导航（同 floating 入口）
 interceptExternalLinks();
+
+// 界面语言：拉取设置算生效语言并挂 locale://changed（不阻塞首帧，拉到后整体刷新）
+void initLocale();
 
 // 设置主窗没有导航兜底：渲染树崩溃 = 整页白屏。边界把异常显示出来并写进
 // 终端日志（ui_debug_log），崩溃原因第一眼可见，不用再对着白屏猜。
@@ -30,7 +34,7 @@ class MainBoundary extends React.Component<
     if (this.state.error) {
       return (
         <div style={{ padding: 24, fontSize: 13, color: "#b3261e" }}>
-          <p style={{ fontWeight: 600 }}>界面出现异常</p>
+          <p style={{ fontWeight: 600 }}>{t("main.uiBroken")}</p>
           <pre style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>
             {String(this.state.error.message ?? this.state.error)}
           </pre>

@@ -1,0 +1,72 @@
+// floating 域词典（英文）：键集以 zh.floating.ts 为类型约束，缺键/多键编译期报错。
+import type { zhFloating } from "./zh.floating";
+
+export const enFloating: Record<keyof typeof zhFloating, string> = {
+  "floating.ocrResultTitle": "Capture {action}",
+
+  "floating.snipOcr": "Capture Text",
+  "floating.extractEntry": "Extract Info",
+  "floating.extractTitle": "Extract Results",
+
+  "floating.opened": "Opened",
+  "floating.openFailed": "Failed to open",
+  "floating.copied": "Copied",
+  "floating.copy": "Copy",
+  "floating.copiedValue": "Copied {value}",
+  "floating.mailOpened": "Opened mail app",
+  "floating.calendarOpened": "Opened Calendar",
+  "floating.mapOpened": "Opened in Maps",
+  "floating.engineMissing": "No search engine set",
+  "floating.translateMissing": "No translation service enabled",
+  "floating.vaultMissing": "No Obsidian vault set — choose one in Settings",
+  "floating.savedTask": "Task saved",
+  "floating.savedCard": "Saved to card: {title}",
+  "floating.savedFile": "Saved to {name}",
+  "floating.obsidianFailed": "Failed to save to Obsidian",
+  "floating.cardFallbackName": "Card {date} {time}",
+
+  "floating.ariaMoreTranslate": "More translation services",
+  "floating.ariaMoreSearch": "More search engines",
+  "floating.ariaTargets": "Save targets",
+  "floating.ariaMoreActions": "{n} more actions",
+  "floating.ariaCopyAll": "Copy all",
+  "floating.ariaClose": "Close",
+  "floating.ariaPinImage": "Pin image",
+  "floating.ariaPinPanel": "Pin panel",
+  "floating.ariaCopyImage": "Copy image",
+  "floating.ariaToggleSource": "Expand or collapse source",
+  "floating.ariaJumpDown": "Back to bottom",
+
+  "floating.actOpen": "Open",
+  "floating.actMail": "Email",
+  "floating.actCalendar": "Calendar",
+  "floating.actMap": "Map",
+  "floating.extractLoading": "Making sense of the selection…",
+  "floating.group.tel": "Phone",
+  "floating.group.email": "Email",
+  "floating.group.link": "Link",
+  "floating.group.code": "Code",
+  "floating.group.date": "Date",
+  "floating.group.addr": "Place",
+
+  "floating.ocrTextTitle": "Capture Text",
+  "floating.ocrResultFallback": "Result",
+  "floating.thinking": "Thinking…",
+  "floating.retry": "Retry",
+
+  "floating.targetNote": "Note",
+  "floating.targetTask": "Task",
+  "floating.targetCard": "Card",
+
+  "floating.unknownApp": "Unknown app",
+  "floating.uiError": "UI error: {msg}",
+
+  "floating.dateLabel": "{w}, {m}/{d}",
+  "floating.weekday.0": "Sun",
+  "floating.weekday.1": "Mon",
+  "floating.weekday.2": "Tue",
+  "floating.weekday.3": "Wed",
+  "floating.weekday.4": "Thu",
+  "floating.weekday.5": "Fri",
+  "floating.weekday.6": "Sat",
+};

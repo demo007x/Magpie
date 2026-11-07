@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AiEventItem } from "../shared/aiExtract";
 import { extractEmails, extractUrl } from "../shared/textContext";
+import { t } from "../shared/i18n";
 
 /** Rust detect_dates 的日期命中（entities.rs DateHit，camelCase） */
 export interface DateHit {
@@ -14,10 +15,14 @@ export interface DateHit {
   len: number;
 }
 
-/** 命中的展示标签："10月1日 周四 15:00"；零点视为全天（不带时间） */
+/** 命中的展示标签：中文 "10月1日 周四 15:00"、英文 "Thu, 10/1 15:00"；零点视为全天（不带时间） */
 export function formatDateLabel(h: DateHit): string {
   const d = new Date(h.unix * 1000);
-  const base = `${d.getMonth() + 1}月${d.getDate()}日 周${"日一二三四五六"[d.getDay()]}`;
+  const base = t("floating.dateLabel", {
+    m: d.getMonth() + 1,
+    d: d.getDate(),
+    w: t(`floating.weekday.${d.getDay()}`),
+  });
   if (d.getHours() === 0 && d.getMinutes() === 0) return base;
   const p = (n: number) => String(n).padStart(2, "0");
   return `${base} ${p(d.getHours())}:${p(d.getMinutes())}`;
@@ -63,10 +68,14 @@ export function detectAndOpenCalendar(text: string, label: string, onDone?: (ok:
     .catch(() => onDone?.(false));
 }
 
-/** 单个时间点标签："10月31日 周六" / 带时间 "10月31日 周六 10:00" */
+/** 单个时间点标签："10月31日 周六" / 带时间 "10月31日 周六 10:00"（英文随词典格式） */
 function eventTimeLabel(unix: number, allDay: boolean): string {
   const d = new Date(unix * 1000);
-  const base = `${d.getMonth() + 1}月${d.getDate()}日 周${"日一二三四五六"[d.getDay()]}`;
+  const base = t("floating.dateLabel", {
+    m: d.getMonth() + 1,
+    d: d.getDate(),
+    w: t(`floating.weekday.${d.getDay()}`),
+  });
   if (allDay) return base;
   const p = (n: number) => String(n).padStart(2, "0");
   return `${base} ${p(d.getHours())}:${p(d.getMinutes())}`;

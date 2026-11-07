@@ -8,6 +8,7 @@ use std::time::Duration;
 use tauri::ipc::Channel;
 use tauri::AppHandle;
 
+use crate::i18n::t;
 use crate::settings;
 
 #[derive(Debug, Clone, Serialize)]
@@ -179,9 +180,9 @@ pub async fn ai_chat(
 ) -> Result<(), String> {
     let s = settings::current(&app);
     let provider = pick_provider(&s, provider_id.as_deref())
-        .ok_or_else(|| "未配置模型服务，请到「设置」页添加".to_string())?;
+        .ok_or_else(|| t("err.noModelService").to_string())?;
     if provider.api_key.trim().is_empty() {
-        return Err("API Key 为空，请到「设置」页填写".to_string());
+        return Err(t("err.apiKeyEmpty").to_string());
     }
 
     let form_responses = provider.form == "responses";
@@ -220,7 +221,7 @@ pub async fn ai_chat(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("网络请求失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.netFailed")))?;
 
     // 同厂商的不同模型对思考参数的支持并不一致（GLM-5.3 拒收 disabled、
     // gpt-4o 拒收 reasoning_effort、QwQ 不收 enable_thinking…）——参数类
@@ -242,7 +243,7 @@ pub async fn ai_chat(
             .json(&plain)
             .send()
             .await
-            .map_err(|e| format!("网络请求失败：{e}"))?;
+            .map_err(|e| format!("{}: {e}", t("err.netFailed")))?;
     }
 
     if !resp.status().is_success() {
@@ -305,7 +306,7 @@ pub async fn ai_chat(
                                         .pointer("/response/error/message")
                                         .or_else(|| v.get("message"))
                                         .and_then(Value::as_str)
-                                        .unwrap_or("模型返回错误");
+                                        .unwrap_or(t("err.modelError"));
                                     let _ = channel.send(AiEvent::Error {
                                         message: msg.to_string(),
                                     });
@@ -330,7 +331,7 @@ pub async fn ai_chat(
             }
             Err(e) => {
                 let _ = channel.send(AiEvent::Error {
-                    message: format!("流中断：{e}"),
+                    message: format!("{}: {e}", t("err.streamInterrupted")),
                 });
                 return Ok(());
             }

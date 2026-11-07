@@ -5,6 +5,8 @@ import { GripVertical, Trash2 } from "lucide-react";
 import { toast } from "../../shared/toast";
 import type { SearchEngine } from "../../shared/types";
 import type { PageProps } from "./types";
+import { t, useLocale } from "../../shared/i18n";
+import { engineDisplayName } from "../../shared/engineNames";
 
 const BUILTIN_ENGINES = new Set(["百度AI", "百度", "GoogleAI", "Google", "必应", "GitHub"]);
 
@@ -18,6 +20,7 @@ const ENGINE_PRESETS: Array<[string, string]> = [
 ];
 
 export default function SearchPage({ settings, patch, save, saved }: PageProps) {
+  useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
   const engRowEls = useRef<Map<string, HTMLDivElement>>(new Map());
   const [engDragId, setEngDragId] = useState<string | null>(null);
   const [engOverId, setEngOverId] = useState<string | null>(null);
@@ -27,7 +30,7 @@ export default function SearchPage({ settings, patch, save, saved }: PageProps) 
     // 守卫走渲染闭包即可：点击路径离散无连发竞态；文本字段（名称/URL）才需要函数式
     if (p.enabled === false && settings) {
       if (settings.searchEngines.filter((x) => x.enabled).length <= 1) {
-        toast("至少保留一个启用的搜索引擎", "err");
+        toast(t("search.keepOne"), "err");
         return;
       }
     }
@@ -46,6 +49,12 @@ export default function SearchPage({ settings, patch, save, saved }: PageProps) 
 
   const patchEngines = (engines: SearchEngine[]) => patch({ searchEngines: engines });
 
+  // 引擎名的显示变换：内置中文名在英文界面下显示映射名（百度→Baidu），存储值
+  // 不动——存储身份就是名字（defaultSearch/拖拽/内置判定按名匹配）。编辑态用
+  // 本地暂存，失焦才落存：逐键改名会让行 key（=名字）变化、输入框重挂丢焦点；
+  // 失焦时值等于映射名 = 用户没实质改，不写存储（保留映射显示）
+  const [nameEdits, setNameEdits] = useState<Record<string, string | undefined>>({});
+
   const addEngine = (name: string, url: string) => {
     if (!settings) return;
     if (settings.searchEngines.some((e) => e.name === name)) return;
@@ -58,7 +67,7 @@ export default function SearchPage({ settings, patch, save, saved }: PageProps) 
     if (BUILTIN_ENGINES.has(eng.name)) return; // 内置引擎不可删（按钮也不渲染，双保险）
     // 至少保留一个启用的引擎，保证「搜索」按钮始终可用（与停用守卫一致）
     if (eng.enabled && settings.searchEngines.filter((x) => x.enabled).length <= 1) {
-      toast("至少保留一个启用的搜索引擎", "err");
+      toast(t("search.keepOne"), "err");
       return;
     }
     const rest = settings.searchEngines.filter((_, i) => i !== idx);
@@ -105,9 +114,9 @@ export default function SearchPage({ settings, patch, save, saved }: PageProps) 
 
   return (
           <>
-            <h1>搜索引擎</h1>
+            <h1>{t("search.title")}</h1>
             <p className="page-hint">
-              拖动调整顺序，「默认」为单击直达项；链接中的 {'{q}'} 代入选中文字。点「保存更改」永久生效。
+              {t("search.hint", { qq: "{q}" })}
             </p>
             <div className="card">
               {settings.searchEngines.map((eng, idx) => (
@@ -123,15 +132,31 @@ export default function SearchPage({ settings, patch, save, saved }: PageProps) 
                 >
                   <span
                     className="grip"
-                    title="拖动排序"
+                    title={t("common.dragToSort")}
                     onMouseDown={(e) => onEngineGripDown(e, eng.name)}
                   >
                     <GripVertical size={13} strokeWidth={1.75} />
                   </span>
                   <input
                     className="eng-name"
-                    value={eng.name}
-                    onChange={(e) => updateEngine(idx, { name: e.target.value })}
+                    value={nameEdits[eng.name] ?? engineDisplayName(eng.name)}
+                    onFocus={() =>
+                      setNameEdits((m) => ({ ...m, [eng.name]: engineDisplayName(eng.name) }))
+                    }
+                    onChange={(e) =>
+                      setNameEdits((m) => ({ ...m, [eng.name]: e.target.value }))
+                    }
+                    onBlur={() => {
+                      const v = nameEdits[eng.name];
+                      setNameEdits((m) => {
+                        const n = { ...m };
+                        delete n[eng.name];
+                        return n;
+                      });
+                      if (v !== undefined && v.trim() && v !== eng.name && v !== engineDisplayName(eng.name)) {
+                        updateEngine(idx, { name: v });
+                      }
+                    }}
                   />
                   <input
                     className="eng-url"
@@ -140,7 +165,7 @@ export default function SearchPage({ settings, patch, save, saved }: PageProps) 
                   />
                   <label
                     className="radio sm"
-                    title={eng.enabled ? "设为默认引擎" : "启用后才可设为默认"}
+                    title={eng.enabled ? t("search.setDefaultTitle") : t("common.setDefaultDisabled")}
                   >
                     <input
                       type="radio"
@@ -149,7 +174,7 @@ export default function SearchPage({ settings, patch, save, saved }: PageProps) 
                       disabled={!eng.enabled}
                       onChange={() => patch({ defaultSearch: eng.name })}
                     />
-                    默认
+                    {t("common.default")}
                   </label>
                   <label className="switch">
                     <input
@@ -163,8 +188,8 @@ export default function SearchPage({ settings, patch, save, saved }: PageProps) 
                   {!BUILTIN_ENGINES.has(eng.name) && (
                     <button
                       className="row-del"
-                      title="删除该引擎"
-                      aria-label="删除该引擎"
+                      title={t("search.delEngineTitle")}
+                      aria-label={t("search.delEngineTitle")}
                       onClick={() => removeEngine(idx)}
                     >
                       <Trash2 size={13} strokeWidth={1.75} />
@@ -181,15 +206,15 @@ export default function SearchPage({ settings, patch, save, saved }: PageProps) 
                     ＋ {n}
                   </button>
                 ))}
-                <button className="btn sm" onClick={() => addEngine("自定义", "https://")}>
-                  ＋ 自定义
+                <button className="btn sm" onClick={() => addEngine(t("search.addCustom"), "https://")}>
+                  ＋ {t("search.addCustom")}
                 </button>
               </div>
             </div>
 
             <div className="save-bar">
               <button className="btn primary" onClick={save}>
-                {saved ? "已保存" : "保存更改"}
+                {saved ? t("common.saved") : t("common.saveChanges")}
               </button>
             </div>
     </>

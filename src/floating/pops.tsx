@@ -10,6 +10,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ChevronDown } from "lucide-react";
+import { t, useLocale } from "../shared/i18n";
 import { iconOf } from "./icons";
 
 /** 收纳面板行（App.tsx 的 restEntries 投影） */
@@ -32,6 +33,9 @@ type PopData =
   | { type: "menu"; kind: string; items: MenuItem[] };
 
 export default function PopCard() {
+  // 界面语言：payload 里的标签由胶囊窗口解析为当前语言字符串，语言切换时
+  // 胶囊窗口重推新 payload；本端订阅 locale 只是保证 aria 等自渲染文案随语言刷新
+  useLocale();
   const [data, setData] = useState<PopData | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
   // 行 hover 上报的去重记忆（仅行变化时上报，见 onPanelRowMove）
@@ -97,7 +101,7 @@ export default function PopCard() {
                 <button
                   type="button"
                   className={`pchev ${data.subOpen === e.id ? "open" : ""}`}
-                  aria-label="存入目标"
+                  aria-label={t("floating.ariaTargets")}
                   onClick={() => {
                     // 行侧菜单锚定整行（NSMenu 心智）：行顶 y 相对面板传给 Rust
                     const row = ref.current?.querySelector<HTMLElement>(`[data-id="${e.id}"]`);

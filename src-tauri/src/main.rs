@@ -5,6 +5,7 @@ mod app_picker;
 mod capture;
 mod entities;
 mod floating;
+mod i18n;
 mod obsidian;
 mod ocr;
 mod pageurl;
@@ -30,7 +31,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 fn set_launch_at_login(app: AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
     if cfg!(debug_assertions) && enabled {
-        return Err("开发版不能设置自启动，请使用打包安装版".into());
+        return Err(i18n::t("err.devAutostart").into());
     }
     let al = app.autolaunch();
     if enabled {
@@ -87,16 +88,16 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             format!("{base}  {display}")
         }
     };
-    let ocr_item = MenuItem::with_id(app, "ocr", &label("识图取字", &s.ocr_shortcut), true, None::<&str>)?;
-    let tr_item = MenuItem::with_id(app, "ocr_translate", &label("识图翻译", &s.ocr_translate_shortcut), true, None::<&str>)?;
-    let ex_item = MenuItem::with_id(app, "ocr_explain", &label("识图解释", &s.ocr_explain_shortcut), true, None::<&str>)?;
-    let su_item = MenuItem::with_id(app, "ocr_summarize", &label("识图总结", &s.ocr_summarize_shortcut), true, None::<&str>)?;
-    let file_ocr_item = MenuItem::with_id(app, "file_ocr", &label("访达选图取字", &s.file_ocr_shortcut), true, None::<&str>)?;
-    let home_item = MenuItem::with_id(app, "home", "主页面", true, None::<&str>)?;
-    let settings_item = MenuItem::with_id(app, "settings", "功能设置", true, None::<&str>)?;
-    let github_item = MenuItem::with_id(app, "github", "GitHub 仓库", true, None::<&str>)?;
-    let feedback_item = MenuItem::with_id(app, "feedback", "反馈问题", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, "quit", "退出应用", true, None::<&str>)?;
+    let ocr_item = MenuItem::with_id(app, "ocr", &label(i18n::t("tray.ocr"), &s.ocr_shortcut), true, None::<&str>)?;
+    let tr_item = MenuItem::with_id(app, "ocr_translate", &label(i18n::t("tray.ocrTranslate"), &s.ocr_translate_shortcut), true, None::<&str>)?;
+    let ex_item = MenuItem::with_id(app, "ocr_explain", &label(i18n::t("tray.ocrExplain"), &s.ocr_explain_shortcut), true, None::<&str>)?;
+    let su_item = MenuItem::with_id(app, "ocr_summarize", &label(i18n::t("tray.ocrSummarize"), &s.ocr_summarize_shortcut), true, None::<&str>)?;
+    let file_ocr_item = MenuItem::with_id(app, "file_ocr", &label(i18n::t("tray.fileOcr"), &s.file_ocr_shortcut), true, None::<&str>)?;
+    let home_item = MenuItem::with_id(app, "home", i18n::t("tray.home"), true, None::<&str>)?;
+    let settings_item = MenuItem::with_id(app, "settings", i18n::t("tray.settings"), true, None::<&str>)?;
+    let github_item = MenuItem::with_id(app, "github", i18n::t("tray.github"), true, None::<&str>)?;
+    let feedback_item = MenuItem::with_id(app, "feedback", i18n::t("tray.feedback"), true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", i18n::t("tray.quit"), true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     Menu::with_items(app, &[
@@ -229,12 +230,12 @@ fn start_file_ocr_flow(app: tauri::AppHandle) {
                 .as_millis()
         ));
         if std::fs::copy(&picked, &dest).is_err() {
-            toast::show_toast(&app, "图片读取失败\n文件可能已被移动或删除", "err");
+            toast::show_toast(&app, i18n::t("toast.imageReadFailed"), "err");
             return;
         }
         tauri::async_runtime::spawn(async move {
             eprintln!("[magpie:ocr] 文件识别开始：{}", dest.display());
-            toast::show_toast_sticky(&app, "正在识别…", "progress");
+            toast::show_toast_sticky(&app, i18n::t("toast.recognizing"), "progress");
             let src = dest.clone(); // 闭包消费副本，外层保留 dest 供成功推送与失败清理
             match tauri::async_runtime::spawn_blocking(move || ocr::recognize_file(&src)).await {
                 Ok(Ok(text)) => {
@@ -246,8 +247,8 @@ fn start_file_ocr_flow(app: tauri::AppHandle) {
                     eprintln!("[magpie:ocr] 失败：{e}");
                     // 面板未创建，临时副本没有存在价值：直接清理
                     let _ = std::fs::remove_file(&dest);
-                    let msg = if e == "未识别到文字" {
-                        "未检测到文字\n换一张清晰的图片试试".to_string()
+                    let msg = if e == i18n::t("ocr.noText") {
+                        i18n::t("toast.noTextHintImage").to_string()
                     } else {
                         e
                     };
@@ -302,7 +303,7 @@ pub fn apply_ocr_shortcuts(app: &tauri::AppHandle) {
 }
 
 /// 重建托盘菜单（托盘尚未创建时静默跳过：setup 里首次由托盘构建流程负责）
-fn rebuild_tray_menu(app: &tauri::AppHandle) {
+pub fn rebuild_tray_menu(app: &tauri::AppHandle) {
     if let Some(tray) = app.tray_by_id("main") {
         if let Ok(menu) = build_tray_menu(app) {
             let _ = tray.set_menu(Some(menu));
@@ -374,13 +375,15 @@ fn copy_debug_log() -> Result<usize, String> {
     };
     empty_ok();
     let Some(path) = LOG_PATH.get() else {
-        return Err("日志不可用".into());
+        return Err(i18n::t("err.logUnavailable").into());
     };
     let text = std::fs::read_to_string(path).unwrap_or_default();
     let len = text.chars().count();
     // 命令跑在异步运行时线程，同步写剪贴板无重入风险
-    let mut clip = arboard::Clipboard::new().map_err(|e| format!("打开剪贴板失败: {e}"))?;
-    clip.set_text(text).map_err(|e| format!("写入剪贴板失败: {e}"))?;
+    let mut clip = arboard::Clipboard::new()
+        .map_err(|e| format!("{}: {e}", i18n::t("err.clipboardOpen")))?;
+    clip.set_text(text)
+        .map_err(|e| format!("{}: {e}", i18n::t("err.clipboardWrite")))?;
     Ok(len)
 }
 
@@ -476,6 +479,8 @@ fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
             settings::init(&handle);
+            // 界面语言现行值初始化（托盘等 Rust 侧文案取词用；切换经 set_ui_locale 更新）
+            i18n::set_active(i18n::effective_from_pref(&settings::current(&handle).ui_locale));
             // 网页唤起（deep link）：magpie://feedback → 打开主窗口的
             // 「关于 › 反馈问题」（官网/推广页的一键反馈入口）
             {
@@ -642,7 +647,7 @@ fn main() {
                         .expect("加载托盘图标失败"),
                 )
                 .icon_as_template(true)
-                .tooltip("拾趣")
+                .tooltip(i18n::t("tray.tooltip"))
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -730,6 +735,7 @@ fn main() {
             settings::get_settings,
             settings::save_settings,
             settings::set_appearance,
+            settings::set_ui_locale,
             capture::capture_status,
             capture::open_accessibility_settings,
             capture::prompt_accessibility,

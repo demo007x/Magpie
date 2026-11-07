@@ -134,7 +134,7 @@ pub(super) fn show_editor_ax_guidance(app: &AppHandle) {
     }
     crate::toast::show_toast_sticky(
         app,
-        "VS Code 需开启辅助功能支持才能划词：在 VS Code 设置中把 accessibilitySupport 设为 on（VS Code 将进入读屏优化模式）",
+        crate::i18n::t("toast.vscodeAxGuidance"),
         "info",
     );
 }

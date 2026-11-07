@@ -25,6 +25,7 @@ use tauri::{AppHandle, Emitter, LogicalPosition, Manager, WebviewWindow};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 use crate::capture::{debug_log, CaptureMuteGuard};
+use crate::i18n::t;
 use super::{place_rect, snap_pos};
 #[cfg(target_os = "macos")]
 use super::show_without_activation;
@@ -150,13 +151,13 @@ pub fn begin_selection(app: &AppHandle, action: Option<&'static str>) {
                 let _ = std::process::Command::new("open")
                     .arg("x-apple.systempreferences:com.apple.preference.security?ScreenCapture")
                     .spawn();
-                crate::toast::show_toast(&app, "需要屏幕录制权限\n已打开系统设置，授权后重试", "err");
+                crate::toast::show_toast(&app, t("toast.screenPermission"), "err");
                 return;
             }
         }
         let Some(mon) = monitor_at_cursor(&app) else {
             debug_log("[snip] 无法确定任何显示器矩形，流程终止");
-            crate::toast::show_toast(&app, "无法定位光标所在显示器", "err");
+            crate::toast::show_toast(&app, t("toast.noMonitor"), "err");
             return;
         };
         debug_log(format!(
@@ -251,7 +252,7 @@ fn build_frame(app: &AppHandle, mon: (f64, f64, f64, f64)) {
         Err(e) => {
             debug_log(format!("[snip] 遮罩创建失败：{e}"));
             end_session(app);
-            crate::toast::show_toast(app, "截图组件启动失败\n请重新触发识图取字", "err");
+            crate::toast::show_toast(app, t("toast.snipStartFailed"), "err");
         }
     }
 }
@@ -324,7 +325,7 @@ pub fn snip_region_selected(
         let Some(image) = image else {
             debug_log("[snip] 静默截图失败，流程终止");
             end_session(&app2);
-            crate::toast::show_toast(&app2, "截图失败\n请重新触发识图取字", "err");
+            crate::toast::show_toast(&app2, t("toast.snapFailed"), "err");
             return;
         };
         debug_log("[snip] 截图完成，按槽位分流");
@@ -504,7 +505,7 @@ pub fn snip_execute(app: AppHandle, action_id: String) {
                     }
                     None => {
                         // 重截失败：会话已清，提示后终止（不回退旧图——区域已变，内容对不上）
-                        crate::toast::show_toast(&app, "选区更新失败，请重新截图", "err");
+                        crate::toast::show_toast(&app, t("toast.resnapFailed"), "err");
                         let _ = std::fs::remove_file(&session.image);
                         return;
                     }
@@ -520,7 +521,7 @@ pub fn snip_execute(app: AppHandle, action_id: String) {
                     }
                     None => {
                         // 重截失败：会话已清，提示后终止（不回退旧图——区域已变，内容对不上）
-                        crate::toast::show_toast(&app, "选区更新失败，请重新截图", "err");
+                        crate::toast::show_toast(&app, t("toast.resnapFailed"), "err");
                         let _ = std::fs::remove_file(&session.image);
                         return;
                     }

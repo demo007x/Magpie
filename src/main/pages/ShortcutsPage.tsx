@@ -2,8 +2,10 @@
 import { useState } from "react";
 import type { Settings } from "../../shared/types";
 import type { PageProps } from "./types";
+import { t, useLocale } from "../../shared/i18n";
 
 export default function ShortcutsPage({ settings, patch, save, saved }: PageProps) {
+  useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
 
 const SHORTCUT_ITEMS: Array<{
   key:
@@ -12,6 +14,7 @@ const SHORTCUT_ITEMS: Array<{
     | "ocrExplainShortcut"
     | "ocrSummarizeShortcut"
     | "fileOcrShortcut";
+  /** 名称/描述的 i18n 键（sc.*），渲染时 t() 解析 */
   label: string;
   desc: string;
   /** 出厂默认键位：重置按钮的目标值 */
@@ -19,33 +22,33 @@ const SHORTCUT_ITEMS: Array<{
 }> = [
   {
     key: "ocrShortcut",
-    label: "识图取字",
+    label: "sc.ocr.label",
     default: "Alt+S",
-    desc: "框选屏幕任意区域，选动作后识别。",
+    desc: "sc.ocr.desc",
   },
   {
     key: "ocrTranslateShortcut",
-    label: "识图翻译",
+    label: "sc.ocrTranslate.label",
     default: "Alt+T",
-    desc: "框选截图，自动翻译识别出的文字。",
+    desc: "sc.ocrTranslate.desc",
   },
   {
     key: "ocrExplainShortcut",
-    label: "识图解释",
+    label: "sc.ocrExplain.label",
     default: "Alt+E",
-    desc: "框选截图，AI 解释识别出的内容。",
+    desc: "sc.ocrExplain.desc",
   },
   {
     key: "ocrSummarizeShortcut",
-    label: "识图总结",
+    label: "sc.ocrSummarize.label",
     default: "Alt+D",
-    desc: "框选截图，AI 提炼识别内容要点。",
+    desc: "sc.ocrSummarize.desc",
   },
   {
     key: "fileOcrShortcut",
-    label: "访达选图取字",
+    label: "sc.fileOcr.label",
     default: "Alt+F",
-    desc: "识别所选图片文件的文字，后续与识图取字一致。",
+    desc: "sc.fileOcr.desc",
   },
 ];
 
@@ -105,8 +108,8 @@ function ShortcutRecorder({
       readOnly
       style={{ width: 180, flexShrink: 0, cursor: "pointer" }}
       className={recording ? "recording" : ""}
-      value={recording ? hint || "按下组合键…" : displayShortcut(value)}
-      placeholder={IS_MAC ? "点击录制，如 ⌥S" : "点击录制，如 Alt+S"}
+      value={recording ? hint || t("sc.pressKeys") : displayShortcut(value)}
+      placeholder={t("sc.recordPh", { example: IS_MAC ? "⌥S" : "Alt+S" })}
       onFocus={() => {
         setRecording(true);
         setHint("");
@@ -127,11 +130,11 @@ function ShortcutRecorder({
         if (e.shiftKey) mods.push("Shift");
         // 只按了修饰键：先给出已按下的提示，等待主键
         if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) {
-          setHint(mods.length ? `${mods.map(sym).join("+")}+…` : "按下组合键…");
+          setHint(mods.length ? `${mods.map(sym).join("+")}+…` : t("sc.pressKeys"));
           return;
         }
         if (mods.length === 0) {
-          setHint("需至少包含一个修饰键");
+          setHint(t("sc.needMod"));
           return;
         }
         let key = e.key;
@@ -147,16 +150,16 @@ function ShortcutRecorder({
 
   return (
           <>
-            <h1>快捷键</h1>
+            <h1>{t("nav.shortcuts")}</h1>
             <p className="page-hint">
-              点击输入框按下新组合键，需含 ⌘ / Ctrl / Alt / Shift 之一，Esc 取消；被其他应用占用的组合键不生效。点「保存更改」永久生效。
+              {t("sc.hint")}
             </p>
             <div className="card">
               {SHORTCUT_ITEMS.map((item, i) => (
                 <div className={`row-between${i > 0 ? " sep" : ""}`} key={item.key}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="row-title">{item.label}</div>
-                    <div className="row-sub">{item.desc}</div>
+                    <div className="row-title">{t(item.label)}</div>
+                    <div className="row-sub">{t(item.desc)}</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                     <ShortcutRecorder
@@ -166,12 +169,12 @@ function ShortcutRecorder({
                     {settings[item.key] !== item.default && (
                       <button
                         className="btn sm"
-                        title="重置为默认快捷键"
+                        title={t("sc.resetTitle")}
                         onClick={() =>
                           patch({ [item.key]: item.default } as Partial<Settings>)
                         }
                       >
-                        重置
+                        {t("sc.reset")}
                       </button>
                     )}
                   </div>
@@ -181,7 +184,7 @@ function ShortcutRecorder({
 
             <div className="save-bar">
               <button className="btn primary" onClick={save}>
-                {saved ? "已保存" : "保存更改"}
+                {saved ? t("common.saved") : t("common.saveChanges")}
               </button>
             </div>
     </>

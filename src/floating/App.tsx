@@ -55,7 +55,9 @@ import {
   openInCalendar,
   type DateHit,
 } from "./calendar";
-import { actionPrompt, actionRegistry, isContextAction } from "../shared/actions";
+import { actionLabel, actionPrompt, actionRegistry, isContextAction } from "../shared/actions";
+import { engineDisplayName } from "../shared/engineNames";
+import { t, useLocale, getLocale } from "../shared/i18n";
 import { aiChat } from "../shared/ai";
 import {
   buildExtractPrompt,
@@ -227,6 +229,8 @@ function splitTranslate(output: string): { main: string; notes: string | null } 
 }
 
 export default function App() {
+  // 界面语言：订阅 locale store（语言切换整体重渲染，渲染期 t() 取词）
+  useLocale();
   // 钉图窗口：只渲染图片视图（不注册划词监听、不渲染浮动条/面板）
   if (IS_PIN) return <PinView />;
 
@@ -391,8 +395,8 @@ export default function App() {
   const openEngine = (engine: SearchEngine, q = text.trim()) => {
     const tpl = engine.url.includes("{q}") ? engine.url : `${engine.url}{q}`;
     invoke("open_url", { url: tpl.replace("{q}", encodeURIComponent(q)) })
-      .then(() => flash("search", "已打开"))
-      .catch(() => flash("search", "打开失败"));
+      .then(() => flash("search", t("floating.opened")))
+      .catch(() => flash("search", t("floating.openFailed")));
   };
   const [phase, setPhase] = useState<Phase>({ kind: "bar" });
   // 流式增量渲染后：贴底状态才跟随滚动（用户上翻阅读时不打扰）；新一轮结果从贴底开始跟随
@@ -547,7 +551,7 @@ export default function App() {
         return {
           kind: "extract",
           actionId: dominantGroup(groups),
-          label: "提取结果",
+          label: t("floating.extractTitle"),
           groups,
           text: rawText,
           sourceUrl,
@@ -669,7 +673,7 @@ export default function App() {
       if (a.id === "obsidian" && !obsidianCfg?.vaultPath) continue;
       entries.push({
         id: a.id,
-        label: a.label,
+        label: actionLabel(a),
         icon: a.icon,
         // 存入 Obsidian 的 ⌄ 目标菜单（笔记/任务/卡片），vault 未配置时不出现
         hasMenu: a.id === "obsidian",
@@ -697,16 +701,16 @@ export default function App() {
       const g = extracted.groups;
       const single =
         g.link.length === 1
-          ? { id: "link", label: "打开链接" }
+          ? { id: "link", label: t("action.link") }
           : g.email.length === 1
-            ? { id: "email", label: "写邮件" }
+            ? { id: "email", label: t("action.email") }
             : g.date.length === 1
-              ? { id: "date", label: "加入日历" }
+              ? { id: "date", label: t("action.date") }
               : g.addr.length === 1
-                ? { id: "addr", label: "打开地图" }
+                ? { id: "addr", label: t("action.addr") }
                 : g.tel.length === 1
-                  ? { id: "tel", label: "复制号码" }
-                  : { id: "code", label: "复制验证码" };
+                  ? { id: "tel", label: t("action.tel") }
+                  : { id: "code", label: t("action.code") };
       return {
         id: single.id,
         label: single.label,
@@ -719,7 +723,7 @@ export default function App() {
     if (extracted.total > 1) {
       return {
         id: "__extract",
-        label: "提取信息",
+        label: t("floating.extractEntry"),
         onClick: () => {
           setMenu(null);
           // 导流到独立结果窗口（__extract = 结果窗口自行从文本计算分组）
@@ -750,15 +754,15 @@ export default function App() {
     invoke("hide_floating_bar").catch(() => undefined);
   };
   const snipEntries: BarEntry[] = [
-    { id: "ocr", label: "识别文字", onClick: () => snipRun("ocr") },
+    { id: "ocr", label: t("floating.snipOcr"), onClick: () => snipRun("ocr") },
   ];
   if (enabledTranslates.length > 0) {
-    snipEntries.push({ id: "translate", label: "翻译", onClick: () => snipRun("translate") });
+    snipEntries.push({ id: "translate", label: t("action.translate"), onClick: () => snipRun("translate") });
   }
   if (hasUsableModel) {
     snipEntries.push(
-      { id: "explain", label: "解释", onClick: () => snipRun("explain") },
-      { id: "summarize", label: "总结", onClick: () => snipRun("summarize") },
+      { id: "explain", label: t("action.explain"), onClick: () => snipRun("explain") },
+      { id: "summarize", label: t("action.summarize"), onClick: () => snipRun("summarize") },
     );
   }
   const topEntries = snipMode ? snipEntries : barEntries.slice(0, CAPSULE_MAX);
@@ -1334,54 +1338,55 @@ export default function App() {
 
     // 本地动作：不经 AI，前端即时完成
     if (action.kind === "local") {
-      const t = source.trim();
+      // 注意：不得叫 t——与 i18n 取词函数 t 重名会遮蔽
+      const trimmed = source.trim();
 
       if (id === "copy") {
-        navigator.clipboard.writeText(t).catch(() => undefined);
-        flash(id, "已复制");
+        navigator.clipboard.writeText(trimmed).catch(() => undefined);
+        flash(id, t("floating.copied"));
         return;
       }
 
       if (id === "search") {
         if (!defaultEngine) {
-          flash(id, "未配置引擎");
+          flash(id, t("floating.engineMissing"));
           return;
         }
-        openEngine(defaultEngine, t);
+        openEngine(defaultEngine, trimmed);
         return;
       }
 
       if (id === "link") {
-        const url = extractUrl(t);
+        const url = extractUrl(trimmed);
         if (!url) return;
         invoke("open_url", { url })
-          .then(() => flash(id, "已打开"))
-          .catch(() => flash(id, "打开失败"));
+          .then(() => flash(id, t("floating.opened")))
+          .catch(() => flash(id, t("floating.openFailed")));
         return;
       }
 
       if (id === "email") {
-        const addr = extractEmail(t);
+        const addr = extractEmail(trimmed);
         if (!addr) return;
         invoke("open_url", { url: `mailto:${addr}` })
-          .then(() => flash(id, "已打开邮件客户端"))
-          .catch(() => flash(id, "打开失败"));
+          .then(() => flash(id, t("floating.mailOpened")))
+          .catch(() => flash(id, t("floating.openFailed")));
         return;
       }
 
       if (id === "tel") {
-        const num = extractTel(t);
+        const num = extractTel(trimmed);
         if (!num) return;
         navigator.clipboard.writeText(num).catch(() => undefined);
-        flash(id, `已复制 ${num}`);
+        flash(id, t("floating.copiedValue", { value: num }));
         return;
       }
 
       if (id === "code") {
-        const code = extractCode(t);
+        const code = extractCode(trimmed);
         if (!code) return;
         navigator.clipboard.writeText(code).catch(() => undefined);
-        flash(id, `已复制 ${code}`);
+        flash(id, t("floating.copiedValue", { value: code }));
         return;
       }
 
@@ -1392,7 +1397,7 @@ export default function App() {
         invoke<string | null>("frontmost_web_url", { pid: sourcePidRef.current })
           .catch(() => null)
           .then((pageUrl) =>
-            openInCalendar(hit, t, (ok) => flash(id, ok ? "已打开日历" : "打开失败"), pageUrl ?? undefined),
+            openInCalendar(hit, trimmed, (ok) => flash(id, ok ? t("floating.calendarOpened") : t("floating.openFailed")), pageUrl ?? undefined),
           );
         return;
       }
@@ -1401,8 +1406,8 @@ export default function App() {
         const place = placeHits[0];
         if (!place) return;
         invoke("open_url", { url: `maps://?q=${encodeURIComponent(place)}` })
-          .then(() => flash(id, "已在地图打开"))
-          .catch(() => flash(id, "打开失败"));
+          .then(() => flash(id, t("floating.mapOpened")))
+          .catch(() => flash(id, t("floating.openFailed")));
         return;
       }
 
@@ -1411,7 +1416,7 @@ export default function App() {
         // 反馈走全局 toast 而非按钮 flash：从收纳面板发起时面板先收起，
         // flash 挂在已卸载的按钮上等于无提示（全局 toast 窗口不受影响）
         if (!cfg?.vaultPath) {
-          toast("未配置 Obsidian vault，请在设置页选择", "err");
+          toast(t("floating.vaultMissing"), "err");
           return;
         }
         const target = targetOverride ?? "note";
@@ -1454,10 +1459,10 @@ export default function App() {
                 .replaceAll("{due}", due)
                 .replaceAll("{dueTag}", dueTag);
               invoke("obsidian_append", { relPath: rel, content: line })
-                .then(() => toast("已存入任务"))
-                .catch(() => toast("存入 Obsidian 失败", "err"));
+                .then(() => toast(t("floating.savedTask")))
+                .catch(() => toast(t("floating.obsidianFailed"), "err"));
             })
-            .catch(() => toast("存入 Obsidian 失败", "err"));
+            .catch(() => toast(t("floating.obsidianFailed"), "err"));
           return;
         }
 
@@ -1470,7 +1475,8 @@ export default function App() {
             .replace(/\s+/g, " ")
             .trim();
           const title =
-            Array.from(safe).slice(0, 20).join("") || `卡片 ${date} ${time.replace(":", "")}`;
+            Array.from(safe).slice(0, 20).join("") ||
+            t("floating.cardFallbackName", { date, time: time.replace(":", "") });
           const rel = [cfg.cardFolder.replace(/^\/+|\/+$/g, ""), `${title}.md`]
             .filter(Boolean)
             .join("/");
@@ -1480,8 +1486,8 @@ export default function App() {
             .replaceAll("{source}", src)
             .replaceAll("{text}", body.split("\n").join("\n> "));
           invoke("obsidian_append", { relPath: rel, content: content })
-            .then(() => toast(`已存入卡片：${title}`))
-            .catch(() => toast("存入 Obsidian 失败", "err"));
+            .then(() => toast(t("floating.savedCard", { title })))
+            .catch(() => toast(t("floating.obsidianFailed"), "err"));
           return;
         }
 
@@ -1492,8 +1498,8 @@ export default function App() {
           .replaceAll("{source}", src)
           .replaceAll("{text}", body.split("\n").join("\n> "));
         invoke("obsidian_append", { relPath: dailyRel, content: excerpt })
-          .then(() => toast(`已存入 ${fname}`))
-          .catch(() => toast("存入 Obsidian 失败", "err"));
+          .then(() => toast(t("floating.savedFile", { name: fname })))
+          .catch(() => toast(t("floating.obsidianFailed"), "err"));
         return;
       }
       return;
@@ -1504,7 +1510,7 @@ export default function App() {
     if (id === "translate") {
       const svc = serviceOverride ?? defaultTranslate?.id;
       if (!svc) {
-        flash(id, "未启用翻译服务");
+        flash(id, t("floating.translateMissing"));
         return;
       }
       // 使用时兜底提醒（唯一一层校验）：启用了但没配密钥的服务，触发时
@@ -1550,8 +1556,11 @@ export default function App() {
           setPhase({ kind: "bar" });
           return;
         }
-        // 中文→英文，其他→中文；各厂商语言码差异（EN/ZH/zh-CN…）由注册表映射
-        const to = entry.langOf!(/[一-鿿]/.test(trimmed) ? "en" : "zh");
+        // 目标语言跟随界面语言（与 AI 翻译提示词同规则）：原文已是界面语言时
+        // 在中英之间取另一种。各厂商语言码差异（EN/ZH/zh-CN…）由注册表映射
+        const uiLang = getLocale() === "en" ? "en" : "zh";
+        const textZh = /[一-鿿]/.test(trimmed);
+        const to = entry.langOf!(textZh === (uiLang === "zh") ? (uiLang === "zh" ? "en" : "zh") : uiLang);
         invoke<string>(entry.rustCmd, { text: trimmed, to })
           .then((out) => {
             if (runIdRef.current !== runId) return;
@@ -1579,7 +1588,7 @@ export default function App() {
     const system = actionPrompt(action, liveRef.current.prompts);
     // 自定义动作新建后 prompt 还是空的：直接拒，别把空 system 发出去
     if (!system.trim()) {
-      flash(id, "未填提示词");
+      flash(id, t("common.promptNotSet"));
       return;
     }
     // 生效提示词进缓存 key：改了 prompt 的同一选区不再命中旧结果
@@ -1762,7 +1771,7 @@ export default function App() {
         }
       >
         <span className="ic">{iconOf(a.id, a.icon)}</span>
-        <span>{a.label}</span>
+        <span>{actionLabel(a)}</span>
       </button>
       {(a.id === "translate" || a.id === "search" || a.id === "obsidian") &&
         (a.id === "translate"
@@ -1776,10 +1785,10 @@ export default function App() {
           data-trig={interactive ? a.id : undefined}
           aria-label={
             a.id === "translate"
-              ? "更多翻译服务"
+              ? t("floating.ariaMoreTranslate")
               : a.id === "obsidian"
-                ? "存入目标"
-                : "更多搜索引擎"
+                ? t("floating.ariaTargets")
+                : t("floating.ariaMoreSearch")
           }
           onClick={
             interactive
@@ -1845,7 +1854,7 @@ export default function App() {
                 <button
                   className="chev"
                   data-trig={`chev:${e.id}`}
-                  aria-label={e.id === "search" ? "更多搜索引擎" : e.id === "translate" ? "更多翻译服务" : "存入目标"}
+                  aria-label={e.id === "search" ? t("floating.ariaMoreSearch") : e.id === "translate" ? t("floating.ariaMoreTranslate") : t("floating.ariaTargets")}
                   onClick={guarded(() =>
                     setMenu((m) =>
                       m === `chev:${e.id}`
@@ -1868,7 +1877,7 @@ export default function App() {
             <button
               className={`action more ${menu === "overflow" || menu?.startsWith("pmenu:") ? "open" : ""}`}
               data-trig="overflow"
-              aria-label={`还有 ${restEntries.length} 个动作`}
+              aria-label={t("floating.ariaMoreActions", { n: restEntries.length })}
               onClick={guarded(() =>
                 setMenu((m) => (m === "overflow" || m?.startsWith("pmenu:") ? null : "overflow")),
               )}
@@ -1910,7 +1919,7 @@ export default function App() {
                     <button
                       className={`pchev ${menu === `pmenu:${e.id}` ? "open" : ""}`}
                       data-trig={`pmenu:${e.id}`}
-                      aria-label={e.id === "translate" ? "更多翻译服务" : e.id === "obsidian" ? "存入目标" : "更多搜索引擎"}
+                      aria-label={e.id === "translate" ? t("floating.ariaMoreTranslate") : e.id === "obsidian" ? t("floating.ariaTargets") : t("floating.ariaMoreSearch")}
                       onClick={guarded(() =>
                       setMenu((m) =>
                         // 二级收起 = 回到父级（面板保持展开），置 null 会把收纳面板一起收掉
@@ -1940,13 +1949,13 @@ export default function App() {
           const items =
             kind === "obsidian"
               ? [
-                  { key: "note", label: "笔记" },
-                  { key: "task", label: "任务" },
-                  { key: "card", label: "卡片" },
+                  { key: "note", label: t("floating.targetNote") },
+                  { key: "task", label: t("floating.targetTask") },
+                  { key: "card", label: t("floating.targetCard") },
                 ]
               : kind === "translate"
-                ? enabledTranslates.map((s) => ({ key: s.id, label: s.label }))
-                : enabledEngines.map((en) => ({ key: en.name, label: en.name }));
+                ? enabledTranslates.map((s) => ({ key: s.id, label: t(s.label) }))
+                : enabledEngines.map((en) => ({ key: en.name, label: engineDisplayName(en.name) }));
           // 不标记默认项（2026-10-25 用户定稿）：二级菜单是「选一个执行」的
           // 平面列表，默认服务已由胶囊上的服务名表达，菜单内再高亮一条是噪音
           return (
@@ -1985,7 +1994,8 @@ export default function App() {
               <span className="ic">
                 <ScanSearch size={14} strokeWidth={1.75} />
               </span>
-              {phase.label}
+              {/* phase.label 仅为兼容保留，展示走 t() 取词（语言切换随渲染刷新） */}
+              {t("floating.extractTitle")}
               {phase.aiPending && <span className="dot" />}
             </span>
             <span className="panel-tools">
@@ -1998,14 +2008,14 @@ export default function App() {
                   if (copiedAllTimerRef.current) window.clearTimeout(copiedAllTimerRef.current);
                   copiedAllTimerRef.current = window.setTimeout(() => setCopiedAll(false), 1200);
                 })}
-                aria-label="复制全部"
+                aria-label={t("floating.ariaCopyAll")}
               >
                 {copiedAll ? CheckIcon : CopyIcon}
               </button>
               <button
                 className="tool"
                 onClick={guarded(() => (IS_OCR ? closeResultWindow() : backToBar()))}
-                aria-label="收起"
+                aria-label={t("floating.ariaClose")}
               >
                 {CloseIcon}
               </button>
@@ -2018,7 +2028,7 @@ export default function App() {
                   {/* AI 事件并入「日期」组共用组头（用户反馈 2026-10-24：「事件」是
                       日历 App 行话、独占唯一组时又像面板主标题——行内容自明 +
                       行尾「加入日历」按钮已足够可懂，组头保持与其他组同级的提示） */}
-                  {g.label}
+                  {t(g.label)}
                   {/* 计数徽标：一眼知道该组提取了几条，不必逐行数 */}
                   <span className="extract-count">{phase.groups[g.id].length}</span>
                 </div>
@@ -2034,7 +2044,7 @@ export default function App() {
                             invoke("open_url", { url: item }).catch(() => undefined),
                           )}
                         >
-                          打开
+                          {t("floating.actOpen")}
                         </button>
                       )}
                       {g.id === "email" && (
@@ -2043,7 +2053,7 @@ export default function App() {
                             invoke("open_url", { url: `mailto:${item}` }).catch(() => undefined),
                           )}
                         >
-                          邮件
+                          {t("floating.actMail")}
                         </button>
                       )}
                       {g.id === "date" && (
@@ -2054,16 +2064,16 @@ export default function App() {
                             const ev = phase.events?.[i];
                             if (ev) {
                               openEventInCalendar(ev, phase.text, (ok) => {
-                                if (!ok) flash("date", "打开失败");
+                                if (!ok) flash("date", t("floating.openFailed"));
                               }, phase.sourceUrl);
                             } else {
                               detectAndOpenCalendar(phase.text, item, (ok) => {
-                                if (!ok) flash("date", "打开失败");
+                                if (!ok) flash("date", t("floating.openFailed"));
                               }, phase.sourceUrl);
                             }
                           })}
                         >
-                          日历
+                          {t("floating.actCalendar")}
                         </button>
                       )}
                       {g.id === "addr" && (
@@ -2074,7 +2084,7 @@ export default function App() {
                             }).catch(() => undefined),
                           )}
                         >
-                          地图
+                          {t("floating.actMap")}
                         </button>
                       )}
                       <button
@@ -2089,7 +2099,7 @@ export default function App() {
                           );
                         })}
                       >
-                        {copiedItem === item ? "已复制" : "复制"}
+                        {copiedItem === item ? t("floating.copied") : t("floating.copy")}
                       </button>
                     </span>
                   </div>
@@ -2097,7 +2107,7 @@ export default function App() {
               </div>
             ))}
             {/* AI 语义提取进行中：确定性组已先出，日期/地点等 AI 定夺后补齐 */}
-            {phase.aiPending && <div className="extract-loading">正在理解所选内容…</div>}
+            {phase.aiPending && <div className="extract-loading">{t("floating.extractLoading")}</div>}
           </div>
           {IS_OCR && (
             <>
@@ -2128,9 +2138,15 @@ export default function App() {
                   actionId 随之变化，标题跟随当前内容 */}
               {phase.fromOcr
                 ? phase.actionId
-                  ? `识图${byId(phase.actionId)?.label ?? "结果"}`
-                  : "识图取字"
-                : (byId(phase.actionId ?? "")?.label ?? "结果")}
+                  ? t("floating.ocrResultTitle", {
+                      action: byId(phase.actionId)
+                        ? actionLabel(byId(phase.actionId)!)
+                        : t("floating.ocrResultFallback"),
+                    })
+                  : t("floating.ocrTextTitle")
+                : (phase.actionId && byId(phase.actionId)
+                    ? actionLabel(byId(phase.actionId)!)
+                    : t("floating.ocrResultFallback"))}
               {(phase.streaming || doneFlash) && (
                 <span className={`dot ${doneFlash ? "done" : ""}`} />
               )}
@@ -2150,7 +2166,7 @@ export default function App() {
                         (e) => setPinErr(String(e)),
                       );
                     })}
-                    aria-label="钉图"
+                    aria-label={t("floating.ariaPinImage")}
                   >
                   {pinOk ? CheckIcon : <ImagePlus size={13} strokeWidth={1.75} />}
                 </button>
@@ -2163,7 +2179,7 @@ export default function App() {
                       setOcrPinnedState(next);
                       invoke("set_ocr_pinned", { pinned: next }).catch(() => undefined);
                     })}
-                    aria-label="钉住面板"
+                    aria-label={t("floating.ariaPinPanel")}
                   >
                   {ocrPinned ? <PinOff size={13} strokeWidth={1.75} /> : <Pin size={13} strokeWidth={1.75} />}
                 </button>
@@ -2183,14 +2199,14 @@ export default function App() {
                     window.clearTimeout(copiedOcrTimerRef.current);
                   copiedOcrTimerRef.current = window.setTimeout(() => setCopiedOcr(false), 1200);
                 })}
-                aria-label="复制"
+                aria-label={t("floating.copy")}
               >
                 {copiedOcr ? CheckIcon : CopyIcon}
               </button>
               <button
                 className="tool"
                 onClick={guarded(closeResultWindow)}
-                aria-label="收起"
+                aria-label={t("floating.ariaClose")}
               >
                 {CloseIcon}
               </button>
@@ -2222,7 +2238,7 @@ export default function App() {
                   onClick={guarded(() =>
                     setPhase((p) => (p.kind === "ocr" ? { ...p, expanded: !p.expanded } : p)),
                   )}
-                  aria-label="展开或收起原文"
+                  aria-label={t("floating.ariaToggleSource")}
                 >
                   <ChevronDown
                     size={13}
@@ -2259,7 +2275,7 @@ export default function App() {
                     </>
                   )
                 ) : phase.error ? null : (
-                  <div className="placeholder">正在思考…</div>
+                  <div className="placeholder">{t("floating.thinking")}</div>
                 )}
                 {phase.error && (
                   <div className="error">
@@ -2268,7 +2284,7 @@ export default function App() {
                       className="retry"
                       onClick={() => phase.actionId && runAction(phase.actionId)}
                     >
-                      重试
+                      {t("floating.retry")}
                     </button>
                   </div>
                 )}
@@ -2299,7 +2315,7 @@ export default function App() {
                   <button
                     className={`action more ${menu === "overflow" || menu?.startsWith("pmenu:") ? "open" : ""}`}
                     data-trig="overflow"
-                    aria-label={`还有 ${ocrOverflow} 个动作`}
+                    aria-label={t("floating.ariaMoreActions", { n: ocrOverflow })}
                     onClick={guarded(() =>
                       switchMenu(
                         menu === "overflow" || menu?.startsWith("pmenu:")
@@ -2322,7 +2338,7 @@ export default function App() {
                 <button
                   className="jump-down"
                   onClick={guarded(ocrJumpToBottom)}
-                  aria-label="回到底部"
+                  aria-label={t("floating.ariaJumpDown")}
                 >
                   <ChevronDown size={13} strokeWidth={2} />
                 </button>
@@ -2349,7 +2365,7 @@ export default function App() {
                       runAction("translate", s.id);
                     })}
                   >
-                    {s.label}
+                    {t(s.label)}
                   </button>
                 ))}
               </div>
@@ -2375,9 +2391,9 @@ export default function App() {
               <div key="obsidian" className={`mflow ${slotGhost ? "still" : ""}`}>
                 {(
                   [
-                    ["note", "笔记"],
-                    ["task", "任务"],
-                    ["card", "卡片"],
+                    ["note", t("floating.targetNote")],
+                    ["task", t("floating.targetTask")],
+                    ["card", t("floating.targetCard")],
                   ] as Array<[string, string]>
                 ).map(([key, label]) => (
                   <button
@@ -2422,7 +2438,7 @@ export default function App() {
                     })}
                   >
                     <span className="ic">{iconOf(a.id, a.icon)}</span>
-                    <span>{a.label}</span>
+                    <span>{actionLabel(a)}</span>
                   </button>
                   {entryHasMenu(a.id) && (
                     <button
@@ -2430,10 +2446,10 @@ export default function App() {
                       data-trig={`pmenu:${a.id}`}
                       aria-label={
                         a.id === "translate"
-                          ? "更多翻译服务"
+                          ? t("floating.ariaMoreTranslate")
                           : a.id === "search"
-                            ? "更多搜索引擎"
-                            : "存入目标"
+                            ? t("floating.ariaMoreSearch")
+                            : t("floating.ariaTargets")
                       }
                       onClick={guarded(() =>
                         switchMenu(
@@ -2475,7 +2491,7 @@ export default function App() {
                         runAction("translate", s.id);
                       })}
                     >
-                      {s.label}
+                      {t(s.label)}
                     </button>
                   ))}
                 {pmenuVal === "pmenu:search" &&
@@ -2493,7 +2509,7 @@ export default function App() {
                     </button>
                   ))}
                 {pmenuVal === "pmenu:obsidian" &&
-                  ([["note", "笔记"], ["task", "任务"], ["card", "卡片"]] as Array<[string, string]>).map(
+                  ([["note", t("floating.targetNote")], ["task", t("floating.targetTask")], ["card", t("floating.targetCard")]] as Array<[string, string]>).map(
                     ([key, label]) => (
                       <button
                         key={key}
@@ -2525,5 +2541,5 @@ export default function App() {
 /** 进程路径 → 应用名（取末段、去 .app 后缀）："…/Safari.app/Contents/…" → Safari */
 function appNameFrom(path: string): string {
   const last = path.split("/").filter(Boolean).pop() ?? "";
-  return last.replace(/\.app$/i, "") || "未知应用";
+  return last.replace(/\.app$/i, "") || t("floating.unknownApp");
 }

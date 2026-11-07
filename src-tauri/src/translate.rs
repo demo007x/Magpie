@@ -18,6 +18,7 @@ use sha2::{Digest, Sha256};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 
+use crate::i18n::t;
 use crate::settings;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -105,13 +106,13 @@ pub async fn baidu_translate(app: AppHandle, text: String, to: String) -> Result
     let s = settings::current(&app);
     let tc = &s.translate;
     if !tc.enabled.iter().any(|s| s == "baidu") {
-        return Err("未启用百度翻译服务".into());
+        return Err(t("err.translate.baiduDisabled").into());
     }
     let cred = tc.credentials.get("baidu");
     let app_id = cred.map(|c| c.app_id.trim()).unwrap_or_default();
     let app_key = cred.map(|c| c.key.trim()).unwrap_or_default();
     if app_id.is_empty() || app_key.is_empty() {
-        return Err("请到「翻译」页填写百度翻译 APPID 与密钥".into());
+        return Err(t("err.translate.baiduSetup").into());
     }
 
     let salt = SystemTime::now()
@@ -137,23 +138,23 @@ pub async fn baidu_translate(app: AppHandle, text: String, to: String) -> Result
         ])
         .send()
         .await
-        .map_err(|e| format!("网络请求失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.netFailed")))?;
 
     let v: BaiduTransResp = resp
         .json()
         .await
-        .map_err(|e| format!("响应解析失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.parseFailed")))?;
     if let Some(code) = v.error_code {
         return Err(format!(
-            "百度翻译错误 {}：{}",
-            code,
+            "{} {code}: {}",
+            t("err.translate.baiduError"),
             v.error_msg.unwrap_or_default()
         ));
     }
 
     // 只输出译文：原文用户屏幕上就有，对照与语言识别属冗余
     if v.trans_result.is_empty() {
-        return Err("翻译结果为空".into());
+        return Err(t("err.translateEmpty").into());
     }
     let out = v
         .trans_result
@@ -188,7 +189,7 @@ pub async fn deepl_translate(app: AppHandle, text: String, to: String) -> Result
     let s = settings::current(&app);
     let tc = &s.translate;
     if !tc.enabled.iter().any(|x| x == "deepl") {
-        return Err("未启用 DeepL 翻译服务".into());
+        return Err(t("err.translate.deeplDisabled").into());
     }
     let key = tc
         .credentials
@@ -196,7 +197,7 @@ pub async fn deepl_translate(app: AppHandle, text: String, to: String) -> Result
         .map(|c| c.key.trim())
         .unwrap_or_default();
     if key.is_empty() {
-        return Err("请到「翻译」页填写 DeepL Authentication Key".into());
+        return Err(t("err.translate.deeplSetup").into());
     }
 
     let host = if key.ends_with(":fx") {
@@ -214,23 +215,24 @@ pub async fn deepl_translate(app: AppHandle, text: String, to: String) -> Result
         }))
         .send()
         .await
-        .map_err(|e| format!("网络请求失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.netFailed")))?;
 
     let status = resp.status();
     let v: DeeplTransResp = resp
         .json()
         .await
-        .map_err(|e| format!("响应解析失败（HTTP {status}）：{e}"))?;
+        .map_err(|e| format!("{} (HTTP {status}): {e}", t("err.parseFailed")))?;
     if !status.is_success() {
         return Err(format!(
-            "DeepL 错误 HTTP {status}：{}",
+            "{} HTTP {status}: {}",
+            t("err.translate.deeplError"),
             v.message.unwrap_or_default()
         ));
     }
 
     // 只输出译文：原文用户屏幕上就有，语言检测结果属冗余
     if v.translations.is_empty() {
-        return Err("翻译结果为空".into());
+        return Err(t("err.translateEmpty").into());
     }
     Ok(v.translations
         .into_iter()
@@ -278,7 +280,7 @@ pub async fn google_translate(app: AppHandle, text: String, to: String) -> Resul
     let s = settings::current(&app);
     let tc = &s.translate;
     if !tc.enabled.iter().any(|x| x == "google") {
-        return Err("未启用谷歌翻译服务".into());
+        return Err(t("err.translate.googleDisabled").into());
     }
     let key = tc
         .credentials
@@ -286,7 +288,7 @@ pub async fn google_translate(app: AppHandle, text: String, to: String) -> Resul
         .map(|c| c.key.trim())
         .unwrap_or_default();
     if key.is_empty() {
-        return Err("请到「翻译」页填写谷歌翻译 API 密钥".into());
+        return Err(t("err.translate.googleSetup").into());
     }
 
     let client = http_client()?;
@@ -296,16 +298,17 @@ pub async fn google_translate(app: AppHandle, text: String, to: String) -> Resul
         .form(&[("q", text.as_str()), ("target", to.as_str()), ("format", "text")])
         .send()
         .await
-        .map_err(|e| format!("网络请求失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.netFailed")))?;
 
     let status = resp.status();
     let v: GoogleTransResp = resp
         .json()
         .await
-        .map_err(|e| format!("响应解析失败（HTTP {status}）：{e}"))?;
+        .map_err(|e| format!("{} (HTTP {status}): {e}", t("err.parseFailed")))?;
     if !status.is_success() {
         return Err(format!(
-            "谷歌翻译错误 HTTP {status}：{}",
+            "{} HTTP {status}: {}",
+            t("err.translate.googleError"),
             v.error.and_then(|e| e.message).unwrap_or_default()
         ));
     }
@@ -317,7 +320,7 @@ pub async fn google_translate(app: AppHandle, text: String, to: String) -> Resul
         .map(|t| t.translated_text)
         .unwrap_or_default();
     if out.is_empty() {
-        return Err("翻译结果为空".into());
+        return Err(t("err.translateEmpty").into());
     }
     Ok(out)
 }
@@ -334,13 +337,13 @@ pub async fn azure_translate(app: AppHandle, text: String, to: String) -> Result
     let s = settings::current(&app);
     let tc = &s.translate;
     if !tc.enabled.iter().any(|x| x == "microsoft") {
-        return Err("未启用微软翻译服务".into());
+        return Err(t("err.translate.microsoftDisabled").into());
     }
     let cred = tc.credentials.get("microsoft");
     let key = cred.map(|c| c.key.trim()).unwrap_or_default();
     let region = cred.map(|c| c.region.trim()).unwrap_or_default();
     if key.is_empty() {
-        return Err("请到「翻译」页填写微软翻译 API 密钥".into());
+        return Err(t("err.translate.microsoftSetup").into());
     }
 
     let client = http_client()?;
@@ -356,13 +359,13 @@ pub async fn azure_translate(app: AppHandle, text: String, to: String) -> Result
         .body(json!([{ "Text": text }]).to_string())
         .send()
         .await
-        .map_err(|e| format!("网络请求失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.netFailed")))?;
 
     let status = resp.status();
     let body: Value = resp
         .json()
         .await
-        .map_err(|e| format!("响应解析失败（HTTP {status}）：{e}"))?;
+        .map_err(|e| format!("{} (HTTP {status}): {e}", t("err.parseFailed")))?;
     if !status.is_success() {
         // 错误体：{ "error": { "code": 401000, "message": "…" } }
         let msg = body
@@ -370,7 +373,10 @@ pub async fn azure_translate(app: AppHandle, text: String, to: String) -> Result
             .and_then(|e| e.get("message"))
             .and_then(|m| m.as_str())
             .unwrap_or_default();
-        return Err(format!("微软翻译错误 HTTP {status}：{msg}"));
+        return Err(format!(
+            "{} HTTP {status}: {msg}",
+            t("err.translate.microsoftError")
+        ));
     }
     let out = body
         .as_array()
@@ -383,7 +389,7 @@ pub async fn azure_translate(app: AppHandle, text: String, to: String) -> Result
         .unwrap_or_default()
         .to_string();
     if out.is_empty() {
-        return Err("翻译结果为空".into());
+        return Err(t("err.translateEmpty").into());
     }
     Ok(out)
 }
@@ -410,13 +416,13 @@ pub async fn youdao_translate(app: AppHandle, text: String, to: String) -> Resul
     let s = settings::current(&app);
     let tc = &s.translate;
     if !tc.enabled.iter().any(|x| x == "youdao") {
-        return Err("未启用有道翻译服务".into());
+        return Err(t("err.translate.youdaoDisabled").into());
     }
     let cred = tc.credentials.get("youdao");
     let app_key = cred.map(|c| c.app_id.trim()).unwrap_or_default();
     let app_secret = cred.map(|c| c.key.trim()).unwrap_or_default();
     if app_key.is_empty() || app_secret.is_empty() {
-        return Err("请到「翻译」页填写有道翻译的应用 ID 与密钥".into());
+        return Err(t("err.translate.youdaoSetup").into());
     }
 
     let curtime = now_secs().to_string();
@@ -451,21 +457,21 @@ pub async fn youdao_translate(app: AppHandle, text: String, to: String) -> Resul
         ])
         .send()
         .await
-        .map_err(|e| format!("网络请求失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.netFailed")))?;
 
     let v: YoudaoResp = resp
         .json()
         .await
-        .map_err(|e| format!("响应解析失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.parseFailed")))?;
     if v.error_code != "0" {
-        return Err(format!("有道翻译错误 {}", v.error_code));
+        return Err(format!("{} {}", t("err.translate.youdaoError"), v.error_code));
     }
     let out = v
         .translation
         .unwrap_or_default()
         .join("\n");
     if out.is_empty() {
-        return Err("翻译结果为空".into());
+        return Err(t("err.translateEmpty").into());
     }
     Ok(out)
 }
@@ -483,14 +489,14 @@ pub async fn tencent_translate(app: AppHandle, text: String, to: String) -> Resu
     let s = settings::current(&app);
     let tc = &s.translate;
     if !tc.enabled.iter().any(|x| x == "tencent") {
-        return Err("未启用腾讯翻译服务".into());
+        return Err(t("err.translate.tencentDisabled").into());
     }
     let cred = tc.credentials.get("tencent");
     let secret_id = cred.map(|c| c.app_id.trim()).unwrap_or_default();
     let secret_key = cred.map(|c| c.key.trim()).unwrap_or_default();
     let region = cred.map(|c| c.region.trim()).unwrap_or_default();
     if secret_id.is_empty() || secret_key.is_empty() || region.is_empty() {
-        return Err("请到「翻译」页填写腾讯翻译的密钥与地域".into());
+        return Err(t("err.translate.tencentSetup").into());
     }
 
     let ts = now_secs();
@@ -550,21 +556,21 @@ pub async fn tencent_translate(app: AppHandle, text: String, to: String) -> Resu
         .body(payload)
         .send()
         .await
-        .map_err(|e| format!("网络请求失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.netFailed")))?;
 
     // 响应：{ "Response": { "TargetText": "…" } }；错误在 Response.Error
     let v: Value = resp
         .json()
         .await
-        .map_err(|e| format!("响应解析失败：{e}"))?;
-    let inner = v.get("Response").ok_or("响应缺少 Response 字段")?;
+        .map_err(|e| format!("{}: {e}", t("err.parseFailed")))?;
+    let inner = v.get("Response").ok_or(t("err.responseMissingField"))?;
     if let Some(err) = inner.get("Error") {
         let code = err.get("Code").and_then(|c| c.as_str()).unwrap_or_default();
         let msg = err
             .get("Message")
             .and_then(|m| m.as_str())
             .unwrap_or_default();
-        return Err(format!("腾讯翻译错误 {code}：{msg}"));
+        return Err(format!("{} {code}: {msg}", t("err.translate.tencentError")));
     }
     let out = inner
         .get("TargetText")
@@ -572,7 +578,7 @@ pub async fn tencent_translate(app: AppHandle, text: String, to: String) -> Resu
         .unwrap_or_default()
         .to_string();
     if out.is_empty() {
-        return Err("翻译结果为空".into());
+        return Err(t("err.translateEmpty").into());
     }
     Ok(out)
 }
@@ -606,13 +612,13 @@ pub async fn aliyun_translate(app: AppHandle, text: String, to: String) -> Resul
     let s = settings::current(&app);
     let tc = &s.translate;
     if !tc.enabled.iter().any(|x| x == "aliyun") {
-        return Err("未启用阿里翻译服务".into());
+        return Err(t("err.translate.aliyunDisabled").into());
     }
     let cred = tc.credentials.get("aliyun");
     let access_key_id = cred.map(|c| c.app_id.trim()).unwrap_or_default();
     let access_key_secret = cred.map(|c| c.key.trim()).unwrap_or_default();
     if access_key_id.is_empty() || access_key_secret.is_empty() {
-        return Err("请到「翻译」页填写阿里翻译的 AccessKey".into());
+        return Err(t("err.translate.aliyunSetup").into());
     }
 
     let ts = now_secs();
@@ -670,20 +676,24 @@ pub async fn aliyun_translate(app: AppHandle, text: String, to: String) -> Resul
         aliyun_percent_encode(&signature)
     );
     let client = http_client()?;
-    let resp = client.get(&url).send().await.map_err(|e| format!("网络请求失败：{e}"))?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("{}: {e}", t("err.netFailed")))?;
 
     // 响应：{ Code: 200, Data: { Translated: "…" } }；异常时 Code 非 200 带 Message
     let v: Value = resp
         .json()
         .await
-        .map_err(|e| format!("响应解析失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.parseFailed")))?;
     let code = v.get("Code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
         let msg = v
             .get("Message")
             .and_then(|m| m.as_str())
             .unwrap_or_default();
-        return Err(format!("阿里翻译错误 {code}：{msg}"));
+        return Err(format!("{} {code}: {msg}", t("err.translate.aliyunError")));
     }
     let out = v
         .get("Data")
@@ -692,7 +702,7 @@ pub async fn aliyun_translate(app: AppHandle, text: String, to: String) -> Resul
         .unwrap_or_default()
         .to_string();
     if out.is_empty() {
-        return Err("翻译结果为空".into());
+        return Err(t("err.translateEmpty").into());
     }
     Ok(out)
 }
@@ -712,13 +722,13 @@ pub async fn volcano_translate(app: AppHandle, text: String, to: String) -> Resu
     let s = settings::current(&app);
     let tc = &s.translate;
     if !tc.enabled.iter().any(|x| x == "volcano") {
-        return Err("未启用火山翻译服务".into());
+        return Err(t("err.translate.volcDisabled").into());
     }
     let cred = tc.credentials.get("volcano");
     let access_key_id = cred.map(|c| c.app_id.trim()).unwrap_or_default();
     let secret_key = cred.map(|c| c.key.trim()).unwrap_or_default();
     if access_key_id.is_empty() || secret_key.is_empty() {
-        return Err("请到「翻译」页填写火山翻译的访问密钥".into());
+        return Err(t("err.translate.volcSetup").into());
     }
 
     let (y, mo, d, h, mi, se) = utc_parts(now_secs());
@@ -773,13 +783,13 @@ pub async fn volcano_translate(app: AppHandle, text: String, to: String) -> Resu
         .body(payload)
         .send()
         .await
-        .map_err(|e| format!("网络请求失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.netFailed")))?;
 
     // 响应：{ ResponseMetadata: { Error: null | { Code, Message } }, Result: { Translation } }
     let v: Value = resp
         .json()
         .await
-        .map_err(|e| format!("响应解析失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.parseFailed")))?;
     if let Some(err) = v.pointer("/ResponseMetadata/Error") {
         if !err.is_null() {
             let code = err.get("Code").and_then(|c| c.as_str()).unwrap_or_default();
@@ -787,7 +797,7 @@ pub async fn volcano_translate(app: AppHandle, text: String, to: String) -> Resu
                 .get("Message")
                 .and_then(|m| m.as_str())
                 .unwrap_or_default();
-            return Err(format!("火山翻译错误 {code}：{msg}"));
+            return Err(format!("{} {code}: {msg}", t("err.translate.volcError")));
         }
     }
     let out = v
@@ -796,7 +806,7 @@ pub async fn volcano_translate(app: AppHandle, text: String, to: String) -> Resu
         .unwrap_or_default()
         .to_string();
     if out.is_empty() {
-        return Err("翻译结果为空".into());
+        return Err(t("err.translateEmpty").into());
     }
     Ok(out)
 }
@@ -819,7 +829,7 @@ pub async fn caiyun_translate(app: AppHandle, text: String, to: String) -> Resul
     let s = settings::current(&app);
     let tc = &s.translate;
     if !tc.enabled.iter().any(|x| x == "caiyun") {
-        return Err("未启用彩云小译服务".into());
+        return Err(t("err.translate.caiyunDisabled").into());
     }
     let token = tc
         .credentials
@@ -827,7 +837,7 @@ pub async fn caiyun_translate(app: AppHandle, text: String, to: String) -> Resul
         .map(|c| c.key.trim())
         .unwrap_or_default();
     if token.is_empty() {
-        return Err("请到「翻译」页填写彩云小译的 API 令牌".into());
+        return Err(t("err.translate.caiyunSetup").into());
     }
 
     let client = http_client()?;
@@ -844,15 +854,15 @@ pub async fn caiyun_translate(app: AppHandle, text: String, to: String) -> Resul
         }))
         .send()
         .await
-        .map_err(|e| format!("网络请求失败：{e}"))?;
+        .map_err(|e| format!("{}: {e}", t("err.netFailed")))?;
 
     let status = resp.status();
     let v: CaiyunResp = resp
         .json()
         .await
-        .map_err(|e| format!("响应解析失败（HTTP {status}）：{e}"))?;
+        .map_err(|e| format!("{} (HTTP {status}): {e}", t("err.parseFailed")))?;
     if !status.is_success() {
-        return Err(format!("彩云小译错误 HTTP {status}"));
+        return Err(format!("{} HTTP {status}", t("err.translate.caiyunError")));
     }
     // source 传数组时 target 为数组：取首段（本应用单次只送一条）
     let out = match &v.target {
@@ -865,7 +875,7 @@ pub async fn caiyun_translate(app: AppHandle, text: String, to: String) -> Resul
         _ => String::new(),
     };
     if out.is_empty() {
-        return Err("翻译结果为空".into());
+        return Err(t("err.translateEmpty").into());
     }
     Ok(out)
 }

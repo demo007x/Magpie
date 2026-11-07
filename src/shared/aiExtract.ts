@@ -57,7 +57,7 @@ function cleanStrings(arr: unknown, validate?: (v: string) => boolean): string[]
   return out;
 }
 
-/** 构建提取用 system 提示词：DEFAULT_PROMPTS.extract 或用户自定义（提示词页），
+/** 构建提取用 system 提示词：defaultPrompt("extract")（随界面语言）或用户自定义（提示词页），
  * 替换 {date} 占位符为当天日期（含星期）——模型不知道「今天」，相对时间换算需要基准。
  * 自定义模板丢了 {date} 也不补救：所见即所发，效果差是改坏者自己的责任 */
 export function buildExtractPrompt(

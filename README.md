@@ -171,6 +171,9 @@ Design documents are written in Simplified Chinese:
 
 Issues and PRs are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) (written in Simplified Chinese) for the contribution process, local verification standards, and engineering conventions.
 
+## Friends
+
+- [造梦橱窗](https://idea.v5pc.com/)
 
 ## Star History
 
