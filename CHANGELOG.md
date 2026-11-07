@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- 本文件仅在发版时依据 docs/release/release-vX.Y.Z.md 的已勾选条目生成版本节，开发阶段勿改 -->
 
+## [0.1.21] - 2026-11-07
+
+### Added
+
+- The interface now speaks both Chinese and English: every piece of user-visible text — settings pages, the floating bar, the action capsule, the result window, the tray menu and toasts — is available in either language. It follows the system language by default (Chinese system → Chinese interface, anything else → English), and can be switched manually in Settings › General (跟随系统 / 中文 / English). The switch takes effect immediately and the choice survives restarts.
+
+### Changed
+
+- The four built-in AI prompts (translate / explain / summarize / smart extract) now come in both languages: the prompt page shows, edits and restores the version matching the interface language. Your own custom prompts are never touched by a language switch.
+- AI actions now answer in the interface language: translate / explain / summarize produce Chinese on a Chinese interface and English on an English one, and translation picks the other language when the source text is already the target one. Machine-translation services follow the same rule instead of guessing from the text. The prompts in Settings show this as a `{lang}` placeholder, so what you see is exactly what gets sent.
+
 ## [0.1.20] - 2026-11-05
 
 ### Added
