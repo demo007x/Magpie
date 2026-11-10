@@ -247,14 +247,15 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Read-aloud page
   "speech.hint":
-    "Read text aloud with voices that live on your Mac. Download once, then it works offline — nothing you read is uploaded.",
+    "Read text aloud with voices that live on your computer. Download once, then it works offline — nothing you read is uploaded.",
   "speech.installTitle": "Voice pack",
-  "speech.installSub": "Download once to read Chinese and English aloud (about 180 MB).",
+  "speech.installSub": "About {size} MB to download; download once, then it works offline.",
+  "speech.installSubNoNum": "Download once, then it works offline.",
   "speech.download": "Download voice pack",
   "speech.downloading": "Downloading {percent}%",
+  "speech.downloadingInd": "Downloading…",
   "speech.extracting": "Installing…",
   "speech.downloadFailed": "Download failed: {error}",
-  "speech.installed": "Installed — works offline",
   "speech.zhSec": "Chinese voices",
   "speech.enSec": "English voices",
   "speech.preview": "Preview",
@@ -268,6 +269,13 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "speech.voiceEnF": "US female {n}",
   "speech.voiceEnUk": "UK female",
   "speech.unsupported": "Read-aloud isn't available on this system yet.",
+  "speech.enable": "Read-aloud feature",
+  "speech.enableSub": "Turning it off deletes the downloaded voice pack. Download again to use it later.",
+  "speech.offTitle": "Turn off read-aloud and delete the voice pack?",
+  "speech.offText": "The downloaded voice files (about {size} MB) will be deleted. You can download them again anytime.",
+  "speech.offTextNoNum": "The downloaded voice files will be deleted. You can download them again anytime.",
+  "speech.offConfirm": "Turn off & delete",
+  "speech.uninstallFailed": "Couldn't turn it off: {error}",
 
   // About page
   "about.hint": "Version info, update checks and ways to reach us.",

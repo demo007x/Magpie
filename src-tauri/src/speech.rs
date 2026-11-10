@@ -26,11 +26,48 @@ use tauri::{AppHandle, Emitter, Manager};
 const ENGINE_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-osx-universal2-shared.tar.bz2";
 /// 引擎包（Windows x64，MD/Release：bin/ 下含 sherpa-onnx-offline-tts.exe，
 /// onnxruntime.dll 与 exe 同目录，Windows 的 DLL 搜索路径天然覆盖）
-#[cfg(windows)]
+#[cfg(all(windows, target_arch = "x86_64"))]
 const ENGINE_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-win-x64-shared-MD-Release.tar.bz2";
+/// 引擎包（Windows ARM64 原生，与 x64 同款布局）。x64 包在 ARM 机器上要过指令
+/// 仿真，模型装载和推理都慢一倍以上（同句实测 10s → 4.4-5.7s），ARM 机器必须
+/// 用原生包
+#[cfg(all(windows, target_arch = "aarch64"))]
+const ENGINE_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-win-arm64-shared-MD-Release.tar.bz2";
 /// 模型包（v1.1 中英双语，103 音色，int8 量化，与平台无关）
 const MODEL_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2";
 const MODEL_DIR_NAME: &str = "kokoro-int8-multi-lang-v1_1";
+
+/// 下载源列表：GitHub 直连优先，其后是几个对 Release 直链做整段代理的国内加速
+/// 实例。GitHub 在国内间歇性被掐（本机开发期实测时通时断），哪个域名单独被墙
+/// 也说不准——逐个尝试、谁先成功用谁。注意：代理实例能改写传输内容，属于可用性
+/// 与完整性的折中（上游未发布校验和，无法强校验）
+fn source_urls(url: &str) -> Vec<String> {
+    [
+        "",
+        "https://gh-proxy.com/",
+        "https://ghfast.top/",
+        "https://gh.llkk.cc/",
+    ]
+    .iter()
+    .map(|prefix| format!("{prefix}{url}"))
+    .collect()
+}
+
+/// 依次尝试各下载源，全部失败才报错（各源的具体错误进日志）
+async fn fetch_any(app: &AppHandle, url: &str, dest: &Path, stage: &str) -> Result<(), String> {
+    for (i, u) in source_urls(url).iter().enumerate() {
+        match fetch(app, u, dest, stage).await {
+            Ok(()) => {
+                crate::user_log(&format!("[tts] 第 {} 个下载源成功", i + 1));
+                return Ok(());
+            }
+            Err(e) => {
+                crate::user_log(&format!("[tts] 下载源 {} 失败：{e}", i + 1));
+            }
+        }
+    }
+    Err("所有下载源均无法连接，请稍后重试".into())
+}
 
 /// 引擎 CLI 的相对路径（两平台包内布局同名不同后缀）
 #[cfg(windows)]
@@ -40,15 +77,21 @@ const ENGINE_EXE: &str = "bin/sherpa-onnx-offline-tts";
 
 /// 下载中闸门：重复点击「下载」不再起第二个并发下载（两个线程写同一文件必坏）
 static DOWNLOADING: AtomicBool = AtomicBool::new(false);
-/// 合成子进程槽位（按块号索引）：停止时逐个 kill（合成中停止 = 这次朗读作废）。
-/// 并发预合成同时有多个在跑，Vec 槽位让驱动线程按块号等待各自的完成
-static SYNTH: Mutex<Vec<Option<Child>>> = Mutex::new(Vec::new());
+/// 合成子进程表，每项 (代次, 块号, 子进程)：停止时逐个 kill（合成中停止 = 这次
+/// 朗读作废）；并发预合成同时有多个在跑，驱动线程按「自己的代次 + 块号」认领
+/// 各自的子进程。带代次是因为新旧两轮的驱动线程会短暂并存——早先按块号做下标、
+/// 每轮开头整表重置，新一轮清表后旧线程还在按下标取，越界 panic 后锁被毒化，
+/// 之后每次朗读都死在取锁上（点了没声音，重启才恢复）
+static SYNTH: Mutex<Vec<(u64, usize, Child)>> = Mutex::new(Vec::new());
 /// 播放子进程 PID（0 = 未播放）。播放要等到自然结束才能发「结束」事件，
 /// 所以这里不持有 Child，只用 PID 支持中途 kill
 static PLAYER_PID: AtomicU32 = AtomicU32::new(0);
 /// 朗读代次：每次开始/停止都 +1。工作线程只认自己那一代，代次对不上就立刻收工
 /// ——长文分块朗读时，旧线程不能把新一轮的「播放中」状态和进度事件搅乱
 static RUN: AtomicU64 = AtomicU64::new(0);
+/// 引擎+模型压缩包总字节数（HEAD content-length 实测）。None = 还没探到过
+/// （网络不可达时前端显示不带数字的文案），探到就缓存、页面反复进入不再发请求
+static REMOTE_SIZES: Mutex<Option<u64>> = Mutex::new(None);
 
 /// 每块朗读的字数目标。首块短：合成「首块」的时间就是用户等待出声的时间，
 /// 实测 CPU 推理 RTF≈0.5（1 秒音频算 0.5 秒），36 字≈7-8 秒音频≈3 秒出声；
@@ -64,8 +107,10 @@ const PAR_SYNTH: usize = 2;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TtsStatus {
-    /// 本平台是否具备朗读能力（当前仅 macOS）
+    /// 本平台是否具备朗读能力（macOS 与 Windows 已接入）
     pub supported: bool,
+    /// 朗读功能开关（关闭时入口隐藏，音色包已被卸载）
+    pub enabled: bool,
     /// 引擎 + 模型都已就绪
     pub installed: bool,
     /// 正在下载/安装（页面重新进入时据此恢复进度界面）
@@ -91,18 +136,40 @@ fn model_dir(app: &AppHandle) -> PathBuf {
     root(app).join(MODEL_DIR_NAME)
 }
 
-/// 引擎二进制：解压目录名带版本号（sherpa-onnx-vX-osx-... / ...-win-...），按内容
-/// 查找而不是拼死路径——升级引擎版本时只改 URL，不必同步改路径
+/// 引擎二进制：解压目录名 = 包名去 .tar.bz2（sherpa-onnx 各 release 一贯如此），
+/// 按目录名精确匹配——升级引擎版本/换架构（如 ARM64 机器从 x64 包换原生包）后，
+/// 旧目录里的引擎是错的，绝不能拿去用；macOS 只有 universal2 一个包，保持按 exe
+/// 查找的旧逻辑不变
 fn engine_bin(app: &AppHandle) -> Option<PathBuf> {
     let engine_root = root(app).join("engine");
     let entries = std::fs::read_dir(&engine_root).ok()?;
+    let expected = if cfg!(target_os = "macos") {
+        None
+    } else {
+        Some(engine_dir_name())
+    };
     for e in entries.flatten() {
+        if let Some(want) = &expected {
+            if e.file_name().to_str() != Some(want.as_str()) {
+                continue;
+            }
+        }
         let p = e.path().join(ENGINE_EXE);
         if p.exists() {
             return Some(p);
         }
     }
     None
+}
+
+/// 当前 ENGINE_URL 对应的解压目录名
+fn engine_dir_name() -> String {
+    ENGINE_URL
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .trim_end_matches(".tar.bz2")
+        .to_string()
 }
 
 fn model_ready(app: &AppHandle) -> bool {
@@ -119,11 +186,95 @@ fn cache_dir(app: &AppHandle) -> PathBuf {
         .unwrap_or_else(|_| std::env::temp_dir())
 }
 
+/// 清理异常退出残留的合成临时文件（tts-*.wav / tts-*.err）：正常路径上驱动线程
+/// 收尾会删干净，但进程被杀/崩溃时来不及删，缓存目录会慢慢攒垃圾（每块 wav 约
+/// 1MB）。只动修改时间超过 1 小时的——进行中的朗读会话文件都是新的，不会误删
+fn sweep_stale_temp(app: &AppHandle) {
+    let Ok(entries) = std::fs::read_dir(cache_dir(app)) else {
+        return;
+    };
+    let stale = Duration::from_secs(3600);
+    let now = std::time::SystemTime::now();
+    for e in entries.flatten() {
+        let p = e.path();
+        let is_temp = p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with("tts-") && (n.ends_with(".wav") || n.ends_with(".err")));
+        if !is_temp {
+            continue;
+        }
+        let is_old = e
+            .metadata()
+            .and_then(|m| m.modified())
+            .map(|m| now.duration_since(m).unwrap_or(stale) >= stale)
+            .unwrap_or(false);
+        if is_old {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+}
+
+/// 合成缓存路径：键 = 模型代 + 音色 + 中文规则路数 + 块文本 的散列（尾部带字数，
+/// 进一步压低碰撞危害）。同句同音色重播直接复用现成 wav，不再等一遍模型装载。
+/// 不绑窗口生命周期：浮窗常驻隐藏、关闭≠销毁，且缓存的价值正在于跨窗口复用
+fn cache_path(base: &Path, sid: u32, zh: bool, text: &str) -> PathBuf {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    (MODEL_DIR_NAME, sid, zh, text).hash(&mut h);
+    let chars = text.chars().count();
+    base.join("tts-cache")
+        .join(format!("{:016x}-{chars}.wav", h.finish()))
+}
+
+/// 缓存总量上限：一百 MB ≈ 上千句短句。超过按修改时间从旧到新淘汰——
+/// 淘汰不绑窗口关闭（浮窗常驻隐藏，关闭事件基本不会来），写满即收就自维护了
+const TTS_CACHE_CAP: u64 = 100 * 1024 * 1024;
+
+/// 淘汰最近 10 分钟内写入的文件：别的朗读会话可能马上要播它
+fn prune_cache(base: &Path) {
+    let Ok(entries) = std::fs::read_dir(base.join("tts-cache")) else {
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    let mut files: Vec<(PathBuf, u64, std::time::SystemTime)> = entries
+        .flatten()
+        .filter_map(|e| {
+            let p = e.path();
+            let md = e.metadata().ok()?;
+            if p.extension().and_then(|x| x.to_str()) != Some("wav") {
+                return None;
+            }
+            Some((p, md.len(), md.modified().ok()?))
+        })
+        .collect();
+    let mut total: u64 = files.iter().map(|f| f.1).sum();
+    if total <= TTS_CACHE_CAP {
+        return;
+    }
+    files.sort_by_key(|f| f.2);
+    for (p, size, mtime) in files {
+        if total <= TTS_CACHE_CAP {
+            break;
+        }
+        let fresh = now
+            .duration_since(mtime)
+            .map(|d| d < Duration::from_secs(600))
+            .unwrap_or(true);
+        if fresh || std::fs::remove_file(&p).is_err() {
+            continue;
+        }
+        total -= size;
+    }
+}
+
 #[tauri::command]
 pub fn tts_status(app: AppHandle) -> TtsStatus {
     TtsStatus {
         // macOS 与 Windows x64 都已接入（引擎/播放均有对应实现）
         supported: cfg!(any(target_os = "macos", target_os = "windows")),
+        enabled: crate::settings::current(&app).tts.enabled,
         installed: installed(&app),
         downloading: DOWNLOADING.load(Ordering::SeqCst),
     }
@@ -140,6 +291,10 @@ pub async fn tts_download(app: AppHandle) -> Result<(), String> {
         Ok(()) => crate::user_log("[tts] 音色包安装完成"),
         Err(e) => crate::user_log(&format!("[tts] 安装失败：{e}")),
     }
+    if result.is_ok() {
+        // 装好即广播：已开着的朗读窗立刻亮出入口，不必重开
+        let _ = app.emit("tts://changed", ());
+    }
     result
 }
 
@@ -148,14 +303,17 @@ async fn download_all(app: &AppHandle) -> Result<(), String> {
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     if engine_bin(app).is_none() {
         let tar = root.join("engine.tar.bz2");
-        fetch(app, ENGINE_URL, &tar, "engine").await?;
+        fetch_any(app, ENGINE_URL, &tar, "engine").await?;
         emit(app, "extract", 0.0);
         extract(&tar, &root.join("engine"))?;
+        // 换架构/升级版本后旧引擎目录作废（一份 ~150MB），顺手清掉
+        #[cfg(windows)]
+        cleanup_old_engines(app, &root.join("engine").join(engine_dir_name()));
         let _ = std::fs::remove_file(&tar);
     }
     if !model_ready(app) {
         let tar = root.join("model.tar.bz2");
-        fetch(app, MODEL_URL, &tar, "model").await?;
+        fetch_any(app, MODEL_URL, &tar, "model").await?;
         emit(app, "extract", 0.0);
         // 模型包顶层目录就是 MODEL_DIR_NAME，直接解到 tts 根下
         extract(&tar, &root)?;
@@ -172,6 +330,29 @@ fn emit(app: &AppHandle, stage: &str, percent: f64) {
             percent,
         },
     );
+}
+
+/// 清掉引擎目录下其他 sherpa-onnx-* 包（换架构/升级版本后旧包作废，一份
+/// ~150MB）：只删「名字以 sherpa-onnx- 开头且含引擎 exe」的目录，刚解压的这份
+/// 除外，其余内容一概不动
+#[cfg(windows)]
+fn cleanup_old_engines(app: &AppHandle, fresh_dir: &Path) {
+    let engine_root = root(app).join("engine");
+    let Ok(entries) = std::fs::read_dir(&engine_root) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let p = e.path();
+        if p == fresh_dir
+            || !p
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("sherpa-onnx-"))
+            || !p.join(ENGINE_EXE).exists()
+        {
+            continue;
+        }
+        let _ = std::fs::remove_dir_all(p);
+    }
 }
 
 /// 流式下载到文件，每约 1MB 回报一次进度（GitHub 会 302 到对象存储，reqwest
@@ -202,15 +383,18 @@ async fn fetch(app: &AppHandle, url: &str, dest: &Path, stage: &str) -> Result<(
         got += chunk.len() as u64;
         if got - reported > 1_000_000 {
             reported = got;
+            // 代理源常用 chunked 传输（无 content-length）：-1 表示进度未知，
+            // 前端显示「正在下载…」而非一个假的 0%
             let percent = if total > 0 {
                 (got as f64 / total as f64 * 100.0).min(99.0)
             } else {
-                0.0
+                -1.0
             };
             emit(app, stage, percent);
         }
     }
     let _ = file.flush();
+    // 有总量的源已经在流里报过真实进度，这里统一收口到 100%
     emit(app, stage, 100.0);
     // 下载完成但文件为空 = 磁盘/网络异常，别把坏包当成功
     if got == 0 {
@@ -285,6 +469,12 @@ fn kill_player(pid: u32) {
     let _ = Command::new("kill").arg(pid.to_string()).status();
 }
 
+/// 取合成子进程表的锁，容忍 poison：表在任何时刻都是合法状态，不该因为某个
+/// 线程 panic 过就让之后的朗读全部报废
+fn synth() -> std::sync::MutexGuard<'static, Vec<(u64, usize, Child)>> {
+    SYNTH.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// 朗读一段文字：`sid` 为空时按语言取设置里的默认音色（试听指定音色则直接传 sid，
 /// 免得依赖「先落盘再朗读」的时序），后台合成后播放。
 /// 立即返回，不阻塞 UI（长文本合成需要数秒）。
@@ -319,6 +509,7 @@ pub fn tts_speak(
             s.tts.zh_voice
         }
     });
+    sweep_stale_temp(&app);
     stop_playback();
     let run = RUN.fetch_add(1, Ordering::SeqCst) + 1;
     let chunks = chunk_text(&text, FIRST_CHUNK, REST_CHUNK);
@@ -349,14 +540,12 @@ pub fn tts_speak(
     let chars = text.chars().count();
     std::thread::spawn(move || {
         let dir = cache_dir(&app);
+        // 缓存目录就绪（首用/被清过也能落盘）
+        let _ = std::fs::create_dir_all(dir.join("tts-cache"));
         let n = chunks.len();
         let mut made: Vec<PathBuf> = Vec::new();
         let mut wavs: Vec<PathBuf> = Vec::new();
-        {
-            let mut g = SYNTH.lock().unwrap();
-            g.clear();
-            g.extend((0..n).map(|_| None));
-        }
+        let mut cached = vec![false; n];
         crate::user_log(&format!(
             "[tts] 开始朗读：{chars} 字 / {n} 块 / lang={lang} / sid={sid} / 并发 {PAR_SYNTH}"
         ));
@@ -370,53 +559,74 @@ pub fn tts_speak(
             }
             // 补满并发槽（槽位少一个才补一个，失败即整轮作废）
             while next < n {
-                let running = SYNTH.lock().unwrap().iter().filter(|s| s.is_some()).count();
-                if running >= PAR_SYNTH {
+                let running = synth().iter().filter(|s| s.0 == run).count();
+                // 首块只开一路：每路进程都要完整装载一遍模型，首块等待期间两路
+                // 并装在 CPU/磁盘上互相拖慢（4 核机器实测首块明显变慢）；进入下
+                // 一迭代（首块已合成完）再补满并发，块间衔接不受影响
+                let cap = if i == 0 { 1 } else { PAR_SYNTH };
+                if running >= cap {
                     break;
                 }
-                let wav = dir.join(format!("tts-{run}-{next}.wav"));
-                let err = dir.join(format!("tts-{run}-{next}.err"));
-                made.push(wav.clone());
-                made.push(err.clone());
-                wavs.push(wav.clone());
-                match spawn_synth(&bin, &args, &wav, &chunks[next], &err) {
-                    Ok(c) => {
-                        SYNTH.lock().unwrap()[next] = Some(c);
-                        next += 1;
-                    }
-                    Err(e) => {
-                        crate::user_log(&format!("[tts] 合成进程启动失败：{e}"));
-                        break 'outer;
+                let tmp = dir.join(format!("tts-{run}-{next}.wav"));
+                let cache = cache_path(&dir, sid, lang != "en", &chunks[next]);
+                // 已合成过的内容直接用缓存里的现成 wav：不装模型、不等推理
+                let hit = std::fs::metadata(&cache).map(|m| m.len() > 44).unwrap_or(false);
+                wavs.push(cache);
+                if hit {
+                    cached[next] = true;
+                    next += 1;
+                } else {
+                    let err = dir.join(format!("tts-{run}-{next}.err"));
+                    made.push(tmp.clone());
+                    made.push(err.clone());
+                    match spawn_synth(&bin, &args, &tmp, &chunks[next], &err) {
+                        Ok(c) => {
+                            synth().push((run, next, c));
+                            next += 1;
+                        }
+                        Err(e) => {
+                            crate::user_log(&format!("[tts] 合成进程启动失败：{e}"));
+                            break 'outer;
+                        }
                     }
                 }
             }
-            // 等第 i 块合成完成
+            // 等第 i 块合成完成（缓存命中的块已是现成 wav，无需等待）
             let wav = wavs[i].clone();
-            loop {
-                if RUN.load(Ordering::SeqCst) != run {
-                    break 'outer;
-                }
-                let poll = SYNTH.lock().unwrap()[i]
-                    .as_mut()
-                    .map(|c| c.try_wait().ok().flatten());
-                match poll {
-                    None => break 'outer, // 被 stop 清空 = 作废
-                    Some(None) => std::thread::sleep(Duration::from_millis(40)),
-                    Some(Some(st)) => {
-                        SYNTH.lock().unwrap()[i] = None;
-                        if !st.success() {
-                            // 引擎报错只在 stderr（已落到旁路文件），带出来才有诊断价值
-                            let errtxt = std::fs::read_to_string(dir.join(format!("tts-{run}-{i}.err")))
-                                .unwrap_or_default();
-                            crate::user_log(&format!(
-                                "[tts] 第 {}/{} 块合成失败：{}",
-                                i + 1,
-                                n,
-                                errtxt.trim().chars().rev().take(200).collect::<String>().chars().rev().collect::<String>()
-                            ));
-                            break 'outer;
+            if !cached[i] {
+                loop {
+                    if RUN.load(Ordering::SeqCst) != run {
+                        break 'outer;
+                    }
+                    let poll = synth()
+                        .iter_mut()
+                        .find(|s| s.0 == run && s.1 == i)
+                        .map(|s| s.2.try_wait().ok().flatten());
+                    match poll {
+                        None => break 'outer, // 被 stop 清空 = 作废
+                        Some(None) => std::thread::sleep(Duration::from_millis(40)),
+                        Some(Some(st)) => {
+                            synth().retain(|s| !(s.0 == run && s.1 == i));
+                            if !st.success() {
+                                // 引擎报错只在 stderr（已落到旁路文件），带出来才有诊断价值
+                                let errtxt = std::fs::read_to_string(dir.join(format!("tts-{run}-{i}.err")))
+                                    .unwrap_or_default();
+                                crate::user_log(&format!(
+                                    "[tts] 第 {}/{} 块合成失败：{}",
+                                    i + 1,
+                                    n,
+                                    errtxt.trim().chars().rev().take(200).collect::<String>().chars().rev().collect::<String>()
+                                ));
+                                break 'outer;
+                            }
+                            // 缓存未命中的块：合成成功即收编进缓存（同卷改名，原子）。
+                            // 改名失败不影响本次播放，退回播临时文件
+                            let tmp = dir.join(format!("tts-{run}-{i}.wav"));
+                            if std::fs::rename(&tmp, &wav).is_err() {
+                                wavs[i] = tmp;
+                            }
+                            break;
                         }
-                        break;
                     }
                 }
             }
@@ -472,17 +682,20 @@ pub fn tts_speak(
                 st.ok().map(|s| s.code().unwrap_or(-1)).unwrap_or(-1)
             ));
         }
-        // 收掉还在跑的合成子进程（失败/停止路径会有残余）
+        // 收掉还在跑的合成子进程（失败/停止路径会有残余）。只收自己这一轮的：
+        // 被新一轮顶掉时表里已经是新一轮的子进程，不能连带杀掉
         {
-            let mut g = SYNTH.lock().unwrap();
-            for s in g.iter_mut() {
-                if let Some(mut c) = s.take() {
-                    let _ = c.kill();
-                    let _ = c.wait();
-                }
+            let mut g = synth();
+            let (mine, rest): (Vec<_>, Vec<_>) =
+                std::mem::take(&mut *g).into_iter().partition(|s| s.0 == run);
+            *g = rest;
+            for (_, _, mut c) in mine {
+                let _ = c.kill();
+                let _ = c.wait();
             }
-            g.clear();
         }
+        // 缓存总量超限则从最旧开始淘汰（刚收编/正在播的文件很新，不会被选中）
+        prune_cache(&dir);
         // 代次没被顶掉（正常读完 / 用户按的是停止）才发结束事件；被新一轮接手时
         // 不发，否则会把新一轮刚点亮的「播放中」状态清掉
         if RUN.load(Ordering::SeqCst) == run {
@@ -619,17 +832,114 @@ pub fn tts_stop() {
     stop_playback();
 }
 
+/// 下载量（引擎+模型压缩包总字节）：对下载源逐个发 HEAD 取 content-length，
+/// 拿不到（全被墙/代理不支持）返回 null，前端回退到不带数字的文案。成功即缓存
+#[tauri::command]
+pub async fn tts_remote_sizes() -> Option<u64> {
+    if let Some(v) = REMOTE_SIZES.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        return Some(v);
+    }
+    let client = reqwest::Client::builder()
+        .user_agent("magpie-tts")
+        .connect_timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(20))
+        .build()
+        .ok()?;
+    let mut total = 0u64;
+    for url in [ENGINE_URL, MODEL_URL] {
+        let mut got = None;
+        for u in source_urls(url) {
+            let size = client
+                .head(&u)
+                .send()
+                .await
+                .ok()?
+                .error_for_status()
+                .ok()?
+                .content_length();
+            if let Some(s) = size {
+                got = Some(s);
+                break;
+            }
+        }
+        total += got?;
+    }
+    crate::user_log(&format!("[tts] 下载包总大小：{} MB", total / 1_000_000));
+    *REMOTE_SIZES.lock().unwrap_or_else(|e| e.into_inner()) = Some(total);
+    Some(total)
+}
+
+/// 目录实际占用的字节数（递归）
+fn dir_size(p: &Path) -> u64 {
+    let mut total = 0u64;
+    if let Ok(entries) = std::fs::read_dir(p) {
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                total += dir_size(&path);
+            } else if let Ok(md) = e.metadata() {
+                total += md.len();
+            }
+        }
+    }
+    total
+}
+
+/// 音色包装机占用实测：tts 目录（引擎+模型）+ 合成缓存。卸载确认框里显示的
+/// 数字用真实值，不再写死估算
+#[tauri::command]
+pub fn tts_installed_size(app: AppHandle) -> u64 {
+    let mut total = dir_size(&root(&app));
+    let cache = cache_dir(&app);
+    total += dir_size(&cache.join("tts-cache"));
+    if let Ok(entries) = std::fs::read_dir(&cache) {
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name.starts_with("tts-") {
+                total += e.metadata().map(|m| m.len()).unwrap_or(0);
+            }
+        }
+    }
+    total
+}
+
+/// 卸载音色包：删掉引擎、模型和合成缓存，朗读入口随之消失（重新下载即恢复）。
+/// 设置里的音色偏好保留——重装后无需重选
+#[tauri::command]
+pub async fn tts_uninstall(app: AppHandle) -> Result<(), String> {
+    if DOWNLOADING.load(Ordering::SeqCst) {
+        return Err("正在下载中".into());
+    }
+    stop_playback();
+    let tts_root = root(&app);
+    if tts_root.exists() {
+        // 刚被停掉的合成进程可能还没完全退出、引擎文件仍被占用，稍候重试一次
+        if std::fs::remove_dir_all(&tts_root).is_err() {
+            std::thread::sleep(Duration::from_millis(300));
+            std::fs::remove_dir_all(&tts_root).map_err(|e| format!("删除失败：{e}"))?;
+        }
+    }
+    let cache = cache_dir(&app);
+    let _ = std::fs::remove_dir_all(cache.join("tts-cache"));
+    // 散落的合成临时文件（tts-*.wav / tts-*.err）
+    if let Ok(entries) = std::fs::read_dir(&cache) {
+        for e in entries.flatten() {
+            if e.file_name().to_string_lossy().starts_with("tts-") {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+    crate::user_log("[tts] 音色包已卸载");
+    let _ = app.emit("tts://changed", ());
+    Ok(())
+}
+
 fn stop_playback() {
     // 先推代次：工作线程下次检查即退出，不再动刚被新一轮接管的子进程
     RUN.fetch_add(1, Ordering::SeqCst);
-    if let Ok(mut g) = SYNTH.lock() {
-        for s in g.iter_mut() {
-            if let Some(mut c) = s.take() {
-                let _ = c.kill();
-                let _ = c.wait();
-            }
-        }
-        g.clear();
+    for (_, _, mut c) in synth().drain(..) {
+        let _ = c.kill();
+        let _ = c.wait();
     }
     let pid = PLAYER_PID.swap(0, Ordering::SeqCst);
     if pid > 0 {

@@ -316,6 +316,9 @@ export default function App() {
   const [copiedOcr, setCopiedOcr] = useState(false);
   // 结果窗朗读中（图标态）：tts://end 回来即复位
   const [speaking, setSpeaking] = useState(false);
+  // 朗读可用（功能开启且音色包已装好）：朗读钮只在此时显示，装/卸与开关
+  // 经 tts://changed 与 settings://changed 即时同步
+  const [ttsReady, setTtsReady] = useState(false);
   // OCR 面板「钉图」成功的反馈（图标短暂变对勾）
   const [pinOk, setPinOk] = useState(false);
   // 结果窗口完成闪烁：流式结束瞬间呼吸点变绿，2s 后消失（比单纯延迟消失语义清晰）
@@ -955,6 +958,27 @@ export default function App() {
     // speaking 有意不进依赖：只在内容键变化时判定，否则复位自身会再次触发
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [speakKey]);
+
+  // 朗读可用性的即时同步：设置页开关/装卸会广播 tts://changed（装卸与下载完成）
+  // 或 settings://changed（保存设置，覆盖只切开关不装卸的路径），收到即重查状态，
+  // 不必重开窗口。不可用时若正在朗读，Rust 侧已停声，这里把图标态一并复位
+  useEffect(() => {
+    if (!IS_OCR) return;
+    const sync = () =>
+      invoke<{ enabled: boolean; installed: boolean }>("tts_status")
+        .then((s) => {
+          setTtsReady(s.enabled && s.installed);
+          if (!s.enabled || !s.installed) setSpeaking(false);
+        })
+        .catch(() => undefined);
+    sync();
+    const unTts = listen("tts://changed", sync);
+    const unSettings = listen("settings://changed", sync);
+    return () => {
+      unTts.then((f) => f());
+      unSettings.then((f) => f());
+    };
+  }, []);
 
   // 结果窗口尺寸模型（产品规范，与 floating.rs::apply_result_window_size 同一条规则）：
   // 宽高只有两个变化来源——用户拖动（记住尺寸）/ 外观配置预设；切换动作、
@@ -2241,37 +2265,40 @@ export default function App() {
               )}
               {/* 朗读当前可见内容（译文/解释/总结都适用；搜索会跳浏览器，不在此列）。
                   lang 传 auto：结果可能是中文也可能是英文，由后端按汉字占比判定。
-                  流式输出中禁用：此刻读的是半截句子，用户会听到「读到一半就停」 */}
-              <button
-                className={`tool ${speaking ? "speaking" : ""}`}
-                disabled={
-                  (!phase.output && !phase.text) || phase.actionId === "search" || phase.streaming
-                }
-                onClick={guarded(() => {
-                  if (speaking) {
-                    setSpeaking(false);
-                    invoke("tts_stop").catch(() => undefined);
-                    return;
+                  流式输出中禁用：此刻读的是半截句子，用户会听到「读到一半就停」。
+                  只在音色包已安装时显示：不需要朗读的用户卸载后不该看到无用图标 */}
+              {ttsReady && (
+                <button
+                  className={`tool ${speaking ? "speaking" : ""}`}
+                  disabled={
+                    (!phase.output && !phase.text) || phase.actionId === "search" || phase.streaming
                   }
-                  const raw = phase.output
-                    ? phase.actionId === "translate"
-                      ? splitTranslate(phase.output).main
-                      : phase.output
-                    : phase.text;
-                  const speech = plainForSpeech(raw);
-                  if (!speech) return;
-                  setSpeaking(true);
-                  invoke("tts_speak", { text: speech, lang: "auto" }).catch((e) => {
-                    setSpeaking(false);
-                    const msg = String(e);
-                    // 未装音色包时给可执行的指引，而不是把后端错误原文抛给用户
-                    toast(msg.includes("尚未安装") ? t("floating.ttsMissing") : msg);
-                  });
-                })}
-                aria-label={speaking ? t("floating.ariaStopRead") : t("floating.ariaReadAloud")}
-              >
-                {speaking ? <AudioLines size={13} strokeWidth={1.75} /> : <Volume2 size={13} strokeWidth={1.75} />}
-              </button>
+                  onClick={guarded(() => {
+                    if (speaking) {
+                      setSpeaking(false);
+                      invoke("tts_stop").catch(() => undefined);
+                      return;
+                    }
+                    const raw = phase.output
+                      ? phase.actionId === "translate"
+                        ? splitTranslate(phase.output).main
+                        : phase.output
+                      : phase.text;
+                    const speech = plainForSpeech(raw);
+                    if (!speech) return;
+                    setSpeaking(true);
+                    invoke("tts_speak", { text: speech, lang: "auto" }).catch((e) => {
+                      setSpeaking(false);
+                      const msg = String(e);
+                      // 未装音色包时给可执行的指引，而不是把后端错误原文抛给用户
+                      toast(msg.includes("尚未安装") ? t("floating.ttsMissing") : msg);
+                    });
+                  })}
+                  aria-label={speaking ? t("floating.ariaStopRead") : t("floating.ariaReadAloud")}
+                >
+                  {speaking ? <AudioLines size={13} strokeWidth={1.75} /> : <Volume2 size={13} strokeWidth={1.75} />}
+                </button>
+              )}
               <button
                 className="tool"
                 disabled={!phase.output && !phase.text}

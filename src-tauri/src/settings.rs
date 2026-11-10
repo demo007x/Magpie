@@ -231,7 +231,7 @@ impl Default for CustomAction {
     }
 }
 
-/// 本地朗读配置：只存「用哪个音色」，模型与引擎是否就绪由文件系统判定
+/// 本地朗读配置：存「用哪个音色 + 功能开关」，模型与引擎是否就绪由文件系统判定
 /// （src/speech.rs::tts_status），不落配置——删掉模型目录即回到未安装态
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -240,6 +240,8 @@ pub struct TtsConfig {
     pub zh_voice: u32,
     /// 英文默认音色
     pub en_voice: u32,
+    /// 朗读功能开关：关闭即自动卸载音色包（删引擎与模型）并隐藏朗读入口
+    pub enabled: bool,
 }
 
 impl Default for TtsConfig {
@@ -248,6 +250,7 @@ impl Default for TtsConfig {
         Self {
             zh_voice: 3,
             en_voice: 0,
+            enabled: true,
         }
     }
 }

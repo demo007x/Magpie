@@ -7,12 +7,14 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { AudioLines, ChevronDown, Play } from "lucide-react";
+import { Confirm } from "../../shared/Modal";
 import { toast } from "../../shared/toast";
 import { t, useLocale } from "../../shared/i18n";
 import type { PageProps } from "./types";
 
 interface TtsStatus {
   supported: boolean;
+  enabled: boolean;
   installed: boolean;
   downloading: boolean;
 }
@@ -50,6 +52,12 @@ export default function SpeechPage({ settings, patch, saveNow }: PageProps) {
   const [open, setOpen] = useState<string | null>(null);
   /** 正在试听的 sid（null = 没有播放） */
   const [playing, setPlaying] = useState<number | null>(null);
+  /** 关闭朗读的确认弹窗（关闭即删几百 MB 的包，属危险操作，先过 Confirm） */
+  const [confirmOff, setConfirmOff] = useState(false);
+  /** 下载包总大小（MB）：探不到下载源时为 null，文案不带数字 */
+  const [remoteSize, setRemoteSize] = useState<number | null>(null);
+  /** 已安装的装机占用（MB）：卸载确认框里显示实测值 */
+  const [installedSize, setInstalledSize] = useState<number | null>(null);
   /**
    * 每个选择器「上次选中的 sid」：只有默认音色会被落盘，但另一性别的选择器
    * 不该因此跳回第一个——单独记住本组的值，默认归属用「默认」徽标标明
@@ -71,18 +79,36 @@ export default function SpeechPage({ settings, patch, saveNow }: PageProps) {
 
   useEffect(() => {
     refresh();
+    // 下载量动态探测（HEAD content-length）：探不到就让文案隐藏数字
+    invoke<number | null>("tts_remote_sizes")
+      .then((v) => setRemoteSize(v == null ? null : Math.round(v / 1e6)))
+      .catch(() => undefined);
     const unProgress = listen<Progress>("tts://progress", (e) => {
       setStage(e.payload.stage);
       setPercent(e.payload.percent);
     });
     const unEnd = listen("tts://end", () => setPlaying(null));
+    // 装卸状态被别处改变（卸载完成 / 下载完成）时同步本页
+    const unChanged = listen("tts://changed", () => refresh());
     return () => {
       unProgress.then((f) => f());
       unEnd.then((f) => f());
+      unChanged.then((f) => f());
       // 离开页面即停：朗读是「看完就走」的伴随动作，不该留在后台
       invoke("tts_stop").catch(() => undefined);
     };
   }, []);
+
+  // 已安装时装机占用实测：卸载确认框显示真实数字
+  useEffect(() => {
+    if (!status?.installed) {
+      setInstalledSize(null);
+      return;
+    }
+    invoke<number>("tts_installed_size")
+      .then((v) => setInstalledSize(Math.round(v / 1e6)))
+      .catch(() => undefined);
+  }, [status?.installed]);
 
   // 点击选择器以外的地方收起列表（下拉是就地展开的浮层，不留常驻状态）
   useEffect(() => {
@@ -111,6 +137,22 @@ export default function SpeechPage({ settings, patch, saveNow }: PageProps) {
   const stop = () => {
     invoke("tts_stop").catch(() => undefined);
     setPlaying(null);
+  };
+
+  /** 开关朗读：关闭即卸载音色包（Rust 侧停声删文件），开启则回到下载引导 */
+  const setEnabled = (on: boolean) => {
+    setConfirmOff(false);
+    patch({ tts: { ...settings.tts, enabled: on } });
+    saveNow?.();
+    if (on) return;
+    setPlaying(null);
+    setBusy(true);
+    invoke("tts_uninstall")
+      .catch((e) => toast(t("speech.uninstallFailed", { error: String(e) }), "err"))
+      .finally(() => {
+        setBusy(false);
+        refresh();
+      });
   };
 
   /** 试听指定音色：sid 随命令下发，不等设置落盘（选音色与试听互不依赖） */
@@ -240,30 +282,64 @@ export default function SpeechPage({ settings, patch, saveNow }: PageProps) {
       <h1>{t("nav.speech")}</h1>
       <p className="page-hint">{t("speech.hint")}</p>
 
+      {status.supported && (
+        <div className="card">
+          <div className="row-between">
+            <div>
+              <div className="row-title">{t("speech.enable")}</div>
+              <div className="row-sub">{t("speech.enableSub")}</div>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={settings.tts.enabled}
+                onChange={(e) => {
+                  // 关闭即删 320MB 的包：先过确认；取消时还原受控 checkbox
+                  if (!e.target.checked && status.installed) {
+                    e.target.checked = true;
+                    setConfirmOff(true);
+                    return;
+                  }
+                  setEnabled(e.target.checked);
+                }}
+              />
+              <span className="knob" />
+            </label>
+          </div>
+        </div>
+      )}
+
       {!status.supported && (
         <div className="card">
           <div className="row-title">{t("speech.unsupported")}</div>
         </div>
       )}
 
-      {status.supported && !status.installed && (
+      {status.supported && settings.tts.enabled && !status.installed && (
         <>
           <h2 className="sec">{t("speech.installTitle")}</h2>
           <div className="card">
             <div className="row-between">
               <div>
                 <div className="row-title">{t("speech.installTitle")}</div>
-                <div className="row-sub">{t("speech.installSub")}</div>
+                <div className="row-sub">
+                  {remoteSize
+                    ? t("speech.installSub", { size: remoteSize })
+                    : t("speech.installSubNoNum")}
+                </div>
               </div>
               <button className="btn primary" disabled={busy} onClick={download}>
                 {busy
                   ? stage === "extract"
                     ? t("speech.extracting")
-                    : t("speech.downloading", { percent: Math.round(percent) })
+                    : percent < 0
+                      ? t("speech.downloadingInd")
+                      : t("speech.downloading", { percent: Math.round(percent) })
                   : t("speech.download")}
               </button>
             </div>
-            {busy && (
+            {/* 代理源可能没有总长度（chunked）：进度未知时只留文字，不画假进度条 */}
+            {busy && (stage === "extract" || percent >= 0) && (
               <div className="bar">
                 <div
                   className="bar-fill"
@@ -275,13 +351,27 @@ export default function SpeechPage({ settings, patch, saveNow }: PageProps) {
         </>
       )}
 
-      {status.supported && status.installed && (
+      {status.supported && settings.tts.enabled && status.installed && (
         <>
           <h2 className="sec">{t("speech.zhSec")}</h2>
           {voiceCard("zh")}
           <h2 className="sec">{t("speech.enSec")}</h2>
           {voiceCard("en")}
         </>
+      )}
+
+      {confirmOff && (
+        <Confirm
+          title={t("speech.offTitle")}
+          text={
+            installedSize
+              ? t("speech.offText", { size: installedSize })
+              : t("speech.offTextNoNum")
+          }
+          confirmLabel={t("speech.offConfirm")}
+          onCancel={() => setConfirmOff(false)}
+          onConfirm={() => setEnabled(false)}
+        />
       )}
     </>
   );

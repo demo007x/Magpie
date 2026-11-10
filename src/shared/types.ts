@@ -98,12 +98,14 @@ export interface ObsidianConfig {
   cardTemplate: string;
 }
 
-/** 本地朗读配置：只存默认音色（模型是否已安装由 Rust 侧文件系统判定） */
+/** 本地朗读配置：默认音色 + 功能开关（模型是否已安装由 Rust 侧文件系统判定） */
 export interface TtsConfig {
   /** 中文默认音色（Kokoro voice id） */
   zhVoice: number;
   /** 英文默认音色 */
   enVoice: number;
+  /** 朗读功能开关（关闭即自动卸载音色包） */
+  enabled: boolean;
 }
 
 export interface Settings {
