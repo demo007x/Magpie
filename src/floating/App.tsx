@@ -44,7 +44,17 @@ import remarkGfm from "remark-gfm";
 const mdComponents: Components = {
   img: ({ src, alt }) => (src ? <a href={src}>{alt || src}</a> : null),
 };
-import { ChevronDown, ChevronLeft, ChevronRight, ImagePlus, Pin, PinOff, ScanSearch } from "lucide-react";
+import {
+  AudioLines,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ImagePlus,
+  Pin,
+  PinOff,
+  ScanSearch,
+  Volume2,
+} from "lucide-react";
 import PinView from "./PinView";
 import { CheckIcon, CloseIcon, CopyIcon, iconOf } from "./icons";
 import {
@@ -228,6 +238,22 @@ function splitTranslate(output: string): { main: string; notes: string | null } 
   return { main: s.slice(0, i).replace(/^>\s?/gm, "").trim(), notes: s.slice(i + 4).trim() || null };
 }
 
+// 朗读用的纯文本：结果区按 markdown 渲染，直接念原文会把 ** # - 念成符号。
+// 只做最小清理（标记符、标题/列表前缀、链接保留文字、代码整段跳过）
+function plainForSpeech(md: string): string {
+  return md
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}[-*+]\s+/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "")
+    .replace(/(\*\*|__|~~|\*)/g, "")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
 export default function App() {
   // 界面语言：订阅 locale store（语言切换整体重渲染，渲染期 t() 取词）
   useLocale();
@@ -288,6 +314,8 @@ export default function App() {
   const [copiedItem, setCopiedItem] = useState<string | null>(null);
   // OCR 面板复制的反馈（复制结果 / 复制识别文本）
   const [copiedOcr, setCopiedOcr] = useState(false);
+  // 结果窗朗读中（图标态）：tts://end 回来即复位
+  const [speaking, setSpeaking] = useState(false);
   // OCR 面板「钉图」成功的反馈（图标短暂变对勾）
   const [pinOk, setPinOk] = useState(false);
   // 结果窗口完成闪烁：流式结束瞬间呼吸点变绿，2s 后消失（比单纯延迟消失语义清晰）
@@ -885,6 +913,16 @@ export default function App() {
         });
     }
 
+    // 朗读结束（含自然播完）：图标复位。事件定向到本窗口，必须窗口作用域监听
+    if (IS_OCR) {
+      getCurrentWebviewWindow()
+        .listen("tts://end", () => setSpeaking(false))
+        .then((un) => {
+          if (listenCancelled) un();
+          else unlisteners.push(un);
+        });
+    }
+
     return () => {
       listenCancelled = true;
       unlisteners.forEach((u) => u());
@@ -903,6 +941,20 @@ export default function App() {
     if (!el) return;
     setSourceOverflow(el.scrollHeight > 75 + 1);
   }, [phase]);
+
+  // 朗读跟着内容走：换动作、重试、切原文都会让「正在听的」和「正在看的」对不上，
+  // 一律掐掉（键只取动作 + 内容前缀，够区分又不至于每渲染都变）
+  const speakKey =
+    phase.kind === "ocr"
+      ? `${phase.actionId ?? ""}|${(phase.output ?? phase.text).slice(0, 32)}`
+      : "";
+  useEffect(() => {
+    if (!speaking) return;
+    setSpeaking(false);
+    invoke("tts_stop").catch(() => undefined);
+    // speaking 有意不进依赖：只在内容键变化时判定，否则复位自身会再次触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [speakKey]);
 
   // 结果窗口尺寸模型（产品规范，与 floating.rs::apply_result_window_size 同一条规则）：
   // 宽高只有两个变化来源——用户拖动（记住尺寸）/ 外观配置预设；切换动作、
@@ -1289,6 +1341,9 @@ export default function App() {
   // 关闭结果窗口：隐藏（划词/识图结果窗口共用），保留钉住偏好
   const closeResultWindow = () => {
     // 收起只关窗：钉住是用户的长期偏好（点钉按钮才改），不因收起被抹掉
+    // 朗读必须先掐：窗没了声音还在放，用户找不到任何停止入口
+    invoke("tts_stop").catch(() => undefined);
+    setSpeaking(false);
     invoke("hide_ocr_window").catch(() => undefined);
     setPhase({ kind: "bar" });
   };
@@ -2184,6 +2239,39 @@ export default function App() {
                   {ocrPinned ? <PinOff size={13} strokeWidth={1.75} /> : <Pin size={13} strokeWidth={1.75} />}
                 </button>
               )}
+              {/* 朗读当前可见内容（译文/解释/总结都适用；搜索会跳浏览器，不在此列）。
+                  lang 传 auto：结果可能是中文也可能是英文，由后端按汉字占比判定。
+                  流式输出中禁用：此刻读的是半截句子，用户会听到「读到一半就停」 */}
+              <button
+                className={`tool ${speaking ? "speaking" : ""}`}
+                disabled={
+                  (!phase.output && !phase.text) || phase.actionId === "search" || phase.streaming
+                }
+                onClick={guarded(() => {
+                  if (speaking) {
+                    setSpeaking(false);
+                    invoke("tts_stop").catch(() => undefined);
+                    return;
+                  }
+                  const raw = phase.output
+                    ? phase.actionId === "translate"
+                      ? splitTranslate(phase.output).main
+                      : phase.output
+                    : phase.text;
+                  const speech = plainForSpeech(raw);
+                  if (!speech) return;
+                  setSpeaking(true);
+                  invoke("tts_speak", { text: speech, lang: "auto" }).catch((e) => {
+                    setSpeaking(false);
+                    const msg = String(e);
+                    // 未装音色包时给可执行的指引，而不是把后端错误原文抛给用户
+                    toast(msg.includes("尚未安装") ? t("floating.ttsMissing") : msg);
+                  });
+                })}
+                aria-label={speaking ? t("floating.ariaStopRead") : t("floating.ariaReadAloud")}
+              >
+                {speaking ? <AudioLines size={13} strokeWidth={1.75} /> : <Volume2 size={13} strokeWidth={1.75} />}
+              </button>
               <button
                 className="tool"
                 disabled={!phase.output && !phase.text}

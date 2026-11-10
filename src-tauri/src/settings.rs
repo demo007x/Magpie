@@ -231,6 +231,27 @@ impl Default for CustomAction {
     }
 }
 
+/// 本地朗读配置：只存「用哪个音色」，模型与引擎是否就绪由文件系统判定
+/// （src/speech.rs::tts_status），不落配置——删掉模型目录即回到未安装态
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TtsConfig {
+    /// 中文默认音色（Kokoro voices.bin 的 speaker id）
+    pub zh_voice: u32,
+    /// 英文默认音色
+    pub en_voice: u32,
+}
+
+impl Default for TtsConfig {
+    fn default() -> Self {
+        // 3 = zf_001（中文女声），0 = af_maple（美式女声）
+        Self {
+            zh_voice: 3,
+            en_voice: 0,
+        }
+    }
+}
+
 /// Obsidian 接入配置（docs/07）：vault 文件直写——划词/识图/结果按模板落进 vault。
 /// vault_path 为空 = 未接入，相关动作不出现。追加为无状态一次性送达，不建队列。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -335,6 +356,9 @@ pub struct Settings {
     ///（需已配置默认模型服务）；关闭或未配置时走系统识别（NSDataDetector/NLTagger）
     #[serde(default = "default_true")]
     pub smart_extract: bool,
+    /// 本地朗读：默认中英文音色（模型是否安装由 speech.rs 判定，不进配置）
+    #[serde(default)]
+    pub tts: TtsConfig,
 }
 
 fn default_true() -> bool {
@@ -401,6 +425,7 @@ impl Default for Settings {
             appearance: default_appearance(),
             ui_locale: default_ui_locale(),
             smart_extract: true,
+            tts: TtsConfig::default(),
         }
     }
 }
@@ -502,6 +527,16 @@ pub fn save_settings(
     // 「钉住」偏好只由结果面板的钉按钮写入（见 floating::set_ocr_pinned）：
     // 设置页持有的快照可能早于用户最后一次点钉，直接落盘会把选择冲掉
     settings.result_window_pinned = state.lock().unwrap().result_window_pinned;
+    // 快捷键注册有副作用（全局占用 + 重建托盘菜单 + 逐条日志），只有快捷键
+    // 字段真的变了才重注册——改音色/主题这类保存不该刷一遍「快捷键已注册」
+    let shortcuts_changed = {
+        let prev = state.lock().unwrap();
+        prev.ocr_shortcut != settings.ocr_shortcut
+            || prev.ocr_translate_shortcut != settings.ocr_translate_shortcut
+            || prev.ocr_explain_shortcut != settings.ocr_explain_shortcut
+            || prev.ocr_summarize_shortcut != settings.ocr_summarize_shortcut
+            || prev.file_ocr_shortcut != settings.file_ocr_shortcut
+    };
     let path = app.state::<SettingsPath>().0.clone();
     let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     fs::write(&path, json).map_err(|e| e.to_string())?;
@@ -519,7 +554,9 @@ pub fn save_settings(
     }
     let _ = app.emit("settings://changed", ());
     // 识图类全局快捷键即时生效（改键/清空禁用都会重新注册）
-    crate::apply_ocr_shortcuts(&app);
+    if shortcuts_changed {
+        crate::apply_ocr_shortcuts(&app);
+    }
     Ok(())
 }
 

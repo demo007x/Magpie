@@ -1387,3 +1387,179 @@ input.recording {
   color: var(--sec);
   flex-shrink: 0;
 }
+
+/* ---- 朗读页：音色包下载与音色选择 ---- */
+/* 音色选择：收起时是一行「当前音色 + 默认徽标 + 箭头」，展开后是带试听钮的滚动列表
+   （100 个中文音色只能靠列表承载；男女并排各占一半，单个列表不至于翻 100 行） */
+.voice-rows {
+  display: flex;
+  gap: 14px;
+}
+
+.voice-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.voice-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-pick {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  flex: 1;
+  height: 28px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: transparent;
+  border: 0.5px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* 当前音色名占满剩余宽度，长名字截断而不挤出徽标与箭头 */
+.voice-pick > span:first-child {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-badge {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.voice-pick:hover {
+  background: var(--hov);
+}
+
+.voice-pick.on {
+  border-color: var(--accent);
+}
+
+.voice-pick svg {
+  color: var(--sec);
+  transition: transform 0.15s;
+}
+
+.voice-pick svg.open {
+  transform: rotate(180deg);
+}
+
+.voice-list {
+  max-height: 240px;
+  overflow-y: auto;
+  margin-top: 6px;
+  padding: 4px;
+  border: 0.5px solid var(--line);
+  border-radius: 8px;
+}
+
+.voice-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 4px 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.voice-opt:hover {
+  background: var(--hov);
+}
+
+.voice-opt.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.voice-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 行内试听钮：无边框纯图标，hover 才显底色 */
+.voice-play {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--sec);
+  cursor: pointer;
+}
+
+.voice-play:hover {
+  background: var(--line);
+  color: var(--text);
+}
+
+/* 播放中：声波图标走强调色并轻微呼吸，替代「停止方块」那种禁用感 */
+.voice-play.on {
+  color: var(--accent);
+}
+
+.voice-play.on svg {
+  animation: voice-pulse 1s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.voice-opt.on .voice-play {
+  color: var(--accent);
+}
+
+/* 试听行：示例文本靠左，播放按钮靠右 */
+.voice-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.voice-foot .row-sub {
+  margin-top: 0;
+}
+
+/* 下载进度条（下载可能持续几分钟，必须给可见进度） */
+.bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}

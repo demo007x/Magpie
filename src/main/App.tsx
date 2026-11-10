@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Sparkles,
   TextCursorInput,
+  Volume2,
 } from "lucide-react";
 import {
   ACTIONS,
@@ -29,6 +30,7 @@ import PromptsPage from "./pages/PromptsPage";
 import SearchPage from "./pages/SearchPage";
 import PermsPage from "./pages/PermsPage";
 import TranslatePage from "./pages/TranslatePage";
+import SpeechPage from "./pages/SpeechPage";
 import ObsidianPage from "./pages/ObsidianPage";
 import ModelPage from "./pages/ModelPage";
 import CapturePage from "./pages/CapturePage";
@@ -44,6 +46,7 @@ type Page =
   | "shortcuts"
   | "perms"
   | "translate"
+  | "speech"
   | "search"
   | "obsidian"
   | "blocklist"
@@ -57,6 +60,7 @@ const NAV_ICONS: Record<Page, React.ReactNode> = {
   shortcuts: <Keyboard size={15} strokeWidth={1.75} />,
   perms: <ShieldCheck size={15} strokeWidth={1.75} />,
   translate: <Languages size={15} strokeWidth={1.75} />,
+  speech: <Volume2 size={15} strokeWidth={1.75} />,
   search: <Search size={15} strokeWidth={1.75} />,
   obsidian: <NotebookPen size={15} strokeWidth={1.75} />,
   blocklist: <Ban size={15} strokeWidth={1.75} />,
@@ -92,11 +96,16 @@ export default function App() {
   const [appVersion, setAppVersion] = useState("");
   // 划词捕获能力位：后端真实可用才显示「划词/黑名单」导航（Windows 后端落地自动出现）
   const [captureReady, setCaptureReady] = useState(false);
+  // 本地朗读能力位：仅 macOS（音色包按需下载，与平台能力门控同一约定）
+  const [speechReady, setSpeechReady] = useState(false);
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => undefined);
     invoke<{ captureAvailable: boolean }>("capture_status")
       .then((s) => setCaptureReady(s.captureAvailable))
+      .catch(() => undefined);
+    invoke<{ supported: boolean }>("tts_status")
+      .then((s) => setSpeechReady(s.supported))
       .catch(() => undefined);
   }, []);
 
@@ -311,6 +320,7 @@ export default function App() {
               ["model", "nav.model", true],
               ["prompts", "nav.prompts", true],
               ["translate", "nav.translate", true],
+              ["speech", "nav.speech", speechReady],
               ["search", "nav.search", true],
               ["obsidian", "nav.obsidian", true],
               ["blocklist", "nav.blocklist", captureReady],
@@ -340,6 +350,10 @@ export default function App() {
         )}
         {page === "shortcuts" && (
           <ShortcutsPage settings={settings} patch={patch} save={save} saved={saved} />
+        )}
+
+        {page === "speech" && (
+          <SpeechPage settings={settings} patch={patch} saveNow={saveNow} />
         )}
 
         {page === "model" && <ModelPage settings={settings} patch={patch} save={save} saved={saved} />}

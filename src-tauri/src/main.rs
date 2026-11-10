@@ -11,6 +11,7 @@ mod ocr;
 mod pageurl;
 mod pin;
 mod settings;
+mod speech;
 mod toast;
 mod translate;
 mod update;
@@ -736,6 +737,10 @@ fn main() {
             settings::save_settings,
             settings::set_appearance,
             settings::set_ui_locale,
+            speech::tts_status,
+            speech::tts_download,
+            speech::tts_speak,
+            speech::tts_stop,
             capture::capture_status,
             capture::open_accessibility_settings,
             capture::prompt_accessibility,

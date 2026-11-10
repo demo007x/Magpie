@@ -800,6 +800,21 @@ body,
   background: var(--hov);
 }
 
+/* 朗读中：常亮强调色 + 声波轻微呼吸，表示「正在出声」（再点即停） */
+.tool.speaking {
+  color: var(--accent);
+}
+
+.tool.speaking svg {
+  animation: tool-speaking 1s ease-in-out infinite;
+}
+
+@keyframes tool-speaking {
+  50% {
+    opacity: 0.45;
+  }
+}
+
 /* 禁用（如无文本可复制）：压暗并去掉交互反馈 */
 .tool:disabled {
   opacity: 0.35;

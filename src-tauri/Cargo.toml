@@ -21,6 +21,10 @@ serde_json = "1"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 futures-util = "0.3"
 base64 = "0.22"
+# 朗读音色包（tar.bz2）解压：Rust 侧实现，不依赖用户系统的解压命令
+#（Windows 自带 tar.exe 对 bz2 的支持不可控）
+tar = "0.4"
+bzip2 = "0.6"
 # 钉图复制到剪贴板 + Windows OCR 预处理：解码/缩放/编码
 # （macOS Vision 直接吃文件路径；Windows 侧统一转 PNG 喂 BitmapDecoder）
 image = { version = "0.25", default-features = false, features = [

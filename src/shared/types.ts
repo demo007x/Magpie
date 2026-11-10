@@ -98,6 +98,14 @@ export interface ObsidianConfig {
   cardTemplate: string;
 }
 
+/** 本地朗读配置：只存默认音色（模型是否已安装由 Rust 侧文件系统判定） */
+export interface TtsConfig {
+  /** 中文默认音色（Kokoro voice id） */
+  zhVoice: number;
+  /** 英文默认音色 */
+  enVoice: number;
+}
+
 export interface Settings {
   providers: Provider[];
   defaultProviderId: string;
@@ -140,6 +148,8 @@ export interface Settings {
   /** 智能提取：「提取信息」面板中日期/地点等语义信息优先由 AI 理解（需已配置
    *  默认模型服务）；关闭或未配置时走系统识别。默认开 */
   smartExtract: boolean;
+  /** 本地朗读：默认中英文音色（音色包安装状态由 Rust 侧判定） */
+  tts: TtsConfig;
 }
 
 export interface ChatMessage {

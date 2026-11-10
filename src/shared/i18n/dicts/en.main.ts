@@ -16,6 +16,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "nav.model": "Model",
   "nav.prompts": "Prompts",
   "nav.translate": "Translate",
+  "nav.speech": "Read aloud",
   "nav.search": "Search",
   "nav.obsidian": "Obsidian",
   "nav.blocklist": "Blocklist",
@@ -243,6 +244,30 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "general.sizeCompactV": "Compact · Tall",
   "general.sizeRoomyH": "Roomy · Wide",
   "general.sizeRoomyV": "Roomy · Tall",
+
+  // Read-aloud page
+  "speech.hint":
+    "Read text aloud with voices that live on your Mac. Download once, then it works offline — nothing you read is uploaded.",
+  "speech.installTitle": "Voice pack",
+  "speech.installSub": "Download once to read Chinese and English aloud (about 180 MB).",
+  "speech.download": "Download voice pack",
+  "speech.downloading": "Downloading {percent}%",
+  "speech.extracting": "Installing…",
+  "speech.downloadFailed": "Download failed: {error}",
+  "speech.installed": "Installed — works offline",
+  "speech.zhSec": "Chinese voices",
+  "speech.enSec": "English voices",
+  "speech.preview": "Preview",
+  "speech.stop": "Stop",
+  "speech.previewFailed": "Couldn't read it aloud: {error}",
+  "speech.sampleZh": "今天我们来学习一篇关于旅行的课文。",
+  "speech.sampleEn": "Never stop learning, because life never stops teaching.",
+  "speech.default": "Default",
+  "speech.voiceZhF": "Female {n}",
+  "speech.voiceZhM": "Male {n}",
+  "speech.voiceEnF": "US female {n}",
+  "speech.voiceEnUk": "UK female",
+  "speech.unsupported": "Read-aloud isn't available on this system yet.",
 
   // About page
   "about.hint": "Version info, update checks and ways to reach us.",
