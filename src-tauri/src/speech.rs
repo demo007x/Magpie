@@ -216,14 +216,15 @@ fn sweep_stale_temp(app: &AppHandle) {
     }
 }
 
-/// 合成缓存路径：键 = 模型代 + 音色 + 中文规则路数 + 块文本 的散列（尾部带字数，
-/// 进一步压低碰撞危害）。同句同音色重播直接复用现成 wav，不再等一遍模型装载。
-/// 不绑窗口生命周期：浮窗常驻隐藏、关闭≠销毁，且缓存的价值正在于跨窗口复用
-fn cache_path(base: &Path, sid: u32, zh: bool, text: &str) -> PathBuf {
+/// 合成缓存路径：键 = 模型代 + 音色 + 语速 + 中文规则路数 + 块文本 的散列（尾部
+/// 带字数，进一步压低碰撞危害）。同句同音色同语速重播直接复用现成 wav，不再等
+/// 一遍模型装载；语速进键——不同档位是不同音频，混用会串。不绑窗口生命周期：
+/// 浮窗常驻隐藏、关闭≠销毁，且缓存的价值正在于跨窗口复用
+fn cache_path(base: &Path, sid: u32, speed: f64, zh: bool, text: &str) -> PathBuf {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut h = DefaultHasher::new();
-    (MODEL_DIR_NAME, sid, zh, text).hash(&mut h);
+    (MODEL_DIR_NAME, sid, speed.to_bits(), zh, text).hash(&mut h);
     let chars = text.chars().count();
     base.join("tts-cache")
         .join(format!("{:016x}-{chars}.wav", h.finish()))
@@ -517,6 +518,52 @@ fn synth() -> std::sync::MutexGuard<'static, Vec<(u64, usize, Child)>> {
     SYNTH.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// OOV 兜底改写：整块全是词典查不到的词（缩写/品牌名/标识符/表情）时，引擎
+/// 会把所有词都跳过 → 零 token → 直接报错（普通单词 hello/apple 都能读，
+/// GPT/iPhone/v2/en_voice 这类不行）。重试前把文本改写成词典可查的形态：
+/// 驼峰拆词（iPhone→i Phone）、全大写缩写逐字母（GPT→G P T）、字母数字
+/// 分界（v2→v 2）、其余符号转空格（en_voice→en voice）。改写无变化不重试
+fn oov_fallback(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::new();
+    for (i, &c) in chars.iter().enumerate() {
+        if !c.is_ascii_alphanumeric() {
+            out.push(' ');
+            continue;
+        }
+        if let Some(&p) = i.checked_sub(1).and_then(|j| chars.get(j)) {
+            if p.is_ascii_alphanumeric() {
+                // 词内分界：大小写交界（i|Phone）、大写缩写字母间（G|P|T）、
+                // 字母与数字交界（v|2）处补空格
+                let split = (p.is_ascii_uppercase() && c.is_ascii_uppercase())
+                    || (p.is_ascii_lowercase() && c.is_ascii_uppercase())
+                    || (p.is_ascii_digit() != c.is_ascii_digit());
+                if split {
+                    out.push(' ');
+                }
+            }
+        }
+        out.push(c);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::oov_fallback;
+
+    #[test]
+    fn oov_rewrite() {
+        assert_eq!(oov_fallback("GPT"), "G P T");
+        assert_eq!(oov_fallback("iPhone"), "i Phone");
+        assert_eq!(oov_fallback("v2"), "v 2");
+        assert_eq!(oov_fallback("en_voice"), "en voice");
+        assert_eq!(oov_fallback("hello"), "hello"); // 普通词不变
+        assert_eq!(oov_fallback("中文"), "  "); // 非 ASCII 全转空格（调用方据此跳过重试）
+        assert_eq!(oov_fallback("GPT-4o"), "G P T 4 o");
+    }
+}
+
 /// 朗读一段文字：`sid` 为空时按语言取设置里的默认音色（试听指定音色则直接传 sid，
 /// 免得依赖「先落盘再朗读」的时序），后台合成后播放。
 /// 立即返回，不阻塞 UI（长文本合成需要数秒）。
@@ -543,14 +590,18 @@ pub fn tts_speak(
     } else {
         lang
     };
-    let sid = sid.unwrap_or_else(|| {
+    let (sid, speed) = {
         let s = crate::settings::current(&app);
-        if lang == "en" {
-            s.tts.en_voice
-        } else {
-            s.tts.zh_voice
-        }
-    });
+        let sid = sid.unwrap_or_else(|| {
+            if lang == "en" {
+                s.tts.en_voice
+            } else {
+                s.tts.zh_voice
+            }
+        });
+        // 语速钳制：配置可能被手改成离谱值，这里兜住引擎的合理区间
+        (sid, s.tts.speed.clamp(0.5, 2.0))
+    };
     sweep_stale_temp(&app);
     stop_playback();
     let run = RUN.fetch_add(1, Ordering::SeqCst) + 1;
@@ -569,6 +620,8 @@ pub fn tts_speak(
         ),
         "--num-threads=4".into(),
         format!("--sid={sid}"),
+        // 语速系数（>1 更慢）：设置页三档（1.1/1.0/0.9），默认 1.0 恒等不变形
+        format!("--kokoro-length-scale={speed}"),
     ];
     if lang != "en" {
         args.push(format!(
@@ -610,7 +663,7 @@ pub fn tts_speak(
                     break;
                 }
                 let tmp = dir.join(format!("tts-{run}-{next}.wav"));
-                let cache = cache_path(&dir, sid, lang != "en", &chunks[next]);
+                let cache = cache_path(&dir, sid, speed, lang != "en", &chunks[next]);
                 // 已合成过的内容直接用缓存里的现成 wav：不装模型、不等推理
                 let hit = std::fs::metadata(&cache).map(|m| m.len() > 44).unwrap_or(false);
                 wavs.push(cache);
@@ -636,6 +689,8 @@ pub fn tts_speak(
             // 等第 i 块合成完成（缓存命中的块已是现成 wav，无需等待）
             let wav = wavs[i].clone();
             if !cached[i] {
+                // OOV 重试只做一次：改写形态再失败就是引擎侧的硬失败
+                let mut retried = false;
                 loop {
                     if RUN.load(Ordering::SeqCst) != run {
                         break 'outer;
@@ -650,9 +705,38 @@ pub fn tts_speak(
                         Some(Some(st)) => {
                             synth().retain(|s| !(s.0 == run && s.1 == i));
                             if !st.success() {
+                                // OOV 兜底：改写成词典可查的形态重试一次，成功产物
+                                // 照常按原文进缓存；改写无效或重试仍失败才放弃
+                                let alt = oov_fallback(&chunks[i]);
+                                let retryable = !retried
+                                    && alt != chunks[i]
+                                    && alt.chars().any(|c| c.is_ascii_alphanumeric());
+                                if retryable {
+                                    retried = true;
+                                    crate::user_log(&format!(
+                                        "[tts] 第 {}/{} 块含词典外词，改写重试",
+                                        i + 1,
+                                        n
+                                    ));
+                                    let tmp = dir.join(format!("tts-{run}-{i}.wav"));
+                                    let err = dir.join(format!("tts-{run}-{i}.err"));
+                                    match spawn_synth(&bin, &args, &tmp, &alt, &err) {
+                                        Ok(c) => {
+                                            synth().push((run, i, c));
+                                            continue;
+                                        }
+                                        Err(e) => {
+                                            crate::user_log(&format!(
+                                                "[tts] 合成进程启动失败：{e}"
+                                            ));
+                                            break 'outer;
+                                        }
+                                    }
+                                }
                                 // 引擎报错只在 stderr（已落到旁路文件），带出来才有诊断价值
-                                let errtxt = std::fs::read_to_string(dir.join(format!("tts-{run}-{i}.err")))
-                                    .unwrap_or_default();
+                                let errtxt =
+                                    std::fs::read_to_string(dir.join(format!("tts-{run}-{i}.err")))
+                                        .unwrap_or_default();
                                 crate::user_log(&format!(
                                     "[tts] 第 {}/{} 块合成失败：{}",
                                     i + 1,

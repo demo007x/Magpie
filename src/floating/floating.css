@@ -809,6 +809,15 @@ body,
   animation: tool-speaking 1s ease-in-out infinite;
 }
 
+/* 胶囊「朗读」动作进行中：同结果窗朗读钮的呼吸态（键动画共用 tool-speaking） */
+.action.speaking {
+  color: var(--accent);
+}
+
+.action.speaking svg {
+  animation: tool-speaking 1s ease-in-out infinite;
+}
+
 @keyframes tool-speaking {
   50% {
     opacity: 0.45;

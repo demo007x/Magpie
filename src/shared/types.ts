@@ -19,6 +19,8 @@ export interface ActionFlags {
   summarize: boolean;
   copy: boolean;
   search: boolean;
+  /** 胶囊动作：朗读选中的内容（需已下载音色包，未装时点击给下载指引） */
+  speak: boolean;
   /** 上下文动作：选中文本为 URL 时出现「打开链接」 */
   link: boolean;
   /** 上下文动作：选中文本为邮箱时出现「写邮件」 */
@@ -106,6 +108,8 @@ export interface TtsConfig {
   enVoice: number;
   /** 朗读功能开关（关闭即自动卸载音色包） */
   enabled: boolean;
+  /** 语速（引擎 length-scale 系数）：1.2 慢 / 1.0 正常 / 0.85 快 */
+  speed: number;
 }
 
 export interface Settings {

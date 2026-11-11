@@ -316,6 +316,8 @@ export default function App() {
   const [copiedOcr, setCopiedOcr] = useState(false);
   // 结果窗朗读中（图标态）：tts://end 回来即复位
   const [speaking, setSpeaking] = useState(false);
+  // 胶囊「朗读」动作进行中：同款语义，再点即停；tts://end / 不可用即复位
+  const [barSpeaking, setBarSpeaking] = useState(false);
   // 朗读可用（功能开启且音色包已装好）：朗读钮只在此时显示，装/卸与开关
   // 经 tts://changed 与 settings://changed 即时同步
   const [ttsReady, setTtsReady] = useState(false);
@@ -699,6 +701,7 @@ export default function App() {
       // 翻译看启用服务列表、搜索看启用引擎列表、其余 AI 动作看默认模型可用性
       if (a.id === "translate" && enabledTranslates.length === 0) continue;
       if (a.id === "search" && enabledEngines.length === 0) continue;
+      if (a.id === "speak" && !ttsReady) continue;
       if (a.kind === "ai" && a.id !== "translate" && !hasUsableModel) continue;
       // 「存入 Obsidian」只在已配置 vault 时出现（与结果窗动作行、设置页口径一致）
       if (a.id === "obsidian" && !obsidianCfg?.vaultPath) continue;
@@ -916,15 +919,17 @@ export default function App() {
         });
     }
 
-    // 朗读结束（含自然播完）：图标复位。事件定向到本窗口，必须窗口作用域监听
-    if (IS_OCR) {
-      getCurrentWebviewWindow()
-        .listen("tts://end", () => setSpeaking(false))
-        .then((un) => {
-          if (listenCancelled) un();
-          else unlisteners.push(un);
-        });
-    }
+    // 朗读结束（含自然播完）：图标复位。事件定向到发起朗读的窗口，
+    // 胶囊与结果窗都可能发起，两窗口都监听（各只收到自己的）
+    getCurrentWebviewWindow()
+      .listen("tts://end", () => {
+        setSpeaking(false);
+        setBarSpeaking(false);
+      })
+      .then((un) => {
+        if (listenCancelled) un();
+        else unlisteners.push(un);
+      });
 
     return () => {
       listenCancelled = true;
@@ -961,14 +966,17 @@ export default function App() {
 
   // 朗读可用性的即时同步：设置页开关/装卸会广播 tts://changed（装卸与下载完成）
   // 或 settings://changed（保存设置，覆盖只切开关不装卸的路径），收到即重查状态，
-  // 不必重开窗口。不可用时若正在朗读，Rust 侧已停声，这里把图标态一并复位
+  // 不必重开窗口。胶囊与结果窗都靠它决定「朗读」入口的显隐；不可用时若正在
+  // 朗读，Rust 侧已停声，这里把图标态一并复位
   useEffect(() => {
-    if (!IS_OCR) return;
     const sync = () =>
       invoke<{ enabled: boolean; installed: boolean }>("tts_status")
         .then((s) => {
           setTtsReady(s.enabled && s.installed);
-          if (!s.enabled || !s.installed) setSpeaking(false);
+          if (!s.enabled || !s.installed) {
+            setSpeaking(false);
+            setBarSpeaking(false);
+          }
         })
         .catch(() => undefined);
     sync();
@@ -1435,6 +1443,23 @@ export default function App() {
         return;
       }
 
+      if (id === "speak") {
+        // 朗读选中文本：再点同一颗按钮 = 停止（与结果窗朗读钮同语义）。
+        // 入口已在 ttsReady 时才渲染，报错兜底给下载指引
+        if (barSpeaking) {
+          setBarSpeaking(false);
+          invoke("tts_stop").catch(() => undefined);
+          return;
+        }
+        setBarSpeaking(true);
+        invoke("tts_speak", { text: trimmed, lang: "auto" }).catch((e) => {
+          setBarSpeaking(false);
+          const msg = String(e);
+          toast(msg.includes("尚未安装") ? t("floating.ttsMissing") : msg);
+        });
+        return;
+      }
+
       if (id === "link") {
         const url = extractUrl(trimmed);
         if (!url) return;
@@ -1837,7 +1862,9 @@ export default function App() {
       <span key={a.id} className="action-slot">
       <button
         type="button"
-        className={`action sm ${active === a.id ? "active" : ""}`}
+        className={`action sm ${active === a.id ? "active" : ""} ${
+          a.id === "speak" && barSpeaking ? "speaking" : ""
+        }`}
         onClick={
           interactive
             ? guarded(() => {

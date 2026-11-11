@@ -52,6 +52,8 @@ pub struct Actions {
     pub summarize: bool,
     pub copy: bool,
     pub search: bool,
+    /// 胶囊动作：朗读选中的内容（需已下载音色包，未装时点击给下载指引）
+    pub speak: bool,
     /// 上下文动作：选中文本为 URL 时「打开链接」
     pub link: bool,
     /// 上下文动作：选中文本为邮箱时「写邮件」
@@ -76,6 +78,7 @@ impl Default for Actions {
             summarize: true,
             copy: true,
             search: true,
+            speak: true,
             link: true,
             email: true,
             code: true,
@@ -242,6 +245,8 @@ pub struct TtsConfig {
     pub en_voice: u32,
     /// 朗读功能开关：关闭即自动卸载音色包（删引擎与模型）并隐藏朗读入口
     pub enabled: bool,
+    /// 语速（引擎 length-scale 系数）：1.2 慢 / 1.0 正常 / 0.85 快，设置页三档
+    pub speed: f64,
 }
 
 impl Default for TtsConfig {
@@ -251,6 +256,7 @@ impl Default for TtsConfig {
             zh_voice: 3,
             en_voice: 0,
             enabled: true,
+            speed: 1.0,
         }
     }
 }

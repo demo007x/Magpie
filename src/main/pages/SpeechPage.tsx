@@ -354,6 +354,35 @@ export default function SpeechPage({ settings, patch, saveNow }: PageProps) {
 
       {status.supported && settings.tts.enabled && status.installed && (
         <>
+          {/* 语速：三档直接落盘（引擎 length-scale 系数），下一次朗读即生效；
+              合成缓存键含语速，改档不会串到旧语速的音频 */}
+          <div className="card">
+            <div className="row-between">
+              <div>
+                <div className="row-title">{t("speech.speed")}</div>
+              </div>
+              <div className="seg" role="radiogroup" aria-label={t("speech.speed")}>
+                {(
+                  [
+                    [1.2, "slow"],
+                    [1.0, "normal"],
+                    [0.85, "fast"],
+                  ] as const
+                ).map(([v, key]) => (
+                  <button
+                    key={key}
+                    className={settings.tts.speed === v ? "on" : ""}
+                    onClick={() => {
+                      patch({ tts: { ...settings.tts, speed: v } });
+                      saveNow?.();
+                    }}
+                  >
+                    {t(`speech.speed_${key}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
           <h2 className="sec">{t("speech.zhSec")}</h2>
           {voiceCard("zh")}
           <h2 className="sec">{t("speech.enSec")}</h2>

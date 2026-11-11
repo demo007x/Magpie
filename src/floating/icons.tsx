@@ -17,6 +17,7 @@ import {
   ScanText,
   Search,
   Sparkles,
+  Volume2,
   X,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -25,6 +26,7 @@ import { customIconNode } from "../shared/icons";
 export const ICONS: Record<string, ReactNode> = {
   copy: <Copy size={14} strokeWidth={1.75} />,
   search: <Search size={14} strokeWidth={1.75} />,
+  speak: <Volume2 size={14} strokeWidth={1.75} />,
   translate: <Languages size={14} strokeWidth={1.75} />,
   explain: <Lightbulb size={14} strokeWidth={1.75} />,
   summarize: <AlignLeft size={14} strokeWidth={1.75} />,
