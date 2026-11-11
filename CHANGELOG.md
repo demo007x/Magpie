@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- 本文件仅在发版时依据 docs/release/release-vX.Y.Z.md 的已勾选条目生成版本节，开发阶段勿改 -->
 
+## [0.1.22] - 2026-11-11
+
+### Added
+
+- Read aloud with a local voice pack: download it once in Settings › Read aloud (about 410 MB) and everything reads offline; voices can be auditioned inline, with separate defaults for Chinese and English (macOS, Windows x64). Turning the feature off removes the pack.
+- A 朗读 / Read aloud action on the capsule and a speaker button in the result window read the selected text or result in its language; tap again to stop.
+- Long text is read in seamless chunks, starting within seconds; stop instantly by tapping again, switching actions, or closing the window.
+- Read-aloud speed presets (Slow / Normal / Fast) apply to every entry point, and switching speed never replays audio from another speed.
+
 ## [0.1.21] - 2026-11-07
 
 ### Added
