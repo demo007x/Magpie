@@ -6,12 +6,15 @@ import { GripVertical, Plus, Sparkles } from "lucide-react";
 import { Modal } from "../../shared/Modal";
 import { toast } from "../../shared/toast";
 import { aiChat } from "../../shared/ai";
-import { CONTEXT_ACTION_IDS, CUSTOM_ID_PREFIX } from "../../shared/actions";
-import { isAiAction } from "../App";
+import {
+  allActionIds,
+  CONTEXT_ACTION_IDS,
+  CUSTOM_ID_PREFIX,
+  isAiAction,
+} from "../../shared/actions";
 import type { CustomAction } from "../../shared/types";
 import { SquarePen } from "lucide-react";
 import { actionDesc, actionLabel } from "./labels";
-import { allActionIds } from "../App";
 import { CUSTOM_ICON_CHOICES, customIconNode } from "../../shared/icons";
 import type { PageProps } from "./types";
 import { t, useLocale } from "../../shared/i18n";

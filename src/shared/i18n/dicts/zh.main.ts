@@ -240,6 +240,7 @@ export const zhMain = {
   "speech.downloading": "正在下载 {percent}%",
   "speech.downloadingInd": "正在下载…",
   "speech.extracting": "正在安装…",
+  "speech.recommended": "推荐",
   "speech.downloadFailed": "下载失败：{error}",
   "speech.zhSec": "中文音色",
   "speech.enSec": "英文音色",

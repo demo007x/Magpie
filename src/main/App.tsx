@@ -17,9 +17,6 @@ import {
   TextCursorInput,
   Volume2,
 } from "lucide-react";
-import {
-  ACTIONS,
-} from "../shared/actions";
 import { t, useLocale } from "../shared/i18n";
 import {
   translateMissingReason,
@@ -68,16 +65,6 @@ const NAV_ICONS: Record<Page, React.ReactNode> = {
   about: <Info size={15} strokeWidth={1.75} />,
 };
 const IS_MAC = /Mac/i.test(navigator.platform);
-
-export const isAiAction = (id: string) => ACTIONS.find((a) => a.id === id)?.kind === "ai";
-
-/** 动作行序的唯一真相：已排顺序 + 内置 + 自定义（未排过的追加末尾）。
-    自定义动作 id 带 "c:" 前缀，与内置同池混排，胶囊按这份顺序取前 N 个。
-    末尾过滤：只保留今天仍然存在的动作——手改配置或删动作后残留的 id 会渲染成空白行 */
-export const allActionIds = (s: Settings) =>
-  [
-    ...new Set([...s.actionOrder, ...Object.keys(s.actions), ...s.customActions.map((c) => c.id)]),
-  ].filter((id) => id in s.actions || s.customActions.some((c) => c.id === id));
 
 // 系统内置引擎（与 Rust default_engines 同名单）：不可删除，只可停用/排序
 

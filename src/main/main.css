@@ -1442,6 +1442,16 @@ input.recording {
   background: var(--accent-soft);
 }
 
+/* 下拉行内的「推荐」徽标：与「默认」徽标同语言，但更轻——实心文字色，
+   不铺底色，避免和选中态/默认徽标在视觉上打擂 */
+.voice-rec {
+  flex: none;
+  margin-right: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
 .voice-pick:hover {
   background: var(--hov);
 }

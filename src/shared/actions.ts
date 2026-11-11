@@ -4,7 +4,7 @@
 // 自定义动作的 prompt 随对象带过来）；"local" = 前端本地处理（如复制选中文本）
 // 上下文动作（link/email/code/tel）的可见性由浮动条「提取信息」统一决策（见 floating/App.tsx），
 // 不使用 when 谓词；when 机制保留给未来其他上下文动作。
-import type { CustomAction } from "./types";
+import type { CustomAction, Settings } from "./types";
 import { t, getLocale } from "./i18n";
 
 export interface ActionDef {
@@ -274,6 +274,16 @@ export const ACTIONS: ActionDef[] = [
 export function actionById(id: string): ActionDef | undefined {
   return ACTIONS.find((a) => a.id === id);
 }
+
+export const isAiAction = (id: string) => ACTIONS.find((a) => a.id === id)?.kind === "ai";
+
+/** 动作行序的唯一真相：已排顺序 + 内置 + 自定义（未排过的追加末尾）。
+    自定义动作 id 带 "c:" 前缀，与内置同池混排，胶囊按这份顺序取前 N 个。
+    末尾过滤：只保留今天仍然存在的动作——手改配置或删动作后残留的 id 会渲染成空白行 */
+export const allActionIds = (s: Settings) =>
+  [
+    ...new Set([...s.actionOrder, ...Object.keys(s.actions), ...s.customActions.map((c) => c.id)]),
+  ].filter((id) => id in s.actions || s.customActions.some((c) => c.id === id));
 
 /** 上下文动作：选中内容里出现对应实体才上胶囊，因此它们的相互顺序对胶囊无意义
     （恰好一个 → 该动作单独出现；多个 → 合并成一个「提取信息」按钮）。

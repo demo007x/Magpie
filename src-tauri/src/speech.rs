@@ -1,6 +1,6 @@
-//! 本地朗读（TTS）：Kokoro-82M int8 ONNX 模型 + sherpa-onnx 命令行引擎。
+//! 本地朗读（TTS）：Kokoro-82M fp32 ONNX 模型 + sherpa-onnx 命令行引擎。
 //!
-//! 为什么是「按需下载」而不是打进安装包：模型与引擎解压后约 320MB，不朗读的
+//! 为什么是「按需下载」而不是打进安装包：模型与引擎解压后约 590MB，不朗读的
 //! 用户不该为它付出安装体积；下载源是 GitHub Releases 的公开直链，装完即离线。
 //!
 //! 为什么推理走子进程：onnxruntime 是 C++ 库，崩溃无法在 Rust 里兜住（与
@@ -33,9 +33,10 @@ const ENGINE_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/downloa
 /// 用原生包
 #[cfg(all(windows, target_arch = "aarch64"))]
 const ENGINE_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-win-arm64-shared-MD-Release.tar.bz2";
-/// 模型包（v1.1 中英双语，103 音色，int8 量化，与平台无关）
-const MODEL_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2";
-const MODEL_DIR_NAME: &str = "kokoro-int8-multi-lang-v1_1";
+/// 模型包（v1.1 中英双语，103 音色，fp32 完整精度，与平台无关）。曾用 int8
+/// 量化版（140MB），真机对比英文音色塑料感明显、中文几乎无差，换回完整精度
+const MODEL_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_1.tar.bz2";
+const MODEL_DIR_NAME: &str = "kokoro-multi-lang-v1_1";
 
 /// 下载源列表：GitHub 直连优先，其后是几个对 Release 直链做整段代理的国内加速
 /// 实例。GitHub 在国内间歇性被掐（本机开发期实测时通时断），哪个域名单独被墙
@@ -120,7 +121,7 @@ pub struct TtsStatus {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Progress {
-    /// "engine" | "model" | "extract"
+    /// "engine" | "model" | "extract-model"（下载/解压各段）
     stage: String,
     percent: f64,
 }
@@ -173,7 +174,7 @@ fn engine_dir_name() -> String {
 }
 
 fn model_ready(app: &AppHandle) -> bool {
-    model_dir(app).join("model.int8.onnx").exists()
+    model_dir(app).join("model.onnx").exists()
 }
 
 fn installed(app: &AppHandle) -> bool {
@@ -304,7 +305,8 @@ async fn download_all(app: &AppHandle) -> Result<(), String> {
     if engine_bin(app).is_none() {
         let tar = root.join("engine.tar.bz2");
         fetch_any(app, ENGINE_URL, &tar, "engine").await?;
-        emit(app, "extract", 0.0);
+        // 引擎解压（2-4 秒）不发进度事件：界面上进度条和文案一起冻结，
+        // 用户感知只是「下载停了一下」；任何状态切换反而显得卡住
         extract(&tar, &root.join("engine"))?;
         // 换架构/升级版本后旧引擎目录作废（一份 ~150MB），顺手清掉
         #[cfg(windows)]
@@ -314,15 +316,55 @@ async fn download_all(app: &AppHandle) -> Result<(), String> {
     if !model_ready(app) {
         let tar = root.join("model.tar.bz2");
         fetch_any(app, MODEL_URL, &tar, "model").await?;
-        emit(app, "extract", 0.0);
+        emit(app, "extract-model", 0.0);
         // 模型包顶层目录就是 MODEL_DIR_NAME，直接解到 tts 根下
         extract(&tar, &root)?;
+        cleanup_old_models(app);
+        emit(app, "extract-model", 100.0);
         let _ = std::fs::remove_file(&tar);
     }
     Ok(())
 }
 
+/// 清掉 tts 根下其他 kokoro-* 模型目录（换模型版本后旧包作废，一份几百 MB）：
+/// 只删「名字以 kokoro- 开头且含模型文件」的目录，当前这份除外。
+/// 引擎的同类清理只对 Windows 需要（目录名带架构），模型与平台无关、两平台共用
+fn cleanup_old_models(app: &AppHandle) {
+    let tts_root = root(app);
+    let Ok(entries) = std::fs::read_dir(&tts_root) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let p = e.path();
+        let name = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("kokoro-"));
+        let is_model = p.join("model.onnx").exists() || p.join("model.int8.onnx").exists();
+        if name && is_model && !p.ends_with(MODEL_DIR_NAME) {
+            let _ = std::fs::remove_dir_all(p);
+        }
+    }
+}
+
+/// 各阶段在「一条总进度」里的区间：引擎下载 0-18 → 音色下载 22-86 →
+/// 音色解压 86-100（引擎解压 18-22 不发事件，进度冻结见 download_all 注释）。
+/// 权重按下载体积与解压耗时近似——下载主导总时长。用户心智里这就是
+/// 「一个音色包」，推理框架是实现细节，不该在界面上拆成两条进度、
+/// 更不该让进度条中途归零重来
+const STAGE_RANGE: &[(&str, f64, f64)] = &[
+    ("engine", 0.0, 18.0),
+    ("model", 22.0, 86.0),
+    ("extract-model", 86.0, 100.0),
+];
+
 fn emit(app: &AppHandle, stage: &str, percent: f64) {
+    // 无总长度的源发 -1（进度未知），原样透传——前端据此只留文字不画假进度条
+    let percent = if percent < 0.0 {
+        percent
+    } else {
+        match STAGE_RANGE.iter().find(|(s, _, _)| *s == stage) {
+            Some((_, from, to)) => from + (to - from) * percent / 100.0,
+            None => percent,
+        }
+    };
     let _ = app.emit(
         "tts://progress",
         Progress {
@@ -517,7 +559,7 @@ pub fn tts_speak(
 
     // 中文数字/日期/电话读法靠规则 FST；英文不挂，避免规则误伤
     let mut args: Vec<String> = vec![
-        format!("--kokoro-model={}", m.join("model.int8.onnx").display()),
+        format!("--kokoro-model={}", m.join("model.onnx").display()),
         format!("--kokoro-voices={}", m.join("voices.bin").display()),
         format!("--kokoro-tokens={}", m.join("tokens.txt").display()),
         format!(

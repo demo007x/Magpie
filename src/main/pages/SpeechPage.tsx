@@ -24,10 +24,11 @@ interface Progress {
   percent: number;
 }
 
-/** 音色条目：sid 为 Kokoro voices.bin 的索引 */
+/** 音色条目：sid 为 Kokoro voices.bin 的索引；rec = 下拉里挂「推荐」徽标 */
 interface VoiceItem {
   sid: number;
   label: string;
+  rec?: boolean;
 }
 
 /** 一组音色（中文女声 / 中文男声 / 英文） */
@@ -37,7 +38,8 @@ interface VoiceGroup {
 }
 
 const EN_VOICES = [
-  { sid: 0, key: "speech.voiceEnF", n: 1 },
+  // sid 0 真机对比胜出（fp32 完整精度下英文自然度明显优于同组其余音色），标推荐
+  { sid: 0, key: "speech.voiceEnF", n: 1, rec: true },
   { sid: 1, key: "speech.voiceEnF", n: 2 },
   { sid: 2, key: "speech.voiceEnUk" },
 ] as const;
@@ -204,6 +206,7 @@ export default function SpeechPage({ settings, patch, saveNow }: PageProps) {
             items: EN_VOICES.map((v) => ({
               sid: v.sid,
               label: t(v.key, "n" in v ? { n: v.n } : undefined),
+              rec: "rec" in v ? v.rec : undefined,
             })),
           },
         ];
@@ -241,6 +244,7 @@ export default function SpeechPage({ settings, patch, saveNow }: PageProps) {
                 onClick={() => setVoice(lang, g.key, v.sid)}
               >
                 <span className="voice-name">{v.label}</span>
+                {v.rec && <span className="voice-rec">{t("speech.recommended")}</span>}
                 <button
                   className={`voice-play ${playing === v.sid ? "on" : ""}`}
                   title={playing === v.sid ? t("speech.stop") : t("speech.preview")}
@@ -330,7 +334,7 @@ export default function SpeechPage({ settings, patch, saveNow }: PageProps) {
               </div>
               <button className="btn primary" disabled={busy} onClick={download}>
                 {busy
-                  ? stage === "extract"
+                  ? stage === "extract-model"
                     ? t("speech.extracting")
                     : percent < 0
                       ? t("speech.downloadingInd")
@@ -338,13 +342,10 @@ export default function SpeechPage({ settings, patch, saveNow }: PageProps) {
                   : t("speech.download")}
               </button>
             </div>
-            {/* 代理源可能没有总长度（chunked）：进度未知时只留文字，不画假进度条 */}
-            {busy && (stage === "extract" || percent >= 0) && (
+            {/* 代理源可能没有总长度（percent=-1）：进度未知时只留文字，不画假进度条 */}
+            {busy && percent >= 0 && (
               <div className="bar">
-                <div
-                  className="bar-fill"
-                  style={{ width: stage === "extract" ? "100%" : `${percent}%` }}
-                />
+                <div className="bar-fill" style={{ width: `${percent}%` }} />
               </div>
             )}
           </div>

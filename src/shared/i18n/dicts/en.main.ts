@@ -255,6 +255,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "speech.downloading": "Downloading {percent}%",
   "speech.downloadingInd": "Downloading…",
   "speech.extracting": "Installing…",
+  "speech.recommended": "Recommended",
   "speech.downloadFailed": "Download failed: {error}",
   "speech.zhSec": "Chinese voices",
   "speech.enSec": "English voices",
