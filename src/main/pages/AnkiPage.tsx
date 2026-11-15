@@ -36,8 +36,24 @@ export default function AnkiPage({ settings, patch, save, saved }: PageProps) {
         ]).then(([decks, models]) => {
           setTest({ ok: true, version });
           setFields([]);
-          // 牌组/类型缓存进设置：⌄ 菜单与两个下拉共用（随 save 落盘）
-          patch({ anki: { ...anki, decks, models } });
+          // 牌组/类型缓存进设置：⌄ 菜单与两个下拉共用（随 save 落盘）。
+          // 顺带校正选择值：受控下拉的 value 不在列表里时浏览器会「幻影显示」
+          // 第一项（看着选了、实际没选）——当前值不在实拉列表里就取第一项。
+          // 动作顺序里没登记过的 anki 一并补登记（新接入动作不悬在排序末尾）
+          patch((s) => ({
+            anki: {
+              ...anki,
+              decks,
+              models,
+              deck: decks.includes(anki.deck) ? anki.deck : decks[0] ?? "",
+              modelName: models.includes(anki.modelName)
+                ? anki.modelName
+                : models[0] ?? anki.modelName,
+            },
+            actionOrder: s.actionOrder.includes("anki")
+              ? s.actionOrder
+              : [...s.actionOrder, "anki"],
+          }));
         }),
       )
       .catch((e) => {
