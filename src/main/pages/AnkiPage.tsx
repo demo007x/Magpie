@@ -191,12 +191,13 @@ export default function AnkiPage({ settings, patch, save, saved }: PageProps) {
           {fields.map((f, i) => (
             <div className="row-between sep" key={f}>
               <div className="field wide">
-                <span>
-                  {f}
-                  {i < 2 ? " ·" : ""}
-                </span>
+                <span>{f}</span>
                 <input
                   value={anki.fieldTemplates[f] ?? ""}
+                  // 前两字段留空时由正/背模板按序填充，placeholder 提示默认来源
+                  placeholder={
+                    i === 0 ? t("anki.frontTpl") : i === 1 ? t("anki.backTpl") : ""
+                  }
                   onChange={(e) => setFieldTpl(f, e.target.value)}
                 />
               </div>
