@@ -100,6 +100,30 @@ export interface ObsidianConfig {
   cardTemplate: string;
 }
 
+/** Anki 接入配置（docs/08）：经 AnkiConnect 本地 HTTP 一键建卡。
+ *  deck 为空 = 未接入，相关动作不出现。无状态一次性送达：写入本地集合即完，
+ *  多端同步归 Anki 自身，不建队列。 */
+export interface AnkiConfig {
+  /** AnkiConnect 地址（默认本机 8765；Rust 侧仅允许回环地址） */
+  connectUrl: string;
+  /** 默认牌组（空 = 未接入） */
+  deck: string;
+  /** ⌄ 菜单牌组列表缓存（连接测试时实拉 deckNames 存入） */
+  decks: string[];
+  /** 笔记类型列表缓存（连接测试时实拉；设置页下拉用） */
+  models: string[];
+  /** 笔记类型（addNote 的 modelName） */
+  modelName: string;
+  /** 正面模板（渲染后填笔记类型第 1 字段；变量 {text}/{source}/{date}/{time}/{url}） */
+  frontTemplate: string;
+  /** 背面模板（渲染后填第 2 字段） */
+  backTemplate: string;
+  /** 高级字段映射（字段名→模板；非空条目按名精确覆盖/追加，未提及字段留空） */
+  fieldTemplates: Record<string, string>;
+  /** 标签模板（空格分隔；变量 {date}/{source}） */
+  tags: string;
+}
+
 /** 本地朗读配置：默认音色 + 功能开关（模型是否已安装由 Rust 侧文件系统判定） */
 export interface TtsConfig {
   /** 中文默认音色（Kokoro voice id） */
@@ -118,6 +142,8 @@ export interface Settings {
   actions: ActionFlags;
   /** Obsidian 接入配置（vault 直写；vaultPath 空 = 未接入） */
   obsidian: ObsidianConfig;
+  /** Anki 接入配置（AnkiConnect 建卡；deck 空 = 未接入） */
+  anki: AnkiConfig;
   /** 动作展示顺序（浮动条按此渲染）；缺省 id 追加在末尾 */
   actionOrder: string[];
   /** 用户自定义 AI 动作（与 actionOrder 混排，上限 10 个） */

@@ -299,6 +299,48 @@ impl Default for ObsidianConfig {
     }
 }
 
+/// Anki 接入配置（docs/08）：经 AnkiConnect 本地 HTTP 建卡——划词/结果一键成卡。
+/// deck 为空 = 未接入，相关动作不出现。无状态一次性送达：写入本地集合即完，
+/// 不建队列、不做同步（多端同步归 Anki 自身）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AnkiConfig {
+    /// AnkiConnect 地址（默认本机 8765；Rust 侧仅允许回环地址）
+    pub connect_url: String,
+    /// 默认牌组（空 = 未接入）
+    pub deck: String,
+    /// ⌄ 菜单牌组列表缓存（连接测试时实拉 deckNames 存入）
+    pub decks: Vec<String>,
+    /// 笔记类型列表缓存（连接测试时实拉 modelNames 存入；设置页下拉用）
+    pub models: Vec<String>,
+    /// 笔记类型（addNote 的 modelName）
+    pub model_name: String,
+    /// 正面模板（渲染后填笔记类型第 1 字段；变量 {text}/{source}/{date}/{time}/{url}）
+    pub front_template: String,
+    /// 背面模板（渲染后填第 2 字段）
+    pub back_template: String,
+    /// 高级字段映射（字段名→模板；非空条目按名精确覆盖/追加，未提及字段留空）
+    pub field_templates: HashMap<String, String>,
+    /// 标签模板（空格分隔；变量 {date}/{source}）
+    pub tags: String,
+}
+
+impl Default for AnkiConfig {
+    fn default() -> Self {
+        Self {
+            connect_url: "http://127.0.0.1:8765".into(),
+            deck: String::new(),
+            decks: Vec::new(),
+            models: Vec::new(),
+            model_name: "Basic".into(),
+            front_template: "{text}".into(),
+            back_template: "{source} · {date}".into(),
+            field_templates: HashMap::new(),
+            tags: "magpie {date}".into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -344,6 +386,9 @@ pub struct Settings {
     /// Obsidian 接入（docs/07）：vault 直写配置
     #[serde(default)]
     pub obsidian: ObsidianConfig,
+    /// Anki 接入（docs/08）：AnkiConnect 建卡配置
+    #[serde(default)]
+    pub anki: AnkiConfig,
     /// 结果窗口上次位置（逻辑坐标）：关闭后下次（含重启）在同位置出现
     #[serde(default)]
     pub result_window_pos: Option<[f64; 2]>,
@@ -428,6 +473,7 @@ impl Default for Settings {
             app_blacklist: Vec::new(),
             debounce_ms: 200,
             obsidian: ObsidianConfig::default(),
+            anki: AnkiConfig::default(),
             result_window_pos: None,
             result_window_size: None,
             result_window_pinned: true,

@@ -2,6 +2,7 @@
 
 mod ai;
 mod app_picker;
+mod anki;
 mod capture;
 mod entities;
 mod floating;
@@ -725,6 +726,11 @@ fn main() {
             ai::ai_chat,
             entities::detect_dates,
             obsidian::obsidian_append,
+            anki::anki_version,
+            anki::anki_deck_names,
+            anki::anki_model_names,
+            anki::anki_model_fields,
+            anki::anki_add_note,
             entities::detect_places,
             entities::open_in_calendar,
             pageurl::frontmost_web_url,

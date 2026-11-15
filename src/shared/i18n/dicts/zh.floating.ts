@@ -28,6 +28,7 @@ export const zhFloating = {
   "floating.savedCard": "已存入卡片：{title}",
   "floating.savedFile": "已存入 {name}",
   "floating.obsidianFailed": "存入 Obsidian 失败",
+  "floating.ankiSaved": "已加入 Anki：{deck}",
   "floating.cardFallbackName": "卡片 {date} {time}",
 
   // 图标钮的 aria-label（无可见文字，读屏依赖）

@@ -274,6 +274,11 @@ export const ACTIONS: ActionDef[] = [
     label: "Obsidian",
     kind: "local",
   },
+  {
+    id: "anki",
+    label: "Anki",
+    kind: "local",
+  },
 ];
 
 export function actionById(id: string): ActionDef | undefined {

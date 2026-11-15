@@ -296,6 +296,7 @@ export default function App() {
     engines,
     defaultSearch,
     obsidianCfg,
+    ankiCfg,
   } = useFloatingSettings();
   const [flashId, setFlashId] = useState<string | null>(null);
   const [flashMsg, setFlashMsg] = useState("");
@@ -682,6 +683,7 @@ export default function App() {
     .filter((a) => {
       if (actions[a.id] === false) return false;
       if (a.id === "obsidian") return Boolean(obsidianCfg?.vaultPath);
+      if (a.id === "anki") return Boolean(ankiCfg?.deck);
       if (a.id === "translate") return enabledTranslates.length > 0;
       if (a.id === "search") return enabledEngines.length > 0;
       return a.kind === "ai" && hasUsableModel;
@@ -703,14 +705,17 @@ export default function App() {
       if (a.id === "search" && enabledEngines.length === 0) continue;
       if (a.id === "speak" && !ttsReady) continue;
       if (a.kind === "ai" && a.id !== "translate" && !hasUsableModel) continue;
-      // 「存入 Obsidian」只在已配置 vault 时出现（与结果窗动作行、设置页口径一致）
+      // 「存入 Obsidian」只在已配置 vault 时出现；「Anki」只在已连接 AnkiConnect
+      // （连接测试选定牌组）时出现——与结果窗动作行、设置页口径一致
       if (a.id === "obsidian" && !obsidianCfg?.vaultPath) continue;
+      if (a.id === "anki" && !ankiCfg?.deck) continue;
       entries.push({
         id: a.id,
         label: actionLabel(a),
         icon: a.icon,
-        // 存入 Obsidian 的 ⌄ 目标菜单（笔记/任务/卡片），vault 未配置时不出现
-        hasMenu: a.id === "obsidian",
+        // 存入 Obsidian 的 ⌄ 目标菜单（笔记/任务/卡片）与 Anki 的 ⌄ 牌组菜单；
+        // Anki 仅在缓存了多个牌组时才有 ⌄（单牌组直达即可）
+        hasMenu: a.id === "obsidian" || (a.id === "anki" && (ankiCfg?.decks.length ?? 0) > 1),
         onClick: () => {
           setMenu(null);
           runAction(a.id);
@@ -806,10 +811,13 @@ export default function App() {
   // 续挂旧内容淡出（.m-out + .mflow.still）。切换（menu 已是新值）不续挂
   // 旧内容——新旧同容器叠放会打架，新菜单的入场动画即是切换过渡
   const slotVal: MenuState | null =
-    menu === "translate" || menu === "search" || menu === "obsidian"
+    menu === "translate" || menu === "search" || menu === "obsidian" || menu === "anki"
       ? menu
       : menu === null &&
-          (fading === "translate" || fading === "search" || fading === "obsidian")
+          (fading === "translate" ||
+            fading === "search" ||
+            fading === "obsidian" ||
+            fading === "anki")
         ? fading
         : null;
   const slotGhost = menu === null && slotVal !== null;
@@ -1606,6 +1614,62 @@ export default function App() {
           .catch(() => toast(t("floating.obsidianFailed"), "err"));
         return;
       }
+
+      if (id === "anki") {
+        const cfg = ankiCfg;
+        // 反馈走全局 toast 而非按钮 flash：从菜单/收纳面板发起时浮层先收起，
+        // flash 挂在已卸载的按钮上等于无提示（与 Obsidian 分支同一理由）
+        if (!cfg?.deck) {
+          toast(t("anki.testFail"), "err");
+          return;
+        }
+        const now = new Date();
+        const p2 = (n: number) => String(n).padStart(2, "0");
+        const date = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
+        const time = `${p2(now.getHours())}:${p2(now.getMinutes())}`;
+        const src = appNameFrom(sourceAppRef.current);
+        // 保存内容择优：结果窗里已有 AI 结果时背面存释义，否则存原文
+        const body =
+          phase.kind === "ocr" && phase.actionId && phase.output && !phase.error
+            ? phase.output
+            : source;
+        // ⌄ 菜单的牌组覆盖（targetOverride 复用为 deckOverride）；空 = 默认牌组
+        const deck = targetOverride ?? cfg.deck;
+        const tags = cfg.tags
+          .replaceAll("{date}", date)
+          .replaceAll("{source}", src)
+          .split(/\s+/)
+          .filter(Boolean);
+        // {url} 按选区来源 pid 现查（与加入日历同规则）；非浏览器划词/OCR 流为空，
+        // 模板里整行只有 {url} 的行随之省略
+        invoke<string | null>("frontmost_web_url", { pid: sourcePidRef.current })
+          .catch(() => null)
+          .then((pageUrl) => {
+            const url = pageUrl ?? "";
+            const fill = (tpl: string) => {
+              const t2 = url ? tpl : tpl.split("\n").filter((l) => l.trim() !== "{url}").join("\n");
+              return t2
+                .replaceAll("{text}", body)
+                .replaceAll("{source}", src)
+                .replaceAll("{date}", date)
+                .replaceAll("{time}", time)
+                .replaceAll("{url}", url);
+            };
+            invoke("anki_add_note", {
+              url: cfg.connectUrl,
+              deck,
+              model: cfg.modelName,
+              front: fill(cfg.frontTemplate),
+              back: fill(cfg.backTemplate),
+              fieldTemplates: cfg.fieldTemplates ?? {},
+              tags,
+            })
+              .then(() => toast(t("floating.ankiSaved", { deck })))
+              // Rust 侧错误已按界面语言本地化（不可达/重复卡/其他），直接展示
+              .catch((e) => toast(String(e) || t("anki.testFail"), "err"));
+          });
+        return;
+      }
       return;
     }
 
@@ -1796,6 +1860,7 @@ export default function App() {
     defaultTranslateId: defaultTranslate?.id,
     defaultEngineName: defaultEngine?.name,
     obsidianVaultConfigured: Boolean(obsidianCfg?.vaultPath),
+    ankiDecks: ankiCfg?.decks ?? [],
     runAction,
     openEngine,
     setUsedTranslate,
@@ -1879,12 +1944,14 @@ export default function App() {
         <span className="ic">{iconOf(a.id, a.icon)}</span>
         <span>{actionLabel(a)}</span>
       </button>
-      {(a.id === "translate" || a.id === "search" || a.id === "obsidian") &&
+      {(a.id === "translate" || a.id === "search" || a.id === "obsidian" || a.id === "anki") &&
         (a.id === "translate"
           ? enabledTranslates.length > 1
           : a.id === "obsidian"
             ? true
-            : enabledEngines.length > 1) && (
+            : a.id === "anki"
+              ? (ankiCfg?.decks.length ?? 0) > 1
+              : enabledEngines.length > 1) && (
         <button
           type="button"
           className="chev"
@@ -1900,7 +1967,7 @@ export default function App() {
             interactive
               ? guarded(() =>
                   switchMenu(
-                    menu === a.id ? null : (a.id as "search" | "translate" | "obsidian"),
+                    menu === a.id ? null : (a.id as "search" | "translate" | "obsidian" | "anki"),
                   ),
                 )
               : undefined
@@ -1956,7 +2023,8 @@ export default function App() {
             </button>
             {((e.id === "search" && enabledEngines.length > 1) ||
               (e.id === "translate" && enabledTranslates.length > 1 && !snipMode) ||
-              (e.id === "obsidian" && e.hasMenu)) && (
+              (e.id === "obsidian" && e.hasMenu) ||
+              (e.id === "anki" && e.hasMenu)) && (
                 <button
                   className="chev"
                   data-trig={`chev:${e.id}`}
@@ -1965,7 +2033,7 @@ export default function App() {
                     setMenu((m) =>
                       m === `chev:${e.id}`
                         ? null
-                        : (`chev:${e.id}` as "chev:translate" | "chev:search" | "chev:obsidian"),
+                        : (`chev:${e.id}` as "chev:translate" | "chev:search" | "chev:obsidian" | "chev:anki"),
                     ),
                   )}
                 >
@@ -2049,9 +2117,10 @@ export default function App() {
           Windows 分离卡：渲染在独立窗口（floating-menu），不在此渲染 */}
       {!IS_OCR && !POPS_EXTERNAL && !!menu && menu !== "overflow" && menu !== "search" && menu !== "translate" && (
         (() => {
-          const kind = menu.split(":")[1] as "translate" | "search" | "obsidian";
+          const kind = menu.split(":")[1] as "translate" | "search" | "obsidian" | "anki";
           // 存入 Obsidian 的目标菜单：主按钮 = 存笔记。
-          // 项名只写目标名词——菜单挂在「存入 Obsidian」的 ⌄ 下，"存入"动词不必逐行重复
+          // 项名只写目标名词——菜单挂在「存入 Obsidian」的 ⌄ 下，"存入"动词不必逐行重复。
+          // Anki 的 ⌄ 是牌组菜单：项名 = 缓存的牌组名，点哪建哪（主钮 = 默认牌组）
           const items =
             kind === "obsidian"
               ? [
@@ -2059,9 +2128,11 @@ export default function App() {
                   { key: "task", label: t("floating.targetTask") },
                   { key: "card", label: t("floating.targetCard") },
                 ]
-              : kind === "translate"
-                ? enabledTranslates.map((s) => ({ key: s.id, label: t(s.label) }))
-                : enabledEngines.map((en) => ({ key: en.name, label: engineDisplayName(en.name) }));
+              : kind === "anki"
+                ? (ankiCfg?.decks ?? []).map((d) => ({ key: d, label: d }))
+                : kind === "translate"
+                  ? enabledTranslates.map((s) => ({ key: s.id, label: t(s.label) }))
+                  : enabledEngines.map((en) => ({ key: en.name, label: engineDisplayName(en.name) }));
           // 不标记默认项（2026-10-25 用户定稿）：二级菜单是「选一个执行」的
           // 平面列表，默认服务已由胶囊上的服务名表达，菜单内再高亮一条是噪音
           return (
@@ -2074,6 +2145,8 @@ export default function App() {
                     setMenu(null);
                     if (kind === "obsidian") {
                       runAction("obsidian", undefined, undefined, it.key);
+                    } else if (kind === "anki") {
+                      runAction("anki", undefined, undefined, it.key);
                     } else if (kind === "translate") {
                       runAction("translate", it.key);
                     } else {
@@ -2551,6 +2624,22 @@ export default function App() {
                 ))}
               </div>
             )}
+            {slotVal === "anki" && (
+              <div key="anki" className={`mflow ${slotGhost ? "still" : ""}`}>
+                {(ankiCfg?.decks ?? []).map((d) => (
+                  <button
+                    key={d}
+                    className="chip"
+                    onClick={guarded(() => {
+                      setMenu(null);
+                      runAction("anki", undefined, undefined, d);
+                    })}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           {/* 溢出收纳浮层：竖排胶囊堆（§B.5.2 定稿）——无容器卡，每颗胶囊
               独立浮层（实底+发丝+投影，CSS .rail），堆内右对齐成列，右缘贴
@@ -2600,7 +2689,8 @@ export default function App() {
                             : (`pmenu:${a.id}` as
                                 | "pmenu:translate"
                                 | "pmenu:search"
-                                | "pmenu:obsidian"),
+                                | "pmenu:obsidian"
+                                | "pmenu:anki"),
                         ),
                       )}
                     >
@@ -2665,6 +2755,19 @@ export default function App() {
                       </button>
                     ),
                   )}
+                {pmenuVal === "pmenu:anki" &&
+                  (ankiCfg?.decks ?? []).map((d) => (
+                    <button
+                      key={d}
+                      className="chip"
+                      onClick={guarded(() => {
+                        setMenu(null);
+                        runAction("anki", undefined, undefined, d);
+                      })}
+                    >
+                      {d}
+                    </button>
+                  ))}
               </div>
             </div>
           )}

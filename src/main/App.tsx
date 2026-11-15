@@ -8,6 +8,7 @@ import {
   Cpu,
   Info,
   Keyboard,
+  Layers,
   NotebookPen,
   SlidersHorizontal,
   Languages,
@@ -29,6 +30,7 @@ import PermsPage from "./pages/PermsPage";
 import TranslatePage from "./pages/TranslatePage";
 import SpeechPage from "./pages/SpeechPage";
 import ObsidianPage from "./pages/ObsidianPage";
+import AnkiPage from "./pages/AnkiPage";
 import ModelPage from "./pages/ModelPage";
 import CapturePage from "./pages/CapturePage";
 import GeneralPage from "./pages/GeneralPage";
@@ -46,6 +48,7 @@ type Page =
   | "speech"
   | "search"
   | "obsidian"
+  | "anki"
   | "blocklist"
   | "general"
   | "about";
@@ -60,6 +63,7 @@ const NAV_ICONS: Record<Page, React.ReactNode> = {
   speech: <Volume2 size={15} strokeWidth={1.75} />,
   search: <Search size={15} strokeWidth={1.75} />,
   obsidian: <NotebookPen size={15} strokeWidth={1.75} />,
+  anki: <Layers size={15} strokeWidth={1.75} />,
   blocklist: <Ban size={15} strokeWidth={1.75} />,
   general: <SlidersHorizontal size={15} strokeWidth={1.75} />,
   about: <Info size={15} strokeWidth={1.75} />,
@@ -310,6 +314,7 @@ export default function App() {
               ["speech", "nav.speech", speechReady],
               ["search", "nav.search", true],
               ["obsidian", "nav.obsidian", true],
+              ["anki", "nav.anki", true],
               ["blocklist", "nav.blocklist", captureReady],
               ["general", "nav.general", true],
               ["perms", "nav.perms", IS_MAC],
@@ -364,6 +369,8 @@ export default function App() {
         {page === "search" && <SearchPage settings={settings} patch={patch} save={save} saved={saved} />}
 
         {page === "obsidian" && <ObsidianPage settings={settings} patch={patch} save={save} saved={saved} />}
+
+        {page === "anki" && <AnkiPage settings={settings} patch={patch} save={save} saved={saved} />}
 
         {page === "blocklist" && <BlocklistPage settings={settings} patch={patch} save={save} saved={saved} />}
 

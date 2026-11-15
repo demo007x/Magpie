@@ -17,6 +17,7 @@ export const zhMain = {
   "nav.speech": "朗读",
   "nav.search": "搜索",
   "nav.obsidian": "Obsidian",
+  "nav.anki": "Anki",
   "nav.blocklist": "黑名单",
   "nav.general": "通用",
   "nav.perms": "权限",
@@ -166,6 +167,29 @@ export const zhMain = {
     "变量：{fText} 选中文本 · {fSource} 来源应用 · {fTime} 时间 · {fDate} 日期。一卡一文件，文件名取选中文本首行（≤20 字）。",
   "obsidian.resetTplTitle": "恢复出厂默认模板",
   "obsidian.excerptNote": "多行选中文本会逐行保持 markdown 引用形态。",
+
+  // Anki 页
+  "anki.hint":
+    "把划词与结果一键存成 Anki 卡片（结果窗语境背面为 AI 释义）。需要本机运行 Anki 并安装 AnkiConnect 插件。配置后，胶囊与结果窗会出现「Anki」。更改需保存后生效。",
+  "anki.connectUrl": "AnkiConnect 地址（默认本机 8765）",
+  "anki.test": "连接测试",
+  "anki.testing": "连接中…",
+  "anki.testOk": "已连接，Anki 版本 {version}",
+  "anki.testFail": "连接失败：请确认 Anki 已启动并安装 AnkiConnect 插件",
+  "anki.deck": "默认牌组",
+  "anki.modelName": "笔记类型",
+  "anki.selectUnset": "连接测试成功后可选",
+  "anki.templatesSec": "卡片模板",
+  "anki.frontTpl": "正面模板",
+  "anki.tplVars": "变量：{fText} 选中文本 · {fSource} 来源应用 · {fDate} 日期 · {fTime} 时间 · {fUrl} 页面链接",
+  "anki.backTpl": "背面模板",
+  "anki.fieldsSec": "高级字段映射（可选）",
+  "anki.fieldsHint":
+    "按字段名精确填充，优先于正/背模板的按序填充；留空则该字段走默认。切换笔记类型后请重新连接测试以刷新字段列表。",
+  "anki.fieldsUnset": "连接测试成功后显示当前笔记类型的字段列表。",
+  "anki.tags": "标签（空格分隔）",
+  "anki.tagsVars": "变量：{fDate} 日期 · {fSource} 来源应用",
+  "anki.resetTplTitle": "恢复出厂默认模板",
 
   // 提示词页
   "prompts.hint": "编辑各动作发给模型的指令；{lang} 按界面语言解析为简体中文或 English，{date} 解析为当天日期，所选文字随后附带。更改需保存后生效。",

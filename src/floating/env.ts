@@ -26,18 +26,21 @@ export const POPS_EXTERNAL = IS_WIN_LIKE && !IS_OCR && !IS_PIN;
 
 // 二级浮层开合状态的取值域（fading 退场快照同域）：chev:* 仅浮动条胶囊、
 // overflow 浮动条「更多」收纳 / OCR 结果窗胶囊堆共用一名、pmenu:* 为堆内
-// 行侧菜单、search/translate/obsidian 为结果窗动作行 ⌄ 槽位菜单
+// 行侧菜单、search/translate/obsidian/anki 为结果窗动作行 ⌄ 槽位菜单
 export type HoverMenuId =
   | "chev:translate"
   | "chev:search"
   | "chev:obsidian"
+  | "chev:anki"
   | "overflow"
   | "pmenu:translate"
   | "pmenu:search"
   | "pmenu:obsidian"
+  | "pmenu:anki"
   | "search"
   | "translate"
-  | "obsidian";
+  | "obsidian"
+  | "anki";
 
 // Rust 返回的窗口落位 / 显示器逻辑矩形（逻辑坐标）——布局 effect 的坐标基准
 // （锚定/翻转判定依赖），拖拽结束回读刷新

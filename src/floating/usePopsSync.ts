@@ -30,6 +30,8 @@ export function usePopsSync(opts: {
   defaultTranslateId: string | null | undefined;
   defaultEngineName: string | null | undefined;
   obsidianVaultConfigured: boolean;
+  /** Anki ⌄ 牌组菜单的数据源（连接测试时缓存的 deckNames）；空 = 无 ⌄ */
+  ankiDecks: string[];
   runAction: (id: string, service?: string, source?: string, target?: string) => void;
   openEngine: (en: SearchEngine) => void;
   setUsedTranslate: (v: string) => void;
@@ -48,6 +50,7 @@ export function usePopsSync(opts: {
     defaultTranslateId,
     defaultEngineName,
     obsidianVaultConfigured,
+    ankiDecks,
     runAction,
     openEngine,
     setUsedTranslate,
@@ -71,18 +74,21 @@ export function usePopsSync(opts: {
             label: engineDisplayName(en.name), // 展示层映射内置中文名；key 保持原名供高亮匹配
             on: en.name === (usedEngine ?? defaultEngineName ?? null),
           }))
-        : [
-            { key: "note", label: t("floating.targetNote"), on: true },
-            { key: "task", label: t("floating.targetTask"), on: false },
-            { key: "card", label: t("floating.targetCard"), on: false },
-          ];
+        : kind === "anki"
+          ? ankiDecks.map((d) => ({ key: d, label: d, on: false }))
+          : [
+              { key: "note", label: t("floating.targetNote"), on: true },
+              { key: "task", label: t("floating.targetTask"), on: false },
+              { key: "card", label: t("floating.targetCard"), on: false },
+            ];
   // 行 ⌄ 的判定（动态，非 barEntries.hasMenu）：翻译行=多个翻译服务、
-  // 搜索行=多个引擎、Obsidian 行=已配置 vault——macOS 面板渲染、Windows
-  // 面板数据组装与行 hover 回传校验共用同一判据
+  // 搜索行=多个引擎、Obsidian 行=已配置 vault、Anki 行=缓存了多个牌组——
+  // macOS 面板渲染、Windows 面板数据组装与行 hover 回传校验共用同一判据
   const entryHasMenu = (id: string) =>
     (id === "translate" && enabledTranslates.length > 1) ||
     (id === "search" && enabledEngines.length > 1) ||
-    (id === "obsidian" && obsidianVaultConfigured);
+    (id === "obsidian" && obsidianVaultConfigured) ||
+    (id === "anki" && ankiDecks.length > 1);
   const panelData = (subOpenForce?: string | null) => ({
     type: "overflow" as const,
     subOpen:
@@ -225,6 +231,11 @@ export function usePopsSync(opts: {
       if (p.kind === "pick:obsidian") {
         setMenu(null);
         runAction("obsidian", undefined, undefined, p.key);
+        return;
+      }
+      if (p.kind === "pick:anki") {
+        setMenu(null);
+        runAction("anki", undefined, undefined, p.key);
       }
     };
 

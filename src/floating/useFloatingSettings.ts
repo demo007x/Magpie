@@ -12,7 +12,15 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { actionRegistry } from "../shared/actions";
-import type { CustomAction, ObsidianConfig, Provider, SearchEngine, Settings, TranslateConfig } from "../shared/types";
+import type {
+  AnkiConfig,
+  CustomAction,
+  ObsidianConfig,
+  Provider,
+  SearchEngine,
+  Settings,
+  TranslateConfig,
+} from "../shared/types";
 
 export function useFloatingSettings() {
   const [actions, setActions] = useState<Record<string, boolean>>({
@@ -44,6 +52,8 @@ export function useFloatingSettings() {
   const [defaultSearch, setDefaultSearch] = useState("");
   // Obsidian 接入配置：vaultPath 非空 = 「存入 Obsidian」动作可用
   const [obsidianCfg, setObsidianCfg] = useState<ObsidianConfig | null>(null);
+  // Anki 接入配置：deck 非空 = 「Anki」动作可用
+  const [ankiCfg, setAnkiCfg] = useState<AnkiConfig | null>(null);
 
   const loadSettings = () => {
     invoke<Settings>("get_settings")
@@ -65,6 +75,7 @@ export function useFloatingSettings() {
         setProviders(s.providers ?? []);
         setDefaultProviderId(s.defaultProviderId ?? "");
         setObsidianCfg(s.obsidian ?? null);
+        setAnkiCfg(s.anki ?? null);
       })
       .catch(() => undefined);
   };
@@ -125,6 +136,7 @@ export function useFloatingSettings() {
     defaultSearch,
     setDefaultSearch,
     obsidianCfg,
+    ankiCfg,
     loadSettings,
   };
 }

@@ -27,6 +27,7 @@ export const zhShared = {
   "action.date": "加入日历",
   "action.addr": "打开地图",
   "action.obsidian": "Obsidian",
+  "action.anki": "Anki",
 
   // 动作一句话描述（设置页动作卡）
   "actionDesc.translate": "译为界面语言（中/英），附学习要点",
@@ -42,6 +43,7 @@ export const zhShared = {
   "actionDesc.date": "选中含日期时间时（如“周四下午3点”），一键预填进日历",
   "actionDesc.addr": "选中含地点时（如“国贸B座”），一键在地图打开",
   "actionDesc.obsidian": "已配置 Obsidian vault 时，把选中内容按摘录模板追加进日记",
+  "actionDesc.anki": "已连接 AnkiConnect 时，把选中内容一键建卡进牌组；结果窗语境背面为 AI 释义",
 
   // 翻译服务注册表（label/blurb/docs/凭据字段均存键，消费端 t() 解析）
   "tsvc.ai.label": "AI 翻译",

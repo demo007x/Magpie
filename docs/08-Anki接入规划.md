@@ -1,0 +1,121 @@
+# 08 · Anki 接入规划
+
+> v1.0 · 2026-11-15 立项 · 状态：本期交付（划词/结果一键成卡全量：默认牌组 + ⌄ 选牌组 +
+> {url} 溯源 + 自定义标签 + 高级字段映射）。
+> 依据：同类产品用户诉求（Pot #89「单词本收藏和历史记录」、沉浸式翻译 #1332「保存单词
+> 升级为学习辅助」、沙拉查词生词本生态）+ Anki 生态工作流验证（Yomitan mining 范式、
+> Anki 官方手册 tags-over-decks）。
+> 实现时照本文件执行；与本文件冲突的新想法先改本文件再动代码。
+
+## 0. 立项依据
+
+- **需求密度**：AnkiWeb 插件市场里「词典生词本 → Anki」搬运工具密密麻麻（Dict2Anki 系、
+  shanbay2anki、MojiToAnki、kind2anki、Pleco to Anki……），不少已 Broken 靠 fork 续命——
+  「划词 → 生词 → Anki」这条链路用户需求真实且现有方案体验差（查词→收藏→导出→同步→
+  制卡五步流）。
+- **交互范式**：Yomitan 官方 Wiki 的 Anki 集成 = 设置页一次配置默认牌组/笔记类型，之后
+  悬停生词一键建卡、无逐卡选牌组——「默认牌组 + 一键」是经过数百万用户验证的交互。
+- **归属策略**：Anki 官方手册明确推荐 tags-over-decks（"use tags and/or fields to
+  classify"），FSRS 在单一牌组上优化效果更好——卡片进同一收词牌组 + 标签归类是官方
+  推荐路径，不是权宜之计。
+
+## 1. 交互定稿
+
+### 1.1 入口与出现闸
+
+- 动作 id `anki`（注册表 kind: "local"，与 obsidian 同族常驻动作）。
+- **出现闸 = `anki.deck` 非空**（连接测试成功并选定牌组才算接入）——胶囊、结果窗动作行、
+  设置页三处口径一致。未连接不出现；已连接后 Anki 未运行动作仍出现，点击时 toast 报错。
+- **主钮**：点「Anki」→ 建卡到默认牌组，无面板无弹窗。
+- **⌄ 菜单**：仅当缓存牌组数 > 1 时出现（单牌组直达即可，无意义菜单是噪音）——项名 =
+  连接测试时缓存的牌组列表（`anki.decks`），点哪建哪。胶囊 chev 菜单 / 结果窗 chips /
+  结果窗溢出堆 pmenu / Windows 分离卡菜单四条渲染路径同数据同语义。
+
+### 1.2 反馈（三态 toast，全局 toast 窗口）
+
+| 结果 | 提示 |
+|---|---|
+| 成功 | 已加入 Anki：{deck} |
+| 重复（allowDuplicate=false） | Anki 中已有相同卡片 |
+| 连接失败 / Anki 未启动 | 无法连接 Anki：请确认 Anki 已启动并安装 AnkiConnect 插件 |
+
+失败提示直接展示 Rust 侧本地化错误（err.ankiUnreachable / err.ankiDuplicate / 其他），
+前端不做二次兜底改写——三态语义在 Rust 侧分类完成。
+
+### 1.3 {text} 择优（与 Obsidian 同机制）
+
+结果窗语境已有 AI 输出时背面存释义（划词 →「解释」→ 存 Anki，背面 = AI 释义 + 来源），
+胶囊语境存原文。
+
+## 2. 归属策略（回应「卡片离散/无归属」）
+
+1. **卡片自带溯源**：背面模板默认 `{source} · {date}\n{url}`——每张卡记得来自哪个应用/
+   页面；Anki 浏览器按 URL 筛选即可看到同一来源的所有词。
+2. **日期标签聚簇**：标签默认 `magpie {date}`（支持 {date}/{source} 变量）——按天聚簇、
+   回溯零成本；顺着 Anki 官方 tags-over-decks 路径，不制造大量小牌组。
+3. **显式归属留给 ⌄**：多领域用户（语言/考试分牌）用 ⌄ 菜单在划词瞬间选牌组——轻交互
+   内保留决策点。
+4. **整理是 Anki 侧的事**：不做收藏箱、不做中间库（无状态一次性送达立场）；「收藏了但
+   不复习」是用户与 Anki 之间的事，Magpie 只负责想收的瞬间零成本。
+
+## 3. AnkiConnect 交互细节
+
+- 协议：POST `{action, version: 6, params}`，响应信封 `{result, error}`。
+- 用到的 action：`version`（连接测试）、`deckNames`（⌄ 菜单与下拉缓存）、`modelNames`
+  （笔记类型下拉缓存）、`modelFieldNames`（建卡时组装字段 + 设置页高级映射区展示）、
+  `addNote`（`options.allowDuplicate=false`）。
+- 地址仅允许回环（127.x / localhost / ::1，Rust 侧校验）——AnkiConnect 是本地明文 HTTP，
+  防配置误填把划词内容发往外部。
+- 超时 2s：本地服务无响应即视为不可达，给用户「请启动 Anki」的明确提示。
+- 错误分类在 Rust 侧：send/超时 → ankiUnreachable；error 含 "duplicate" → ankiDuplicate；
+  其余 → ankiError（附原文）。
+- 字段组装在 Rust：addNote 前实拉 modelFieldNames，正面/背面按序填第 1/2 字段，再套用
+  fieldTemplates 按字段名覆盖/追加（陈旧条目——不属于该类型的字段名——被过滤，防
+  addNote 报未知字段）。
+
+## 4. 设置契约（settings.rs ↔ types.ts 双份手工同步，camelCase + 容器级 default）
+
+```ts
+anki: {
+  connectUrl: string;              // 默认 "http://127.0.0.1:8765"
+  deck: string;                    // 默认牌组（空 = 未接入）
+  decks: string[];                 // ⌄ 菜单牌组缓存（连接测试实拉）
+  models: string[];                // 笔记类型缓存（连接测试实拉，设置页下拉用）
+  modelName: string;               // 默认 "Basic"
+  frontTemplate: string;           // 默认 "{text}"
+  backTemplate: string;            // 默认 "{source} · {date}\n{url}"
+  fieldTemplates: Record<string,string>; // 高级字段映射（字段名→模板；空 = 仅按序填充）
+  tags: string;                    // 默认 "magpie {date}"
+}
+```
+
+模板出厂默认值在 `src/main/pages/labels.ts` 与 settings.rs Default 双份维护（与 Obsidian
+模板同纪律）；「恢复默认」= 写回出厂值。
+
+## 5. 设置页（Anki 页，接入分组）
+
+- AnkiConnect 地址 + 「连接测试」按钮：成功显示 Anki 版本，实拉牌组/类型列表缓存进设置
+  （随保存落盘）并启用两个下拉（默认牌组、笔记类型）；失败展示 Rust 本地化错误。
+- 卡片模板：正面/背面两个 textarea（所见即所发，恢复默认）。
+- 高级字段映射（可选，连接成功后按当前笔记类型实拉字段动态渲染）：每字段一个模板框，
+  留空 = 该字段走按序默认；切换笔记类型需重新连接测试刷新字段列表。
+- 标签（空格分隔，支持 {date}/{source} 变量，恢复默认）。
+
+## 6. 已定决策
+
+- 2026-11-15：v1/v2 合并一次性交付（⌄ 选牌组/{url}/自定义标签/字段映射全量），理由——
+  仅字段映射稍重，其余复用现成机制，分两期反增交接成本。
+- 2026-11-15：Anki 未运行时动作不隐现（配置过即常驻、点击报错）——定时探测会造成动作
+  闪变，且与 Obsidian「配置即出现」口径一致。
+- 2026-11-15：⌄ 菜单仅多牌组时出现（2026-10-25「不标记默认项」决策的延伸：单牌组的
+  ⌄ 是噪音）。
+- 2026-11-15：失败 toast 直接展示 Rust 本地化错误，前端不统一改写（obsidian 是单一失败
+  态才前端兜底；Anki 需要区分重复/不可达，分类在 Rust 完成）。
+
+## 7. 边界与已知取舍
+
+- OCR/截图流无来源 pid：{source}/{url} 为空，模板相应内容省略。
+- 模板不校验 HTML：Anki 字段支持 HTML，用户自定义内容原样送达（所见即所发）。
+- AnkiConnect 需用户在 Anki 安装插件（代码 2055492159）：连接失败 toast 文案已含指引，
+  docs/08 为安装指引的权威出处。
+- 「收藏了但不复习」（collector's fallacy）不在产品职责内。

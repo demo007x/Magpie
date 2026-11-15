@@ -26,6 +26,7 @@ export const enShared: Record<keyof typeof zhShared, string> = {
   "action.date": "Calendar",
   "action.addr": "Map",
   "action.obsidian": "Obsidian",
+  "action.anki": "Anki",
 
   // 动作一句话描述
   "actionDesc.translate": "Translates into the interface language (Chinese or English), with study notes",
@@ -41,6 +42,7 @@ export const enShared: Record<keyof typeof zhShared, string> = {
   "actionDesc.date": "Pre-fills the calendar in one click when the selection contains a date or time (e.g. \"Thursday 3pm\")",
   "actionDesc.addr": "Opens the map in one click when the selection contains a place (e.g. \"Guomao Tower B\")",
   "actionDesc.obsidian": "Appends the selection to your daily note using the excerpt template when an Obsidian vault is configured",
+  "actionDesc.anki": "Creates a card in your deck in one click when AnkiConnect is configured; in the result window the AI answer becomes the back side",
 
   // 翻译服务注册表
   "tsvc.ai.label": "AI Translate",

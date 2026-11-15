@@ -26,6 +26,7 @@ export const enFloating: Record<keyof typeof zhFloating, string> = {
   "floating.savedCard": "Saved to card: {title}",
   "floating.savedFile": "Saved to {name}",
   "floating.obsidianFailed": "Failed to save to Obsidian",
+  "floating.ankiSaved": "Added to Anki: {deck}",
   "floating.cardFallbackName": "Card {date} {time}",
 
   "floating.ariaMoreTranslate": "More translation services",

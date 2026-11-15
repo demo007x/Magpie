@@ -19,6 +19,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "nav.speech": "Read aloud",
   "nav.search": "Search",
   "nav.obsidian": "Obsidian",
+  "nav.anki": "Anki",
   "nav.blocklist": "Blocklist",
   "nav.general": "General",
   "nav.perms": "Permissions",
@@ -175,6 +176,29 @@ export const enMain: Record<keyof typeof zhMain, string> = {
     "Variables: {fText} selected text · {fSource} source app · {fTime} time · {fDate} date. One card per file, named after the first line of the selected text (up to 20 characters).",
   "obsidian.resetTplTitle": "Restore the factory default template",
   "obsidian.excerptNote": "Multi-line selections keep their markdown quote form line by line.",
+
+  // Anki page
+  "anki.hint":
+    "Saves selections and results as Anki cards in one click (in the result window the AI answer becomes the back side). Requires Anki running locally with the AnkiConnect add-on. Once configured, an Anki action appears on the capsule and result window. Changes take effect after saving.",
+  "anki.connectUrl": "AnkiConnect URL (default localhost:8765)",
+  "anki.test": "Test connection",
+  "anki.testing": "Connecting…",
+  "anki.testOk": "Connected — Anki version {version}",
+  "anki.testFail": "Connection failed: make sure Anki is running with the AnkiConnect add-on installed",
+  "anki.deck": "Default deck",
+  "anki.modelName": "Note type",
+  "anki.selectUnset": "Available after a successful connection test",
+  "anki.templatesSec": "Card templates",
+  "anki.frontTpl": "Front template",
+  "anki.tplVars": "Variables: {fText} selected text · {fSource} source app · {fDate} date · {fTime} time · {fUrl} page URL",
+  "anki.backTpl": "Back template",
+  "anki.fieldsSec": "Advanced field mapping (optional)",
+  "anki.fieldsHint":
+    "Fills by field name and takes priority over the front/back order. Leave blank to use the default. Re-run the connection test after switching note types to refresh the field list.",
+  "anki.fieldsUnset": "The field list of the current note type appears after a successful connection test.",
+  "anki.tags": "Tags (space-separated)",
+  "anki.tagsVars": "Variables: {fDate} date · {fSource} source app",
+  "anki.resetTplTitle": "Restore the factory default template",
 
   // Prompts page
   "prompts.hint":

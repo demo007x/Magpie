@@ -132,6 +132,12 @@ static ZH: &[(&str, &str)] = &[
     ("err.mkdirFailed", "无法创建目录"),
     ("err.fileOpenFailed", "无法打开文件"),
     ("err.writeFailed", "写入失败"),
+    // Anki 接入（docs/08）
+    ("err.ankiUnreachable", "无法连接 Anki：请确认 Anki 已启动并安装 AnkiConnect 插件"),
+    ("err.ankiDuplicate", "Anki 中已有相同卡片"),
+    ("err.ankiInvalidUrl", "AnkiConnect 地址不合法（仅支持本机地址）"),
+    ("err.ankiParseFailed", "Anki 响应解析失败"),
+    ("err.ankiError", "Anki 错误"),
     // 系统选择面板
     ("picker.blacklistAppTitle", "选择要加入黑名单的应用"),
     ("picker.appFilter", "应用程序"),
@@ -225,6 +231,12 @@ static EN: &[(&str, &str)] = &[
     ("err.mkdirFailed", "Couldn't create the folder"),
     ("err.fileOpenFailed", "Couldn't open the file"),
     ("err.writeFailed", "Couldn't write the file"),
+    // Anki integration (docs/08)
+    ("err.ankiUnreachable", "Couldn't reach Anki: make sure Anki is running with the AnkiConnect add-on installed"),
+    ("err.ankiDuplicate", "This card already exists in Anki"),
+    ("err.ankiInvalidUrl", "Invalid AnkiConnect URL (loopback addresses only)"),
+    ("err.ankiParseFailed", "Couldn't parse Anki's response"),
+    ("err.ankiError", "Anki error"),
     // System picker panels
     ("picker.blacklistAppTitle", "Choose an app to block"),
     ("picker.appFilter", "Applications"),
