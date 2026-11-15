@@ -10,11 +10,24 @@ import { t, useLocale } from "../../shared/i18n";
 /** 模板变量说明里的 {text} 等字面量：经 vars 显式注入，避免被 t() 当占位符吃掉 */
 const TEMPLATE_VARS = {
   fText: "{text}",
+  fResult: "{result}",
   fSource: "{source}",
   fDate: "{date}",
   fTime: "{time}",
   fUrl: "{url}",
 };
+
+/** 映射下拉的数据源预设：把拾趣能提供的值作为语义选项（值为落盘的模板串，
+    与 fieldTemplates 直接匹配；用户手写的非预设模板走「自定义」形态） */
+const SOURCE_PRESETS: Array<[string, string]> = [
+  ["{text}", "anki.mapText"],
+  ["{result}", "anki.mapResult"],
+  ["{source} · {date}", "anki.mapSourceDate"],
+  ["{source}", "anki.mapSource"],
+  ["{date}", "anki.mapDate"],
+  ["{time}", "anki.mapTime"],
+  ["{url}", "anki.mapUrl"],
+];
 
 export default function AnkiPage({ settings, patch, save, saved }: PageProps) {
   useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
@@ -24,6 +37,8 @@ export default function AnkiPage({ settings, patch, save, saved }: PageProps) {
   const [testing, setTesting] = useState(false);
   /** 当前笔记类型的字段名列表（会话内实拉；驱动高级映射区渲染，不落盘） */
   const [fields, setFields] = useState<string[]>([]);
+  /** 用户显式切到「自定义模板」的字段：此时在该字段下展开模板输入框 */
+  const [customMap, setCustomMap] = useState<Record<string, boolean>>({});
 
   const runTest = () => {
     setTesting(true);
@@ -204,26 +219,48 @@ export default function AnkiPage({ settings, patch, save, saved }: PageProps) {
               <div className="row-sub">{t("anki.fieldsHint")}</div>
             </div>
           </div>
-          {fields.map((f, i) => (
-            <div className="row-between sep" key={f}>
-              <div className="field wide">
-                <span>{f}</span>
-                <input
-                  value={anki.fieldTemplates[f] ?? ""}
-                  // 前两字段留空时的默认来源：第 1 字段 ← 正面模板；背面模板
-                  // 仅在两字段类型（Basic 等）时填第 2 字段，多字段类型不按序
-                  placeholder={
-                    i === 0
-                      ? t("anki.frontTpl")
-                      : i === 1 && fields.length === 2
-                        ? t("anki.backTpl")
-                        : ""
-                  }
-                  onChange={(e) => setFieldTpl(f, e.target.value)}
-                />
+          {fields.map((f) => {
+            // 值分类：空 = 不填；预设 = 语义选项直接下拉；其余 = 自定义模板
+            const val = anki.fieldTemplates[f] ?? "";
+            const isPreset = val === "" || SOURCE_PRESETS.some(([p]) => p === val);
+            const showCustom = Boolean(customMap[f]) || (val !== "" && !isPreset);
+            return (
+              <div className="row-between sep" key={f}>
+                <div className="field wide">
+                  <span>{f}</span>
+                  <select
+                    value={showCustom ? "custom" : val}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "custom") {
+                        setCustomMap((m) => ({ ...m, [f]: true }));
+                        if (val === "") setFieldTpl(f, "{text}");
+                        return;
+                      }
+                      setCustomMap((m) => ({ ...m, [f]: false }));
+                      // 空值同样落盘：Rust 侧跳过空模板，语义即「不填」
+                      setFieldTpl(f, v);
+                    }}
+                  >
+                    <option value="">{t("anki.mapNone")}</option>
+                    {SOURCE_PRESETS.map(([p, key]) => (
+                      <option key={p} value={p}>
+                        {t(key)}
+                      </option>
+                    ))}
+                    <option value="custom">{t("anki.mapCustom")}</option>
+                  </select>
+                  {showCustom && (
+                    <input
+                      value={val}
+                      placeholder="{source} · {date}"
+                      onChange={(e) => setFieldTpl(f, e.target.value)}
+                    />
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

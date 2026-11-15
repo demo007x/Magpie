@@ -1646,10 +1646,13 @@ export default function App() {
           .catch(() => null)
           .then((pageUrl) => {
             const url = pageUrl ?? "";
+            // 变量语义：{text} 永远是划词原文（正面可预期）；{result} = 择优——
+            // 结果窗语境是 AI 输出，胶囊直建回落原文（背面要 AI 释义时用它）
             const fill = (tpl: string) => {
               const t2 = url ? tpl : tpl.split("\n").filter((l) => l.trim() !== "{url}").join("\n");
               return t2
-                .replaceAll("{text}", body)
+                .replaceAll("{text}", source)
+                .replaceAll("{result}", body)
                 .replaceAll("{source}", src)
                 .replaceAll("{date}", date)
                 .replaceAll("{time}", time)
