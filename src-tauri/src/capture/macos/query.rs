@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use tauri::AppHandle;
 
 use super::super::debug_log;
-use super::compat::{bid_in_editor_family, force_fetch_via_copy, show_editor_ax_guidance};
+use super::compat::{bid_in_editor_family, show_editor_ax_guidance};
 use super::ffi::*;
 
 pub(super) const AX_ERROR_CANNOT_COMPLETE: c_int = -25204;
@@ -43,14 +43,18 @@ pub(super) fn ax_error_name(rc: i32) -> &'static str {
     }
 }
 
-/// AX 查询选中文本（默认路径），失败时按开关走兼容模式。
+/// AX 查询选中文本（默认路径）。兼容模式兜底不在本函数——由查询线程在
+/// 整条 AX 链（含子树扫描）全部落空后执行一次，且只在手势仍存活时执行。
 /// `down`/`up` 是本次拖选手势的按下/松手点（屏幕坐标），供应答锚定；
-/// `baseline` 是按下时刻的选区基线，供容器级应答的差分证据，见各闸注释
+/// `baseline` 是按下时刻的选区基线，供容器级应答的差分证据，见各闸注释；
+/// `still_fresh` 是手势存活检查（查询线程的代际判废）：慢段（轻推轮询）
+/// 期间核对，手势已过期即不再为它付出等待
 pub(super) unsafe fn ax_selected_text(
     app_handle: &AppHandle,
     down: (f64, f64),
     up: (f64, f64),
     baseline: &Option<(i32, String)>,
+    still_fresh: &dyn Fn() -> bool,
 ) -> Option<(String, i32)> {
     let consts = ax_consts();
     let sys = AXUIElementCreateSystemWide();
@@ -140,8 +144,9 @@ pub(super) unsafe fn ax_selected_text(
         // 有界轮询。曾经的固定 150ms 等待实测不够：webview 类内容（markdown 预览、
         // AI 侧栏）建树可达数百毫秒且树会被惰性收摊，等不到就表现为「有时取到
         // 有时取不到」——VSCode 家族兼容模式被禁，这条路径就是它们的主通道。
-        // 轮询命中即提前续链；上限只在整个 AX 链路本来就要落空的场合支付
-        if text.is_none() {
+        // 轮询命中即提前续链；上限只在整个 AX 链路本来就要落空的场合支付。
+        // 手势存活检查：轮询期间手势可能已过期（用户点了别处），剩余等待不再支付
+        if text.is_none() && still_fresh() {
             debug_log("AX: 常规路径无文本，尝试轻推 Chromium/Electron 辅助支持");
             let t_push = Instant::now();
             set_bool_attr(app_el, consts.enhanced_ui);
@@ -150,6 +155,10 @@ pub(super) unsafe fn ax_selected_text(
             const NUDGE_POLL_INTERVAL: Duration = Duration::from_millis(100);
             for i in 0..NUDGE_POLLS {
                 std::thread::sleep(NUDGE_POLL_INTERVAL);
+                if !still_fresh() {
+                    debug_log("查询判废（轻推轮询中）：手势已过期，提前收链");
+                    break;
+                }
                 // 轻推写入本身也会被拒（实测一次手势中应用级读写全线 IllegalArgument、
                 // 稍后自愈；写入被拒则后续读取一直在撞墙）——每轮重写一次，写入
                 // 一旦落地读取随之恢复
@@ -191,15 +200,9 @@ pub(super) unsafe fn ax_selected_text(
         }
     }
 
-    // 路径⑦：兼容模式（常开兜底）——模拟 ⌘C 读剪贴板，微信/Office 等自绘文本应用的行业通行解
-    if out.is_none() {
-        debug_log("AX 未取到 → 兼容模式：模拟 ⌘C 取词");
-        if let Some((text, pid)) = force_fetch_via_copy(app_handle) {
-            out = Some((text, pid));
-        }
-    }
-
-    // 路径⑤（最后兜底）：有界子树扫描——仅当以上全部失败，避免拖慢主路径
+    // 路径⑤（最后兜底）：有界子树扫描——仅当以上全部失败，避免拖慢主路径。
+    // 兼容模式（⌘C）不在本函数：查询线程在整条 AX 链落空且手势仍存活时执行
+    // 一次（历史上这里也跑过一次 ⌘C，与调用方兜底重复，失败手势白耗 2 秒+）
     if out.is_none() && !app.is_null() {
         if let Some(t) = scan_focused_subtrees(app as AXUIElementRef, consts, up) {
             let pid = focused_pid().unwrap_or(0);

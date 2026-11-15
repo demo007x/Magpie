@@ -1,5 +1,6 @@
 //! macOS 划词捕获：CGEventTap（listen-only 鼠标监听）+ AX（选中文本查询）。
-//! 双线程模型：tap 线程仅入队回调 → detect 线程做状态机/防抖/AX 查询（docs/03 §3.1–3.3）。
+//! 三线程模型：tap 线程仅入队回调 → detect 线程做状态机判定（实时响应）→
+//! query 线程做防抖/AX 查询/兼容模式（慢链路，docs/03 §3.1–3.3）。
 //! 安全边界：全程不读写剪贴板（兼容模式兜底路径见 compat.rs，快照自动还原）。
 //! 子模块：ffi = FFI 绑定与常量；query = AX 查询链与证据闸；compat = ⌘C 兜底。
 use std::os::raw::c_void;
@@ -148,6 +149,29 @@ extern "C" fn tap_callback(
 
 // ---------- 对外接口 ----------
 
+/// 一次判定为选词的手势任务：防抖 + 整条查询链在 query 线程执行。
+/// detect 线程被慢链路（失败手势可达数秒）拖住的教训：点空白收胶囊/Esc/
+/// hover 合成全部排队延迟——查询必须与事件响应解耦（2026-11-15）
+struct SelectionJob {
+    /// 按下点（应答锚定，拖选必从选中文本内部开始）
+    down: (f64, f64),
+    /// 松手点
+    up: (f64, f64),
+    /// 按下时刻的选区基线（容器级应答的差分证据）
+    baseline: Option<(i32, String)>,
+    /// 防抖时长（拖选 30ms / 双击 debounce_ms）
+    wait_ms: u64,
+    /// 入队时刻（排队延迟与「松手→发事件」计时的基准）
+    queued_at: Instant,
+    /// 创建时的代际号；查询线程各检查点比对 GESTURE_GEN，不一致即判废
+    gen: u64,
+}
+
+/// 手势代际号：detect 线程在每次「收起意图/新手势」时递增——PlainClick、
+/// Esc、新的选词任务。query 线程据它判废在飞查询：手势之后用户已在做
+/// 别的动作，陈旧结果不该再弹胶囊（也无谓消耗兼容模式的全局 ⌘C）
+static GESTURE_GEN: AtomicU64 = AtomicU64::new(0);
+
 pub fn start(app: &AppHandle, tx: Sender<CaptureEvent>, debounce_ms: u64) {
     let (raw_tx, raw_rx) = channel::<MouseEvent>();
     if let Ok(mut g) = EVENT_TX.lock() {
@@ -157,10 +181,16 @@ pub fn start(app: &AppHandle, tx: Sender<CaptureEvent>, debounce_ms: u64) {
         .name("capture-tap".into())
         .spawn(tap_thread)
         .expect("spawn capture-tap thread");
-    let detect_app = app.clone();
+    let (job_tx, job_rx) = channel::<SelectionJob>();
+    let query_app = app.clone();
+    let query_tx = tx.clone();
+    std::thread::Builder::new()
+        .name("capture-query".into())
+        .spawn(move || query_loop(&query_app, job_rx, query_tx))
+        .expect("spawn capture-query thread");
     std::thread::Builder::new()
         .name("capture-detect".into())
-        .spawn(move || detect_loop(&detect_app, raw_rx, tx, debounce_ms))
+        .spawn(move || detect_loop(raw_rx, tx, debounce_ms, job_tx))
         .expect("spawn capture-detect thread");
     std::thread::Builder::new()
         .name("capture-axtest".into())
@@ -342,15 +372,21 @@ fn tap_mask() -> u64 {
 }
 
 /// 选词判定状态机（docs/03 §3.2）：拖选 > 6px 或双击 → 非文本表面闸 → 防抖 →
-/// AX 查询（应答证据闸见各查询函数）；普通单击 → PlainClick；
-/// Finder 文件交互（拖动/双击，聚焦元素非文本框）在一切 AX 查询前排除
-fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEvent>, debounce_ms: u64) {
+/// AX 查询（应答证据闸见各查询函数）；普通单击 → PlainClick。
+/// Finder 文件交互（拖动/双击，聚焦元素非文本框）在一切 AX 查询前排除。
+/// 本线程只做便宜的判定与转发：防抖和整条查询链移交 query 线程（query_loop），
+/// 保证点空白收胶囊/Esc/hover 合成不被慢查询链拖住
+fn detect_loop(
+    rx: Receiver<MouseEvent>,
+    tx: Sender<CaptureEvent>,
+    debounce_ms: u64,
+    job_tx: Sender<SelectionJob>,
+) {
     let mut down: Option<(f64, f64)> = None;
     // 按下时刻的选区基线（容器级应答的差分证据，见 query_focused_element）；
-    // 每次 down 覆盖，up 消费，天然按单次手势隔离
+    // 每次 down 覆盖，up 时随任务 clone 交给查询线程，天然按单次手势隔离
     let mut down_baseline: Option<(i32, String)> = None;
     let mut last_up: Option<(Instant, f64, f64)> = None;
-    let mut last_emitted: Option<(String, f64, f64)> = None;
     let mut last_hover: Option<Instant> = None;
 
     while let Ok(ev) = rx.recv() {
@@ -375,6 +411,8 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
                 // 可见性判定 + 前端 dismiss 守卫（钉住/流式中忽略）决定
                 if ev.keycode == KEY_ESC {
                     debug_log("key-down：Esc");
+                    // Esc = 收起意图：判废在飞查询（收起之后不该再弹陈旧胶囊）
+                    GESTURE_GEN.fetch_add(1, Ordering::Relaxed);
                     let _ = tx.send(CaptureEvent::Escape);
                 }
             }
@@ -408,7 +446,9 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
 
                 if drag_dist <= 6.0 && !is_double {
                     // 普通单击：走 dismiss 判定（无日志——高频操作，打印即刷屏）。
-                    // 注意：不带 pid——worker 只用浮动条矩形判定，若填自身 pid 会被过滤导致 dismiss 永不触发
+                    // 注意：不带 pid——worker 只用浮动条矩形判定，若填自身 pid 会被过滤导致 dismiss 永不触发。
+                    // 点击 = 收起意图：同时判废在飞查询（慢链路期间点空白，陈旧结果不该在之后弹出）
+                    GESTURE_GEN.fetch_add(1, Ordering::Relaxed);
                     let _ = tx.send(CaptureEvent::PlainClick { x: ev.x, y: ev.y });
                 } else if capture_muted() {
                     // 截图取词等系统交互期间的拖选：跳过判定与 AX 查询（防止在
@@ -440,75 +480,98 @@ fn detect_loop(app: &AppHandle, rx: Receiver<MouseEvent>, tx: Sender<CaptureEven
                     // 用户可配）。拖选档 30ms 只吸收事件分发抖动，不覆盖应用的慢响应
                     let wait_ms = if is_double { debounce_ms } else { 30 };
                     debug_log(format!(
-                        "mouse-up：判定为选词（drag={drag_dist:.1}px double={is_double}），防抖 {wait_ms}ms 后查询 AX"
+                        "mouse-up：判定为选词（drag={drag_dist:.1}px double={is_double}），移交查询线程，防抖 {wait_ms}ms 后查询 AX"
                     ));
-                    // ⏱ 计时基线：松手判定完成，后续各段耗时都相对此刻
-                    let t_up = Instant::now();
-                    // 防抖：等应用完成选区更新
-                    std::thread::sleep(Duration::from_millis(wait_ms));
+                    // 慢链路（防抖 + AX + 兼容模式，失败手势可达数秒）整体移交
+                    // query 线程：本线程立即回到事件循环，点空白收胶囊/Esc 不再
+                    // 排队等链路（曾经一次失败手势阻塞 detect 线程 5.3s，期间
+                    // 的 dismiss 点击全部延迟）。新任务递增代际号——上一个在飞
+                    // 查询随之判废：结果不弹，兼容模式的全局 ⌘C 也不再为它执行
+                    let gen = GESTURE_GEN.fetch_add(1, Ordering::Relaxed) + 1;
                     // 按下点供应答锚定（拖选必从选中文本内部开始；起点记录在 down）
                     let (down_x, down_y) = down.unwrap_or((ev.x, ev.y));
-                    if let Some((text, pid)) = unsafe {
-                        ax_selected_text(app, (down_x, down_y), (ev.x, ev.y), &down_baseline)
-                    } {
-                        forward_selection(
-                            &tx,
-                            &mut last_emitted,
-                            text,
-                            pid,
-                            ev.x,
-                            ev.y,
-                            "AX 捕获成功",
-                        );
-                    } else if focused_is_safari() {
-                        debug_log("AX 未取到 → Safari AppleScript 取词");
-                        let text = safari_selected_text();
-                        if let Some(text) = text {
-                            forward_selection(
-                                &tx,
-                                &mut last_emitted,
-                                text,
-                                focused_pid().unwrap_or(0),
-                                ev.x,
-                                ev.y,
-                                "Safari 取词成功",
-                            );
-                        } else if let Some((text, pid)) = force_fetch_via_copy(app) {
-                            forward_selection(
-                                &tx,
-                                &mut last_emitted,
-                                text,
-                                pid,
-                                ev.x,
-                                ev.y,
-                                "兼容模式取词成功",
-                            );
-                        } else {
-                            debug_log("Safari + 兼容模式均未取到（静默，无事件）");
-                        }
-                    } else if let Some((text, pid)) = force_fetch_via_copy(app) {
-                        forward_selection(
-                            &tx,
-                            &mut last_emitted,
-                            text,
-                            pid,
-                            ev.x,
-                            ev.y,
-                            "兼容模式取词成功",
-                        );
-                    } else {
-                        debug_log("AX + 兼容模式均未取到选中文本（静默失败，无事件）");
-                    }
-                    debug_log(format!(
-                        "⏱ 划词链路（松手→发事件）：{}ms（其中防抖 {wait_ms}ms；AX 内部分段见上方日志）",
-                        t_up.elapsed().as_millis()
-                    ));
+                    let _ = job_tx.send(SelectionJob {
+                        down: (down_x, down_y),
+                        up: (ev.x, ev.y),
+                        // clone 而非 move：UP 事件可能先于 DOWN 到达（tap 启动在
+                        // 手势中途），下一轮迭代的闸门条件还要读基线
+                        baseline: down_baseline.clone(),
+                        wait_ms,
+                        queued_at: Instant::now(),
+                        gen,
+                    });
                 }
                 last_up = Some((ev.t, ev.x, ev.y));
                 down = None;
             }
             _ => {} // dragged 不单独处理，up 时按 down 起点统一计算
         }
+    }
+}
+
+fn gen_fresh(job_gen: u64) -> bool {
+    GESTURE_GEN.load(Ordering::Relaxed) == job_gen
+}
+
+/// 查询线程主循环：串行消费选词任务（防抖 + 整条查询链 + 过滤转发）。
+/// 单 worker 保持「一次一条链」语义——并发 AX 下探与并发模拟 ⌘C 互相干扰
+/// （全局按键、焦点竞态），宁可排队。陈旧任务（gen 已过期）在开始前即被
+/// 丢弃，不睡眠、不查询、不执行兼容模式，排队无感
+fn query_loop(app: &AppHandle, rx: Receiver<SelectionJob>, tx: Sender<CaptureEvent>) {
+    let mut last_emitted: Option<(String, f64, f64)> = None;
+    while let Ok(job) = rx.recv() {
+        // 检查点①任务开始：手势后已有新的点击/Esc/手势 ⇒ 整个跳过
+        if !gen_fresh(job.gen) {
+            debug_log("查询判废（任务开始）：手势后已有新的点击/Esc/手势，跳过");
+            continue;
+        }
+        debug_log(format!(
+            "查询线程接单：排队 {}ms（gen={}）",
+            job.queued_at.elapsed().as_millis(),
+            job.gen
+        ));
+        // 防抖：等应用完成选区更新
+        std::thread::sleep(Duration::from_millis(job.wait_ms));
+        let fresh = || gen_fresh(job.gen);
+        // 发事件统一走这里：慢链路跑完的几秒里用户可能已经点了别处/切了手势，
+        // 发之前最后核一次代际号——陈旧结果不弹（点空白后冒出新胶囊比不弹更伤）
+        let mut emit = |text: String, pid: i32, source: &str| {
+            if fresh() {
+                forward_selection(&tx, &mut last_emitted, text, pid, job.up.0, job.up.1, source);
+            } else {
+                debug_log("查询判废（发事件前）：手势已过期，丢弃取词结果");
+            }
+        };
+        if let Some((text, pid)) = unsafe { ax_selected_text(app, job.down, job.up, &job.baseline, &fresh) } {
+            emit(text, pid, "AX 捕获成功");
+        } else if !fresh() {
+            // 检查点②进兼容模式前：兼容模式模拟全局 ⌘C 并占用剪贴板数秒，
+            // 只为还活着的手势执行
+            debug_log("查询判废：跳过 Safari/兼容模式兜底（手势已过期）");
+        } else if focused_is_safari() {
+            debug_log("AX 未取到 → Safari AppleScript 取词");
+            let text = safari_selected_text();
+            if let Some(text) = text {
+                emit(text, focused_pid().unwrap_or(0), "Safari 取词成功");
+            } else if fresh() {
+                if let Some((text, pid)) = force_fetch_via_copy(app) {
+                    emit(text, pid, "兼容模式取词成功");
+                } else {
+                    debug_log("Safari + 兼容模式均未取到（静默，无事件）");
+                }
+            } else {
+                debug_log("查询判废：跳过兼容模式兜底（手势已过期）");
+            }
+        } else if let Some((text, pid)) = force_fetch_via_copy(app) {
+            emit(text, pid, "兼容模式取词成功");
+        } else {
+            debug_log("AX + 兼容模式均未取到选中文本（静默失败，无事件）");
+        }
+        debug_log(format!(
+            "⏱ 划词链路（松手→发事件）：{}ms（其中防抖 {}ms；AX 内部分段见上方日志）",
+            job.queued_at.elapsed().as_millis(),
+            job.wait_ms
+        ));
     }
 }
 
