@@ -201,9 +201,10 @@ pub(super) unsafe fn ax_selected_text(
     }
 
     // 路径⑤（最后兜底）：有界子树扫描——仅当以上全部失败，避免拖慢主路径。
-    // 兼容模式（⌘C）不在本函数：查询线程在整条 AX 链落空且手势仍存活时执行
-    // 一次（历史上这里也跑过一次 ⌘C，与调用方兜底重复，失败手势白耗 2 秒+）
-    if out.is_none() && !app.is_null() {
+    // stale 任务（手势已过期）不再为它花扫描成本。兼容模式（⌘C）不在本函数：
+    // 查询线程在整条 AX 链落空且手势仍存活时执行一次（历史上这里也跑过一次
+    // ⌘C，与调用方兜底重复，失败手势白耗 2 秒+）
+    if out.is_none() && !app.is_null() && still_fresh() {
         if let Some(t) = scan_focused_subtrees(app as AXUIElementRef, consts, up) {
             let pid = focused_pid().unwrap_or(0);
             out = Some((t, pid));

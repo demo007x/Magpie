@@ -554,6 +554,7 @@ fn query_loop(app: &AppHandle, rx: Receiver<SelectionJob>, tx: Sender<CaptureEve
             if let Some(text) = text {
                 emit(text, focused_pid().unwrap_or(0), "Safari 取词成功");
             } else if fresh() {
+                debug_log("Safari AppleScript 未取到 → 兼容模式：模拟 ⌘C 取词");
                 if let Some((text, pid)) = force_fetch_via_copy(app) {
                     emit(text, pid, "兼容模式取词成功");
                 } else {
@@ -562,10 +563,13 @@ fn query_loop(app: &AppHandle, rx: Receiver<SelectionJob>, tx: Sender<CaptureEve
             } else {
                 debug_log("查询判废：跳过兼容模式兜底（手势已过期）");
             }
-        } else if let Some((text, pid)) = force_fetch_via_copy(app) {
-            emit(text, pid, "兼容模式取词成功");
         } else {
-            debug_log("AX + 兼容模式均未取到选中文本（静默失败，无事件）");
+            debug_log("AX 未取到 → 兼容模式：模拟 ⌘C 取词");
+            if let Some((text, pid)) = force_fetch_via_copy(app) {
+                emit(text, pid, "兼容模式取词成功");
+            } else {
+                debug_log("AX + 兼容模式均未取到选中文本（静默失败，无事件）");
+            }
         }
         debug_log(format!(
             "⏱ 划词链路（松手→发事件）：{}ms（其中防抖 {}ms；AX 内部分段见上方日志）",
