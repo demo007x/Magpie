@@ -119,39 +119,27 @@ pub async fn anki_model_fields(url: String, model: String) -> Result<Vec<String>
     Ok(string_list(v))
 }
 
-/// 建卡：字段组装在 Rust 侧完成——正面模板填第 1 个字段；背面**只在类型恰好
-/// 两个字段时**按序填第 2 个（多字段类型——单词卡等——的第 2 列往往是音标等
-/// 专用字段，按序猜必塞错，背面改由 fieldTemplates 按字段名指定）；高级映射
-/// 按字段名覆盖/追加（陈旧条目——不属于该类型的字段名——被过滤，防 addNote
-/// 报未知字段）。allowDuplicate=false，重复时 AnkiConnect 报错，此处分类为
-/// 已存在提示
+/// 建卡：fields 为 TS 渲染好的完整字段 map（映射是唯一配置面——连接测试时
+/// 自动预填第 1 字段 = 选中文本、两字段类型第 2 字段 = AI 释义，下拉可改）。
+/// Rust 只做过滤与转发：陈旧字段名（不属于该笔记类型）与空模板剔除，
+/// 防 addNote 报未知字段/空卡。allowDuplicate=false，重复时分类为已存在提示
 #[tauri::command]
 pub async fn anki_add_note(
     url: String,
     deck: String,
     model: String,
-    front: String,
-    back: String,
-    field_templates: HashMap<String, String>,
+    fields: HashMap<String, String>,
     tags: Vec<String>,
 ) -> Result<(), String> {
     let field_names = string_list(
         anki_request(&url, "modelFieldNames", json!({ "modelName": model })).await?,
     );
-    let mut fields: HashMap<String, String> = HashMap::new();
-    if let Some(f) = field_names.first() {
-        fields.insert(f.clone(), front);
-    }
-    if field_names.len() == 2 {
-        if let Some(f) = field_names.get(1) {
-            fields.insert(f.clone(), back);
-        }
-    }
-    for (name, tpl) in &field_templates {
-        if !tpl.trim().is_empty() && field_names.iter().any(|n| n == name) {
-            fields.insert(name.clone(), tpl.clone());
-        }
-    }
+    let fields: HashMap<String, String> = fields
+        .into_iter()
+        .filter(|(name, value)| {
+            !value.trim().is_empty() && field_names.iter().any(|n| n == name)
+        })
+        .collect();
     anki_request(
         &url,
         "addNote",

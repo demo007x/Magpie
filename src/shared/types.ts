@@ -114,11 +114,8 @@ export interface AnkiConfig {
   models: string[];
   /** 笔记类型（addNote 的 modelName） */
   modelName: string;
-  /** 正面模板（渲染后填笔记类型第 1 字段；变量 {text}/{source}/{date}/{time}/{url}） */
-  frontTemplate: string;
-  /** 背面模板（渲染后填第 2 字段） */
-  backTemplate: string;
-  /** 高级字段映射（字段名→模板；非空条目按名精确覆盖/追加，未提及字段留空） */
+  /** 字段映射（字段名→模板；唯一配置面——连接测试自动预填，下拉可改；
+   *  变量 {text}/{result}/{source}/{date}/{time}/{url}，空值不写入） */
   fieldTemplates: Record<string, string>;
   /** 标签模板（空格分隔；变量 {date}/{source}） */
   tags: string;

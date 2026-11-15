@@ -1658,16 +1658,17 @@ export default function App() {
                 .replaceAll("{time}", time)
                 .replaceAll("{url}", url);
             };
+            // 字段映射是唯一配置面：逐字段做变量替换（漏替换会把 {text} 原样写进卡片）
+            const fieldMap: Record<string, string> = {};
+            for (const [name, tpl] of Object.entries(cfg.fieldTemplates ?? {})) {
+              const rendered = fill(tpl);
+              if (rendered.trim() !== "") fieldMap[name] = rendered;
+            }
             invoke("anki_add_note", {
               url: cfg.connectUrl,
               deck,
               model: cfg.modelName,
-              front: fill(cfg.frontTemplate),
-              back: fill(cfg.backTemplate),
-              // 高级映射与正/背模板走同一套变量替换（漏替换会把 {text} 原样写进卡片）
-              fieldTemplates: Object.fromEntries(
-                Object.entries(cfg.fieldTemplates ?? {}).map(([k, v]) => [k, fill(v)]),
-              ),
+              fields: fieldMap,
               tags,
             })
               .then(() => toast(t("floating.ankiSaved", { deck })))

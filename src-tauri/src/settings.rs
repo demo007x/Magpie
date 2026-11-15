@@ -315,11 +315,8 @@ pub struct AnkiConfig {
     pub models: Vec<String>,
     /// 笔记类型（addNote 的 modelName）
     pub model_name: String,
-    /// 正面模板（渲染后填笔记类型第 1 字段；变量 {text}/{source}/{date}/{time}/{url}）
-    pub front_template: String,
-    /// 背面模板（渲染后填第 2 字段）
-    pub back_template: String,
-    /// 高级字段映射（字段名→模板；非空条目按名精确覆盖/追加，未提及字段留空）
+    /// 字段映射（字段名→模板；唯一配置面——连接测试自动预填，下拉可改；
+    /// 变量 {text}/{result}/{source}/{date}/{time}/{url}，空值不写入）
     pub field_templates: HashMap<String, String>,
     /// 标签模板（空格分隔；变量 {date}/{source}）
     pub tags: String,
@@ -333,8 +330,6 @@ impl Default for AnkiConfig {
             decks: Vec::new(),
             models: Vec::new(),
             model_name: "Basic".into(),
-            front_template: "{text}".into(),
-            back_template: "{source} · {date}".into(),
             field_templates: HashMap::new(),
             tags: "magpie {date}".into(),
         }
