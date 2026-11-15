@@ -119,10 +119,12 @@ pub async fn anki_model_fields(url: String, model: String) -> Result<Vec<String>
     Ok(string_list(v))
 }
 
-/// 建卡：字段组装在 Rust 侧完成——先实拉笔记类型字段名，正面/背面模板按序
-/// 填第 1/2 字段，再套用高级映射（按字段名覆盖/追加；陈旧条目——不属于该
-/// 笔记类型的字段名——被过滤，防 addNote 报未知字段）。allowDuplicate=false，
-/// 重复时 AnkiConnect 报错，此处分类为已存在提示
+/// 建卡：字段组装在 Rust 侧完成——正面模板填第 1 个字段；背面**只在类型恰好
+/// 两个字段时**按序填第 2 个（多字段类型——单词卡等——的第 2 列往往是音标等
+/// 专用字段，按序猜必塞错，背面改由 fieldTemplates 按字段名指定）；高级映射
+/// 按字段名覆盖/追加（陈旧条目——不属于该类型的字段名——被过滤，防 addNote
+/// 报未知字段）。allowDuplicate=false，重复时 AnkiConnect 报错，此处分类为
+/// 已存在提示
 #[tauri::command]
 pub async fn anki_add_note(
     url: String,
@@ -140,8 +142,10 @@ pub async fn anki_add_note(
     if let Some(f) = field_names.first() {
         fields.insert(f.clone(), front);
     }
-    if let Some(f) = field_names.get(1) {
-        fields.insert(f.clone(), back);
+    if field_names.len() == 2 {
+        if let Some(f) = field_names.get(1) {
+            fields.insert(f.clone(), back);
+        }
     }
     for (name, tpl) in &field_templates {
         if !tpl.trim().is_empty() && field_names.iter().any(|n| n == name) {

@@ -210,9 +210,14 @@ export default function AnkiPage({ settings, patch, save, saved }: PageProps) {
                 <span>{f}</span>
                 <input
                   value={anki.fieldTemplates[f] ?? ""}
-                  // 前两字段留空时由正/背模板按序填充，placeholder 提示默认来源
+                  // 前两字段留空时的默认来源：第 1 字段 ← 正面模板；背面模板
+                  // 仅在两字段类型（Basic 等）时填第 2 字段，多字段类型不按序
                   placeholder={
-                    i === 0 ? t("anki.frontTpl") : i === 1 ? t("anki.backTpl") : ""
+                    i === 0
+                      ? t("anki.frontTpl")
+                      : i === 1 && fields.length === 2
+                        ? t("anki.backTpl")
+                        : ""
                   }
                   onChange={(e) => setFieldTpl(f, e.target.value)}
                 />

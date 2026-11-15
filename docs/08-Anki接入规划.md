@@ -69,9 +69,11 @@
 - 超时 2s：本地服务无响应即视为不可达，给用户「请启动 Anki」的明确提示。
 - 错误分类在 Rust 侧：send/超时 → ankiUnreachable；error 含 "duplicate" → ankiDuplicate；
   其余 → ankiError（附原文）。
-- 字段组装在 Rust：addNote 前实拉 modelFieldNames，正面/背面按序填第 1/2 字段，再套用
-  fieldTemplates 按字段名覆盖/追加（陈旧条目——不属于该类型的字段名——被过滤，防
-  addNote 报未知字段）。
+- 字段组装在 Rust：addNote 前实拉 modelFieldNames，正面模板填第 1 个字段；背面**只在
+  类型恰好两个字段时**按序填第 2 个——多字段类型（单词卡等）的第 2 列往往是音标等专用
+  字段，按序猜必塞错（2026-11-15 实测：UVBasic-English 的来源被塞进「英美音标」列），
+  背面去向改由 fieldTemplates 按字段名指定。高级映射按字段名覆盖/追加（陈旧条目——
+  不属于该类型的字段名——被过滤，防 addNote 报未知字段）。
 
 ## 4. 设置契约（settings.rs ↔ types.ts 双份手工同步，camelCase + 容器级 default）
 
