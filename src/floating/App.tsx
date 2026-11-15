@@ -1661,7 +1661,10 @@ export default function App() {
               model: cfg.modelName,
               front: fill(cfg.frontTemplate),
               back: fill(cfg.backTemplate),
-              fieldTemplates: cfg.fieldTemplates ?? {},
+              // 高级映射与正/背模板走同一套变量替换（漏替换会把 {text} 原样写进卡片）
+              fieldTemplates: Object.fromEntries(
+                Object.entries(cfg.fieldTemplates ?? {}).map(([k, v]) => [k, fill(v)]),
+              ),
               tags,
             })
               .then(() => toast(t("floating.ankiSaved", { deck })))
