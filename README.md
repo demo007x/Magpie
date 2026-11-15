@@ -96,7 +96,7 @@ git clone https://github.com/demo007x/Magpie.git
 cd Magpie
 pnpm install
 
-# Run in development mode (starts vite on :5173)
+# Run in development mode (starts vite on :5174)
 pnpm tauri dev
 ```
 

@@ -32,7 +32,7 @@ Issue 请包含：
 git clone https://github.com/demo007x/Magpie.git
 cd Magpie
 pnpm install
-pnpm tauri dev      # 开发运行（自动启动 vite :5173）
+pnpm tauri dev      # 开发运行（自动启动 vite :5174）
 ```
 
 开发模式授权提醒：`tauri dev` 运行的是未打包二进制，不会自动出现在「辅助功能」列表，需要把**运行 dev 的终端 App**（Terminal / iTerm2 / VS Code）加入 系统设置 → 隐私与安全性 → 辅助功能。

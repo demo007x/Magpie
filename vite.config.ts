@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   clearScreen: false,
   server: {
-    port: 5173,
+    port: 5174,
     strictPort: true,
     // 监视排除 Rust 构建产物：cargo 链接期间 magpie.exe 被锁，
     // chokidar watch 到 EBUSY 直接崩掉整个 dev 进程（Windows 实测）

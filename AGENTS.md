@@ -12,7 +12,7 @@ This file provides guidance to AI coding agents (Lingma / Claude Code / Cursor, 
 
 ```bash
 pnpm install            # 安装前端依赖
-pnpm tauri dev          # 开发运行（自动起 vite :5173，需授予辅助功能权限才能划词）
+pnpm tauri dev          # 开发运行（自动起 vite :5174，需授予辅助功能权限才能划词）
 pnpm check              # 仅 TS 类型检查（tsc --noEmit）
 pnpm build              # tsc + vite build → dist/
 cargo check             # 在 src-tauri/ 下执行

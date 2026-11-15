@@ -97,7 +97,7 @@ git clone https://github.com/demo007x/Magpie.git
 cd Magpie
 pnpm install
 
-# 开发运行（自动启动 vite :5173）
+# 开发运行（自动启动 vite :5174）
 pnpm tauri dev
 ```
 
