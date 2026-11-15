@@ -204,7 +204,6 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "anki.fieldsSec": "Advanced field mapping (optional)",
   "anki.fieldsHint":
     "Filling rule: the front goes to the first field; the back fills the second field only when the note type has exactly two fields — specialized columns of multi-field types (e.g. phonetics) are left untouched. Map the remaining fields below by name.",
-  "anki.fieldsUnset": "The field list of the current note type appears after a successful connection test.",
   "anki.tags": "Tags (space-separated)",
   "anki.tagsVars": "Variables: {fDate} date · {fSource} source app",
   "anki.resetTplTitle": "Restore the factory default template",

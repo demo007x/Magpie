@@ -78,9 +78,10 @@ export default function AnkiPage({ settings, patch, save, saved }: PageProps) {
       .finally(() => setTesting(false));
   };
 
-  // 连接成功后按当前笔记类型拉字段列表（驱动高级映射区；类型切换时跟随刷新）
+  // 字段列表自动跟随所选笔记类型：已接入（deck 非空）即拉取，无需手动重跑
+  // 连接测试；Anki 未运行时静默留空（映射区随之隐藏）。地址/类型变化同触发
   useEffect(() => {
-    if (!test?.ok) return;
+    if (!anki.deck) return;
     invoke<string[]>("anki_model_fields", {
       url: anki.connectUrl,
       model: anki.modelName,
@@ -88,7 +89,7 @@ export default function AnkiPage({ settings, patch, save, saved }: PageProps) {
       .then(setFields)
       .catch(() => setFields([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [test?.ok, anki.modelName, anki.connectUrl]);
+  }, [anki.deck, anki.modelName, anki.connectUrl]);
 
   const setFieldTpl = (name: string, v: string) =>
     patch({ anki: { ...anki, fieldTemplates: { ...anki.fieldTemplates, [name]: v } } });

@@ -195,7 +195,6 @@ export const zhMain = {
   "anki.fieldsSec": "高级字段映射（可选）",
   "anki.fieldsHint":
     "填充规则：正面默认填第 1 个字段；仅当笔记类型恰好两个字段时，背面才填第 2 个——多字段类型的专用列（如音标）不会被塞入。其余字段在下方按字段名精确指定。",
-  "anki.fieldsUnset": "连接测试成功后显示当前笔记类型的字段列表。",
   "anki.tags": "标签（空格分隔）",
   "anki.tagsVars": "变量：{fDate} 日期 · {fSource} 来源应用",
   "anki.resetTplTitle": "恢复出厂默认模板",
