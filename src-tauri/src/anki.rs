@@ -85,11 +85,17 @@ fn string_list(v: Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// 连接探测：返回 Anki 版本号（设置页「连接测试」的数据源）
+/// 连接探测：返回 AnkiConnect 的 API 版本（设置页「连接测试」的数据源）。
+/// 旧版协议版本是数字（如 6），按任意标量收敛为展示串
 #[tauri::command]
 pub async fn anki_version(url: String) -> Result<String, String> {
     let v = anki_request(&url, "version", json!({})).await?;
-    Ok(v.as_str().unwrap_or_default().to_string())
+    Ok(match v {
+        Value::String(s) => s,
+        Value::Number(n) => n.to_string(),
+        Value::Null => String::new(),
+        _ => v.to_string(),
+    })
 }
 
 /// 牌组列表（设置页下拉 + ⌄ 菜单缓存）
