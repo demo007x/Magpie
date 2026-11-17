@@ -41,8 +41,8 @@ export const enShared: Record<keyof typeof zhShared, string> = {
   "actionDesc.tel": "Copies the number in one click when the selection contains a phone number",
   "actionDesc.date": "Pre-fills the calendar in one click when the selection contains a date or time (e.g. \"Thursday 3pm\")",
   "actionDesc.addr": "Opens the map in one click when the selection contains a place (e.g. \"Guomao Tower B\")",
-  "actionDesc.obsidian": "Appends the selection to your daily note using the excerpt template when an Obsidian vault is configured",
-  "actionDesc.anki": "Creates a card in your deck in one click when AnkiConnect is configured; in the result window the AI answer becomes the back side",
+  "actionDesc.obsidian": "Append the selection to your Obsidian daily note",
+  "actionDesc.anki": "Clip into your Anki deck, with the explanation on the back",
 
   // 翻译服务注册表
   "tsvc.ai.label": "AI Translate",

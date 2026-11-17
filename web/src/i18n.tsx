@@ -61,6 +61,7 @@ const zh = {
     ],
     moreItem: { name: "更多能力开发中", desc: "存至 Notion / 备忘录等笔记应用，生词本、稍后读等同类接入。" },
     topicLink: "深入了解划词翻译",
+    ankiGuideLink: "Anki 使用教程：从安装到第一张单词卡",
     customBand: {
       label: "AI 可定制",
       items: [
@@ -258,6 +259,7 @@ const zh = {
     updates: "更新记录",
     download: "下载",
     topic: "划词翻译",
+    anki: "Anki 教程",
     copyright: "拾趣 Magpie",
   },
 };
@@ -322,6 +324,7 @@ const en: Dict = {
     ],
     moreItem: { name: "More in development", desc: "Save to Notion / Apple Notes and more, plus vocabulary and read-later hand-offs." },
     topicLink: "A deep dive into select & translate",
+    ankiGuideLink: "Magpie × Anki tutorial: from install to your first word card",
     customBand: {
       label: "Customizable",
       items: [
@@ -519,14 +522,15 @@ const en: Dict = {
     updates: "Changelog",
     download: "Download",
     topic: "Select & Translate guide",
+    anki: "Anki tutorial",
     copyright: "Magpie",
   },
 };
 
 const DICTS: Record<Locale, Dict> = { zh, en };
 
-/** 站点页面：首页与功能专题页（/translate/），各自有 zh / en 两个语言变体 */
-export type PageKey = "home" | "translate";
+/** 站点页面：首页、功能专题页（/translate/）与 Anki 教程页（/anki/），各自有 zh / en 两个语言变体 */
+export type PageKey = "home" | "translate" | "anki";
 
 export interface PageMeta {
   lang: string;
@@ -566,6 +570,22 @@ export const META: Record<PageKey, Record<Locale, PageMeta>> = {
       title: "Select & Translate: translate without leaving your reading · Magpie",
       description:
         "Magpie's select & translate guide: translate any selected text on the spot; capture what can't be selected — PDFs, images, video subtitles — with ⌥T; gather fragments and save everything straight into Obsidian. Automatic direction, AI / Baidu / DeepL services, on-device recognition, free forever.",
+      ogLocale: "en_US",
+    },
+  },
+  anki: {
+    zh: {
+      lang: "zh-CN",
+      title: "拾趣 × Anki 使用教程：从安装到第一张单词卡 · 拾趣 Magpie",
+      description:
+        "拾趣 × Anki 完整使用教程：下载安装 Anki 与 AnkiConnect 插件，拾趣一键创建「拾趣」牌组与单词卡、内容卡模板；划词即建卡，短划词进单词卡、长内容进内容卡，自动带来源与日期；配合 AnkiWeb 多端同步与间隔重复安排复习。",
+      ogLocale: "zh_CN",
+    },
+    en: {
+      lang: "en",
+      title: "Magpie × Anki tutorial: from install to your first word card · Magpie",
+      description:
+        "The complete Magpie × Anki tutorial: install Anki and AnkiConnect, let Magpie create the Magpie deck with Word and Content card templates in one click; clip to add cards — words go to Word cards, longer text to Content cards, with source and date attached. Review anywhere via AnkiWeb sync and spaced repetition.",
       ogLocale: "en_US",
     },
   },

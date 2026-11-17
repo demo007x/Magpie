@@ -1,6 +1,7 @@
-// 权限页：辅助功能/输入监控/屏幕录制三项状态展示与授权入口 + 取词健康自检。
-// 授权后自动刷新：进入页面开始轮询 capture_status，三项全就绪即停
-//（常驻 IPC 会放大 wry 上游 nil-URL 崩溃（#1752）的触发面；屏幕录制不参与停止判定）
+// 授权页（仅 macOS）：辅助功能/输入监控/屏幕录制三项状态展示与授权入口 + 取词健康自检。
+// 授权后自动刷新：挂载开始轮询 capture_status，三项全就绪即停
+//（常驻 IPC 会放大 wry 上游 nil-URL 崩溃（#1752）的触发面；屏幕录制不参与停止判定）。
+// 曾并入通用页底部，2026-11-17 恢复为独立子菜单（无页级标题，卡片直接开场）
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { t, useLocale } from "../../shared/i18n";
@@ -42,10 +43,6 @@ export default function PermsPage() {
 
   return (
           <>
-            <h1>{t("nav.perms")}</h1>
-            <p className="page-hint">
-              {t("perms.hint")}
-            </p>
             <div className="card">
               <div className="row-between">
                 <div>

@@ -68,6 +68,8 @@ pub struct Actions {
     pub addr: bool,
     /// 接入动作：已配置 vault 时「存入笔记」（Obsidian 文件直写）
     pub obsidian: bool,
+    /// 接入动作：已连接 AnkiConnect（deck 非空）时「Anki」划词建卡
+    pub anki: bool,
 }
 
 impl Default for Actions {
@@ -86,6 +88,7 @@ impl Default for Actions {
             date: true,
             addr: true,
             obsidian: true,
+            anki: true,
         }
     }
 }
@@ -315,9 +318,6 @@ pub struct AnkiConfig {
     pub models: Vec<String>,
     /// 笔记类型（addNote 的 modelName）
     pub model_name: String,
-    /// 字段映射（字段名→模板；唯一配置面——连接测试自动预填，下拉可改；
-    /// 变量 {text}/{result}/{source}/{date}/{time}/{url}，空值不写入）
-    pub field_templates: HashMap<String, String>,
     /// 标签模板（空格分隔；变量 {date}/{source}）
     pub tags: String,
 }
@@ -330,7 +330,6 @@ impl Default for AnkiConfig {
             decks: Vec::new(),
             models: Vec::new(),
             model_name: "Basic".into(),
-            field_templates: HashMap::new(),
             tags: "magpie {date}".into(),
         }
     }

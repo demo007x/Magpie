@@ -170,12 +170,10 @@ export default function TranslatePage({
 
   return (
           <>
-            <h1>{t("nav.translate")}</h1>
-            <p className="page-hint">
-              {t("translate.hint")}
-            </p>
+            {/* 无页级标题：说明行直接开场（只讲非显而易见的三件事：默认的用途、
+                拖动的后果、需保存） */}
+            <p className="page-hint">{t("translate.hint")}</p>
 
-            <h2 className="sec">{t("model.servicesSec")}</h2>
             <div className="card">
               {translateRows.map((svc) => (
                 <div

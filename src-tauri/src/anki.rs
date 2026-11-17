@@ -42,7 +42,9 @@ fn validate_loopback(raw: &str) -> Result<String, String> {
 }
 
 /// AnkiConnect 协议请求：POST {action, version, params}，解析 {result, error} 信封。
-/// 错误已本地化（重复卡 / 不可达 / 其他），前端可直接 toast 展示
+/// 错误已本地化（重复卡 / 不可达 / 其他），前端可直接 toast 展示；网络层失败细节
+/// （拒绝/超时等）随本地化文案一起记入 magpie.log——本地化文案面向用户必须笼统，
+/// 排查「设置页已连接、建卡却无法连接」这类状态漂移问题靠日志里的真实原因
 async fn anki_request(url: &str, action: &str, params: Value) -> Result<Value, String> {
     let url = validate_loopback(url)?;
     let client = reqwest::Client::builder()
@@ -54,9 +56,14 @@ async fn anki_request(url: &str, action: &str, params: Value) -> Result<Value, S
         .json(&json!({ "action": action, "version": ANKI_PROTOCOL_VERSION, "params": params }))
         .send()
         .await
-        .map_err(|_| t("err.ankiUnreachable").to_string())?;
+        .map_err(|e| {
+            crate::user_log(&format!("[anki] {action} 请求失败: {e}（url={url}）"));
+            t("err.ankiUnreachable").to_string()
+        })?;
     if !resp.status().is_success() {
-        return Err(format!("{} (HTTP {})", t("err.ankiUnreachable"), resp.status()));
+        let status = resp.status();
+        crate::user_log(&format!("[anki] {action} HTTP {status}（url={url}）"));
+        return Err(format!("{} (HTTP {status})", t("err.ankiUnreachable")));
     }
     let v: Value = resp
         .json()
@@ -98,11 +105,19 @@ pub async fn anki_version(url: String) -> Result<String, String> {
     })
 }
 
-/// 牌组列表（设置页下拉 + ⌄ 菜单缓存）
+/// 牌组列表（设置页下拉缓存）
 #[tauri::command]
 pub async fn anki_deck_names(url: String) -> Result<Vec<String>, String> {
     let v = anki_request(&url, "deckNames", json!({})).await?;
     Ok(string_list(v))
+}
+
+/// 建牌组（一键接入的「拾趣」配套牌组）：createDeck 幂等，牌组已存在时
+/// 返回 Null 结果不报错，可无条件调用
+#[tauri::command]
+pub async fn anki_create_deck(url: String, deck: String) -> Result<(), String> {
+    anki_request(&url, "createDeck", json!({ "deck": deck })).await?;
+    Ok(())
 }
 
 /// 笔记类型列表（设置页下拉）
@@ -119,8 +134,21 @@ pub async fn anki_model_fields(url: String, model: String) -> Result<Vec<String>
     Ok(string_list(v))
 }
 
-/// 建卡：fields 为 TS 渲染好的完整字段 map（映射是唯一配置面——连接测试时
-/// 自动预填第 1 字段 = 选中文本、两字段类型第 2 字段 = AI 释义，下拉可改）。
+/// 创建笔记类型（配套「拾趣划词卡」）：model 为 TS 侧组装好的 createModel
+/// 参数（类型名/字段/CSS/卡片模板，均为静态出厂定义，非用户内容）。
+/// 注意 AnkiConnect 的 createModel 参数是平铺的（modelName/inOrderFields/
+/// cardTemplates 直接作顶层键，经 api 装饰器转发给同名 Python 函数），
+/// 不嵌套 "model" 包装层。同名类型已存在时由 AnkiConnect 报错，前端先查
+/// modelNames 做幂等
+#[tauri::command]
+pub async fn anki_create_model(url: String, model: Value) -> Result<(), String> {
+    anki_request(&url, "createModel", model).await?;
+    Ok(())
+}
+
+/// 建卡：fields 为 TS 渲染好的完整字段 map（用户显式映射 + 未配置字段的智能
+/// 默认，见 floating App.tsx 的组装处；零配置时第 1 字段 = 选中文本、
+/// 两字段类型第 2 字段 = AI 释义）。
 /// Rust 只做过滤与转发：陈旧字段名（不属于该笔记类型）与空模板剔除，
 /// 防 addNote 报未知字段/空卡。allowDuplicate=false，重复时分类为已存在提示
 #[tauri::command]

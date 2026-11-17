@@ -32,6 +32,14 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "../shared/toast";
+import {
+  COMPANION_CONTENT,
+  COMPANION_FIELD_MAP,
+  COMPANION_ITEMS,
+  COMPANION_WORD,
+  isCompanionModel,
+  isShortSelection,
+} from "../shared/anki";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -713,9 +721,13 @@ export default function App() {
         id: a.id,
         label: actionLabel(a),
         icon: a.icon,
-        // 存入 Obsidian 的 ⌄ 目标菜单（笔记/任务/卡片）与 Anki 的 ⌄ 牌组菜单；
-        // Anki 仅在缓存了多个牌组时才有 ⌄（单牌组直达即可）
-        hasMenu: a.id === "obsidian" || (a.id === "anki" && (ankiCfg?.decks.length ?? 0) > 1),
+        // 存入 Obsidian 的 ⌄ 目标菜单（笔记/任务/卡片）与 Anki 的 ⌄ 类型菜单
+        // （单词卡/内容卡）；Anki 仅在配套类型就绪时才有 ⌄
+        hasMenu:
+          a.id === "obsidian" ||
+          (a.id === "anki" &&
+            (ankiCfg?.models?.includes(COMPANION_WORD) &&
+              ankiCfg?.models?.includes(COMPANION_CONTENT)) === true),
         onClick: () => {
           setMenu(null);
           runAction(a.id);
@@ -1090,7 +1102,8 @@ export default function App() {
   // 底边距动作行上缘 8px；限宽换行向上生长，限高内滚兜底
   const placeMenuSlotChips = () => {
     if (!IS_OCR) return;
-    if (menu !== "translate" && menu !== "search" && menu !== "obsidian") return;
+    if (menu !== "translate" && menu !== "search" && menu !== "obsidian" && menu !== "anki")
+      return;
     const panel = ocrPanelRef.current;
     const slot = panel?.querySelector<HTMLElement>(".ocr-menu-slot") ?? null;
     const trigSlot =
@@ -1620,21 +1633,25 @@ export default function App() {
         // 反馈走全局 toast 而非按钮 flash：从菜单/收纳面板发起时浮层先收起，
         // flash 挂在已卸载的按钮上等于无提示（与 Obsidian 分支同一理由）
         if (!cfg?.deck) {
-          toast(t("anki.testFail"), "err");
+          // deck 空 = 尚未配置（不是连接失败）：文案说清去哪配置
+          toast(t("floating.ankiNotConfigured"), "err");
           return;
         }
         const now = new Date();
         const p2 = (n: number) => String(n).padStart(2, "0");
         const date = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
         const time = `${p2(now.getHours())}:${p2(now.getMinutes())}`;
-        const src = appNameFrom(sourceAppRef.current);
-        // 保存内容择优：结果窗里已有 AI 结果时背面存释义，否则存原文
-        const body =
+        // 来源未知（pid 拿不到应用名）时不把「未知应用」写进卡：{source} 渲染为
+        // 空，模板条件块自动省略「来源：」整块，标签同样不带——宁缺毋错
+        const srcRaw = appNameFrom(sourceAppRef.current);
+        const src = srcRaw === t("floating.unknownApp") ? "" : srcRaw;
+        // AI 结果只在结果窗语境存在；胶囊直建没有（建卡时背面留空，符合 Anki
+        // 「先存卡、复习时再补释义」的挖卡习惯，避免正面背面同文）
+        const aiBody =
           phase.kind === "ocr" && phase.actionId && phase.output && !phase.error
             ? phase.output
-            : source;
-        // ⌄ 菜单的牌组覆盖（targetOverride 复用为 deckOverride）；空 = 默认牌组
-        const deck = targetOverride ?? cfg.deck;
+            : "";
+        // 牌组由下方「牌组×类型」路由决定（⌄ 显式指定或按划词长短）
         const tags = cfg.tags
           .replaceAll("{date}", date)
           .replaceAll("{source}", src)
@@ -1646,34 +1663,79 @@ export default function App() {
           .catch(() => null)
           .then((pageUrl) => {
             const url = pageUrl ?? "";
-            // 变量语义：{text} 永远是划词原文（正面可预期）；{result} = 择优——
-            // 结果窗语境是 AI 输出，胶囊直建回落原文（背面要 AI 释义时用它）
+            // 变量语义：{text} 永远是划词原文；{result} 仅结果窗建卡时是 AI 输出，
+            // 其余语境为空（明示语义，不做静默回落）
             const fill = (tpl: string) => {
               const t2 = url ? tpl : tpl.split("\n").filter((l) => l.trim() !== "{url}").join("\n");
               return t2
                 .replaceAll("{text}", source)
-                .replaceAll("{result}", body)
+                .replaceAll("{result}", aiBody)
                 .replaceAll("{source}", src)
                 .replaceAll("{date}", date)
                 .replaceAll("{time}", time)
                 .replaceAll("{url}", url);
             };
-            // 字段映射是唯一配置面：逐字段做变量替换（漏替换会把 {text} 原样写进卡片）
-            const fieldMap: Record<string, string> = {};
-            for (const [name, tpl] of Object.entries(cfg.fieldTemplates ?? {})) {
-              const rendered = fill(tpl);
-              if (rendered.trim() !== "") fieldMap[name] = rendered;
-            }
-            invoke("anki_add_note", {
+            // 牌组×类型成对路由：⌄ 菜单显式指定（子牌组）优先；无指定时配套就绪
+            // 则按划词长短自动选（单词卡/内容卡字段同构，判错只差排版不丢数据）；
+            // 自定义类型尊重用户选择（牌组/类型都用其配置）
+            const hasWord = cfg.models?.includes(COMPANION_WORD) ?? false;
+            const hasContent = cfg.models?.includes(COMPANION_CONTENT) ?? false;
+            const pair =
+              COMPANION_ITEMS.find((i) => i.deck === targetOverride) ??
+              (!isCompanionModel(cfg.modelName)
+                ? null
+                : hasWord && hasContent
+                  ? isShortSelection(source)
+                    ? COMPANION_ITEMS[0]
+                    : COMPANION_ITEMS[1]
+                  : hasWord
+                    ? COMPANION_ITEMS[0]
+                    : hasContent
+                      ? COMPANION_ITEMS[1]
+                      : null);
+            const deck = pair?.deck ?? cfg.deck;
+            const model = pair?.model ?? cfg.modelName;
+            // 字段组装：配套类型叠加出厂映射（不落盘），其余字段走智能默认——
+            // 第 1 字段 = 选中文本（Anki 以首字段查重，须为唯一标识）、恰好两字段
+            // 类型第 2 字段 = 结果窗内容（胶囊直建留空）。字段顺序需实拉
+            invoke<string[]>("anki_model_fields", {
               url: cfg.connectUrl,
-              deck,
-              model: cfg.modelName,
-              fields: fieldMap,
-              tags,
+              model,
             })
-              .then(() => toast(t("floating.ankiSaved", { deck })))
-              // Rust 侧错误已按界面语言本地化（不可达/重复卡/其他），直接展示
-              .catch((e) => toast(String(e) || t("anki.testFail"), "err"));
+              .catch(() => [] as string[])
+              .then((names) => {
+                const factory = isCompanionModel(model) ? COMPANION_FIELD_MAP : {};
+                const fieldMap: Record<string, string> = {};
+                // 智能默认填的是纯文本（划词原文/AI 输出），Anki 字段按 HTML 渲染、
+                // 换行须显式 <br>（多行选区不转会被挤成一行）；出厂模板走 fill 渲染，
+                // 不做替换（「模板不校验 HTML」边界）
+                const nl2br = (s: string) => s.replaceAll("\n", "<br>");
+                names.forEach((name, i) => {
+                  const tpl = factory[name];
+                  if (tpl !== undefined) {
+                    const rendered = fill(tpl);
+                    if (rendered.trim() !== "") fieldMap[name] = rendered;
+                    return;
+                  }
+                  if (i === 0) fieldMap[name] = nl2br(source);
+                  else if (i === 1 && names.length === 2 && aiBody)
+                    fieldMap[name] = nl2br(aiBody);
+                });
+                invoke("anki_add_note", {
+                  url: cfg.connectUrl,
+                  deck,
+                  model,
+                  fields: fieldMap,
+                  tags,
+                })
+                  .then(() =>
+                    // toast 传卡型产品名（单词卡/内容卡），不暴露 Anki 内部牌组路径；
+                    // 自定义类型退回牌组名
+                    toast(t("floating.ankiSaved", { card: pair?.label ?? deck })),
+                  )
+                  // Rust 侧错误已按界面语言本地化（不可达/重复卡/其他），直接展示
+                  .catch((e) => toast(String(e) || t("anki.testFail"), "err"));
+              });
           });
         return;
       }
@@ -1867,7 +1929,11 @@ export default function App() {
     defaultTranslateId: defaultTranslate?.id,
     defaultEngineName: defaultEngine?.name,
     obsidianVaultConfigured: Boolean(obsidianCfg?.vaultPath),
-    ankiDecks: ankiCfg?.decks ?? [],
+    // ⌄ 菜单 = 子牌组选择（单词卡/内容卡）：配套就绪（缓存里两型齐全）才出现
+    ankiTypes:
+      COMPANION_ITEMS.every((i) => ankiCfg?.models?.includes(i.model)) === true
+        ? COMPANION_ITEMS.map((i) => ({ key: i.deck, label: i.label }))
+        : [],
     runAction,
     openEngine,
     setUsedTranslate,
@@ -1957,7 +2023,8 @@ export default function App() {
           : a.id === "obsidian"
             ? true
             : a.id === "anki"
-              ? (ankiCfg?.decks.length ?? 0) > 1
+              ? (ankiCfg?.models?.includes(COMPANION_WORD) &&
+                  ankiCfg?.models?.includes(COMPANION_CONTENT)) === true
               : enabledEngines.length > 1) && (
         <button
           type="button"
@@ -2127,7 +2194,7 @@ export default function App() {
           const kind = menu.split(":")[1] as "translate" | "search" | "obsidian" | "anki";
           // 存入 Obsidian 的目标菜单：主按钮 = 存笔记。
           // 项名只写目标名词——菜单挂在「存入 Obsidian」的 ⌄ 下，"存入"动词不必逐行重复。
-          // Anki 的 ⌄ 是牌组菜单：项名 = 缓存的牌组名，点哪建哪（主钮 = 默认牌组）
+          // Anki 的 ⌄ 是类型菜单：项名 = 配套类型，点哪建哪（主钮 = 按划词长短自动路由）
           const items =
             kind === "obsidian"
               ? [
@@ -2136,7 +2203,7 @@ export default function App() {
                   { key: "card", label: t("floating.targetCard") },
                 ]
               : kind === "anki"
-                ? (ankiCfg?.decks ?? []).map((d) => ({ key: d, label: d }))
+                ? COMPANION_ITEMS.map((i) => ({ key: i.deck, label: i.label }))
                 : kind === "translate"
                   ? enabledTranslates.map((s) => ({ key: s.id, label: t(s.label) }))
                   : enabledEngines.map((en) => ({ key: en.name, label: engineDisplayName(en.name) }));
@@ -2633,16 +2700,16 @@ export default function App() {
             )}
             {slotVal === "anki" && (
               <div key="anki" className={`mflow ${slotGhost ? "still" : ""}`}>
-                {(ankiCfg?.decks ?? []).map((d) => (
+                {COMPANION_ITEMS.map((i) => (
                   <button
-                    key={d}
+                    key={i.deck}
                     className="chip"
                     onClick={guarded(() => {
                       setMenu(null);
-                      runAction("anki", undefined, undefined, d);
+                      runAction("anki", undefined, undefined, i.deck);
                     })}
                   >
-                    {d}
+                    {i.label}
                   </button>
                 ))}
               </div>
@@ -2763,16 +2830,16 @@ export default function App() {
                     ),
                   )}
                 {pmenuVal === "pmenu:anki" &&
-                  (ankiCfg?.decks ?? []).map((d) => (
+                  COMPANION_ITEMS.map((i) => (
                     <button
-                      key={d}
+                      key={i.deck}
                       className="chip"
                       onClick={guarded(() => {
                         setMenu(null);
-                        runAction("anki", undefined, undefined, d);
+                        runAction("anki", undefined, undefined, i.deck);
                       })}
                     >
-                      {d}
+                      {i.label}
                     </button>
                   ))}
               </div>

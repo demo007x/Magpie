@@ -13,6 +13,10 @@ interface GeneralProps extends Omit<PageProps, "save"> {
   setUiLocale: (pref: string) => void;
 }
 
+  /** 结果窗口预设档位（逻辑坐标），横竖两个方向 × 紧凑/宽敞两个量级：
+      横向宽度顶格 560（拖拽钳制上限）、竖向大档高度顶格 800（同上）。
+      点选立即作用于结果窗并持久化（走 Rust 命令，不经过本页保存按钮）；
+      用户拖拽微调仍会记忆，拖后与预设不一致时高亮自然消失 */
   const RESULT_SIZE_PRESETS: { label: string; size: [number, number] }[] = [
     { label: "general.sizeCompactH", size: [560, 320] },
     { label: "general.sizeCompactV", size: [400, 560] },
@@ -31,9 +35,8 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
   };
   return (
           <>
-            <h1>{t("nav.general")}</h1>
-            <p className="page-hint">{t("general.hint")}</p>
-            <h2 className="sec">{t("general.themeSec")}</h2>
+            {/* 不设页级/节级标题：导航已标明页面，且每节只有一张卡、行标题自述内容，
+                节标题是纯重复——卡片直接堆叠开场（同组贴合间距由 .card + .card 控制） */}
             <div className="card">
               <div className="row-between">
                 <div>
@@ -57,7 +60,6 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
               </div>
             </div>
 
-            <h2 className="sec">{t("general.languageSec")}</h2>
             <div className="card">
               <div className="row-between">
                 <div>
@@ -86,7 +88,6 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
               </div>
             </div>
 
-            <h2 className="sec">{t("general.launchSec")}</h2>
             <div className="card">
               <div className="row-between">
                 <div>
@@ -116,7 +117,6 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
             {/* 程序坞为 macOS 概念：Windows 无程序坞，整节隐藏（能力门控） */}
             {IS_MAC && (
             <>
-            <h2 className="sec">{t("general.dockSec")}</h2>
             <div className="card">
               <div className="row-between">
                 <div>
@@ -141,7 +141,6 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
             </>
             )}
 
-            <h2 className="sec">{t("general.resultSec")}</h2>
             <div className="card">
               <div className="row-between">
                 <div>

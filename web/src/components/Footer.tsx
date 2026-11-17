@@ -22,9 +22,14 @@ export function Footer() {
             {d.footer.updates}
           </a>
           {page === "home" && (
-            <a href={`${root}translate/`} className="transition-colors hover:text-ink">
-              {d.footer.topic}
-            </a>
+            <>
+              <a href={`${root}translate/`} className="transition-colors hover:text-ink">
+                {d.footer.topic}
+              </a>
+              <a href={`${root}anki/`} className="transition-colors hover:text-ink">
+                {d.footer.anki}
+              </a>
+            </>
           )}
           <a href="#download" className="transition-colors hover:text-ink">
             {d.footer.download}

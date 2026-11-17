@@ -30,8 +30,8 @@ export function usePopsSync(opts: {
   defaultTranslateId: string | null | undefined;
   defaultEngineName: string | null | undefined;
   obsidianVaultConfigured: boolean;
-  /** Anki ⌄ 牌组菜单的数据源（连接测试时缓存的 deckNames）；空 = 无 ⌄ */
-  ankiDecks: string[];
+  /** Anki ⌄ 类型菜单的数据源（配套类型就绪时的两枚选项）；空 = 无 ⌄ */
+  ankiTypes: Array<{ key: string; label: string }>;
   runAction: (id: string, service?: string, source?: string, target?: string) => void;
   openEngine: (en: SearchEngine) => void;
   setUsedTranslate: (v: string) => void;
@@ -50,7 +50,7 @@ export function usePopsSync(opts: {
     defaultTranslateId,
     defaultEngineName,
     obsidianVaultConfigured,
-    ankiDecks,
+    ankiTypes,
     runAction,
     openEngine,
     setUsedTranslate,
@@ -75,7 +75,7 @@ export function usePopsSync(opts: {
             on: en.name === (usedEngine ?? defaultEngineName ?? null),
           }))
         : kind === "anki"
-          ? ankiDecks.map((d) => ({ key: d, label: d, on: false }))
+          ? ankiTypes.map((t2) => ({ key: t2.key, label: t2.label, on: false }))
           : [
               { key: "note", label: t("floating.targetNote"), on: true },
               { key: "task", label: t("floating.targetTask"), on: false },
@@ -88,7 +88,7 @@ export function usePopsSync(opts: {
     (id === "translate" && enabledTranslates.length > 1) ||
     (id === "search" && enabledEngines.length > 1) ||
     (id === "obsidian" && obsidianVaultConfigured) ||
-    (id === "anki" && ankiDecks.length > 1);
+    (id === "anki" && ankiTypes.length > 0);
   const panelData = (subOpenForce?: string | null) => ({
     type: "overflow" as const,
     subOpen:

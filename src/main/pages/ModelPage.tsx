@@ -76,12 +76,11 @@ export default function ModelPage({ settings, patch, save, saved }: PageProps) {
 
   return (
           <>
-            <h1>{t("model.title")}</h1>
+            {/* 无页级标题：左栏导航已标明页面，说明行直接开场 */}
             <p className="page-hint">
               {t("model.hint")}
             </p>
 
-            <h2 className="sec">{t("model.servicesSec")}</h2>
             {settings.providers.map((p) => {
               const open = providerOpen === p.id;
               // 按地址反查预设（含所在形态项）：命中则给占位指引并决定形态切换是否露出；

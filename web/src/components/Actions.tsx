@@ -124,15 +124,24 @@ export function Actions() {
           </div>
         </Reveal>
 
-        {/* 语境出口：翻译是专题页的主角，读完动作能力顺势导流 */}
+        {/* 语境出口：翻译专题与 Anki 教程两个深入入口，读完动作能力顺势导流 */}
         <Reveal delay={0.08}>
-          <a
-            href={`${root}translate/`}
-            className="mt-8 inline-flex items-center gap-1.5 text-[13px] text-mute transition-colors hover:text-ink"
-          >
-            {d.actions.topicLink}
-            <ArrowRight size={13} strokeWidth={2} />
-          </a>
+          <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:gap-8">
+            <a
+              href={`${root}translate/`}
+              className="inline-flex items-center gap-1.5 text-[13px] text-mute transition-colors hover:text-ink"
+            >
+              {d.actions.topicLink}
+              <ArrowRight size={13} strokeWidth={2} />
+            </a>
+            <a
+              href={`${root}anki/`}
+              className="inline-flex items-center gap-1.5 text-[13px] text-mute transition-colors hover:text-ink"
+            >
+              {d.actions.ankiGuideLink}
+              <ArrowRight size={13} strokeWidth={2} />
+            </a>
+          </div>
         </Reveal>
       </div>
     </Section>

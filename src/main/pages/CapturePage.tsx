@@ -212,16 +212,7 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
 
   return (
           <>
-            <h1>{t("nav.capture")}</h1>
-            <p className="page-hint">
-              {t("capture.hint")}
-              <br />
-              {t("capture.extractHint", {
-                addr: IS_MAC ? t("capture.extractHintAddr") : "",
-              })}
-            </p>
-
-            <h2 className="sec">{t("capture.capsuleSec")}</h2>
+            {/* 无页级/节级标题：说明拆进各自的卡（卡内提示行），卡片直接开场 */}
             <div className="card">
               <div className="row-between">
                 <div className="row-title">
@@ -256,7 +247,6 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
               </div>
             </div>
 
-            <h2 className="sec">{t("capture.actionsSec")}</h2>
             {Object.values(settings.actions).every((v) => v === false) &&
               !settings.customActions.some((c) => c.enabled) && (
               <div className="all-off-note">
@@ -264,6 +254,7 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
               </div>
             )}
             <div className="card">
+              <p className="card-hint">{t("capture.actionsHint")}</p>
               {residentIds.map((k) => {
                 const c = customById(k);
                 return (
@@ -363,9 +354,8 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
               </button>
             </div>
 
-            <h2 className="sec">{t("capture.extractSec")}</h2>
             {/* 智能提取是「怎么提取」的模式，不是「提取什么」的功能——分段控件
-                置于节标题下、卡外（用户定稿 2026-10-24）；注释只陈述不解释 */}
+                置于卡外（用户定稿 2026-10-24）；注释只陈述不解释 */}
             <div className="mode-line">
               <div className="seg" role="radiogroup" aria-label={t("capture.extractModeAria")}>
                 <button
@@ -398,6 +388,11 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
               </span>
             </div>
             <div className="card">
+              <p className="card-hint">
+                {t("capture.extractHint", {
+                  addr: IS_MAC ? t("capture.extractHintAddr") : "",
+                })}
+              </p>
               {contextIds.map((k) => (
                 <div key={k} className="row-between sep action-row context-row">
                   <div className="row-title">
@@ -546,6 +541,8 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
                 </Modal>
               );
             })()}
+
+      {/* 禁用应用已拆为划词组独立子菜单（2026-11-17） */}
     </>
   );
 }

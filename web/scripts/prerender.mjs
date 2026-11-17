@@ -1,8 +1,9 @@
 // 构建期预渲染：vite build 之后运行，把 React 树渲染成含完整正文的静态 HTML。
-// 四份产物——首页与划词翻译专题页各两语言：
+// 六份产物——首页、划词翻译专题页与 Anki 教程页各两语言：
 //   dist/index.html（/）            dist/en/index.html（/en/）
 //   dist/translate/index.html（/translate/）
 //   dist/en/translate/index.html（/en/translate/）
+//   dist/anki/index.html（/anki/）  dist/en/anki/index.html（/en/anki/）
 // 爬虫、禁 JS 访问与社交卡片直接读到全文；客户端再水合接管交互。
 // 每页的 <head>（lang/title/description/og/canonical）由 META[page][locale] 覆写。
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -24,6 +25,7 @@ try {
   const shells = {
     home: readFileSync("dist/index.html", "utf8"),
     translate: readFileSync("dist/translate.html", "utf8"),
+    anki: readFileSync("dist/anki.html", "utf8"),
   };
 
   const pages = [
@@ -40,6 +42,18 @@ try {
       page: "translate",
       url: "https://fm126.top/en/translate/",
       file: "dist/en/translate/index.html",
+    },
+    {
+      locale: "zh",
+      page: "anki",
+      url: "https://fm126.top/anki/",
+      file: "dist/anki/index.html",
+    },
+    {
+      locale: "en",
+      page: "anki",
+      url: "https://fm126.top/en/anki/",
+      file: "dist/en/anki/index.html",
     },
   ];
 
@@ -76,7 +90,7 @@ try {
     // 相对路径部署，根域名 / 子路径（GitHub Pages /Magpie/）/ 自建服务器
     // 任意目录通用
     const up =
-      (page.page === "translate" ? 1 : 0) + (page.locale === "en" ? 1 : 0);
+      (page.page === "home" ? 0 : 1) + (page.locale === "en" ? 1 : 0);
     if (up > 0) {
       const prefix = "../".repeat(up);
       html = html

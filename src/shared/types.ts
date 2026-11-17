@@ -35,6 +35,8 @@ export interface ActionFlags {
   addr: boolean;
   /** 接入动作：已配置 Obsidian vault 时出现「Obsidian」（笔记/任务/卡片） */
   obsidian: boolean;
+  /** 接入动作：已连接 AnkiConnect（deck 非空）时出现「Anki」划词建卡 */
+  anki: boolean;
 }
 
 export interface SearchEngine {
@@ -114,9 +116,6 @@ export interface AnkiConfig {
   models: string[];
   /** 笔记类型（addNote 的 modelName） */
   modelName: string;
-  /** 字段映射（字段名→模板；唯一配置面——连接测试自动预填，下拉可改；
-   *  变量 {text}/{result}/{source}/{date}/{time}/{url}，空值不写入） */
-  fieldTemplates: Record<string, string>;
   /** 标签模板（空格分隔；变量 {date}/{source}） */
   tags: string;
 }

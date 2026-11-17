@@ -20,18 +20,6 @@
   --danger: #d92f2f;
   --ok: #1f9d4d;
   --bad: #d92f2f;
-  /* 侧栏导航图标（每项一色，全低饱和；选中态统一转白，见 .nav-item.active） */
-  --ic-capture: #3478f6;
-  --ic-shortcuts: #5e5ce6;
-  --ic-model: #0e7490;
-  --ic-prompts: #e8833a;
-  --ic-translate: #2fa84f;
-  --ic-search: #64748b;
-  --ic-obsidian: #7c3aed;
-  --ic-blocklist: #e5484d;
-  --ic-general: #64748b;
-  --ic-perms: #b8860b;
-  --ic-about: #64748b;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -51,18 +39,7 @@
     --ok: #32ad62;
     --bad: #ff6b61;
     /* 暗底上整体提亮一档，保住色相可辨 */
-    --ic-capture: #6ea8ff;
-    --ic-shortcuts: #9494f0;
-    --ic-model: #45aebf;
-    --ic-prompts: #f09d5c;
-    --ic-translate: #58c271;
-    --ic-search: #94a3b8;
-    --ic-obsidian: #a78bfa;
-    --ic-blocklist: #f06a6e;
-    --ic-general: #94a3b8;
-    --ic-perms: #d4a72c;
-    --ic-about: #94a3b8;
-  }
+                        }
 }
 
 /* ---- 用户强制外观（设置页：亮色/暗色/跟随系统）----
@@ -104,17 +81,6 @@
   --ok: #32ad62;
   --bad: #ff6b61;
   /* 与系统暗色（媒体查询块）同款提亮 */
-  --ic-capture: #6ea8ff;
-  --ic-shortcuts: #9494f0;
-  --ic-model: #45aebf;
-  --ic-prompts: #f09d5c;
-  --ic-translate: #58c271;
-  --ic-search: #94a3b8;
-  --ic-obsidian: #a78bfa;
-  --ic-blocklist: #f06a6e;
-  --ic-general: #94a3b8;
-  --ic-perms: #d4a72c;
-  --ic-about: #94a3b8;
 }
 
 /* 强制暗色时与系统暗色同款的灰度抗锯齿（原媒体查询只覆盖跟随系统的路径） */
@@ -160,48 +126,92 @@ body {
 
 .shell {
   display: flex;
+  flex-direction: column;
   height: 100vh;
 }
 
-/* ---- 侧栏 ---- */
-.side {
-  width: 196px;
-  flex-shrink: 0;
-  background: var(--side);
-  border-right: 0.5px solid var(--line);
-  padding: 16px 10px;
+/* ---- 顶栏：品牌居左 + 组 tabs 居中（T 型导航的横边，见 App.tsx NAV_GROUPS） ---- */
+.topbar {
+  position: relative; /* 组 tabs 绝对居中的锚 */
   display: flex;
-  flex-direction: column;
-  gap: 18px;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 10px 18px 10px 16px;
+  background: var(--side);
+  border-bottom: 0.5px solid var(--line);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   padding: 0 6px;
 }
 
-/* 品牌标：应用图标（svg 自带圆角底），侧栏 34 / 关于页 56 */
 .mark {
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-}
-
-.mark.big {
-  width: 56px;
-  height: 56px;
+  width: 26px;
+  height: 26px;
 }
 
 .brand-name {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: 0.02em;
 }
 
-.brand-ver {
-  font-size: 11px;
+/* 组 tabs：macOS 分段控件——一条凹陷浅槽装四组，选中项是浮起白卡（投影 + 发丝描边）。
+   对窗口真居中（brand 宽度 ~100px、槽半宽 ~180px，最窄窗口下也不会压到品牌区） */
+.group-tabs {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--hov);
+  border-radius: 9px;
+}
+
+.group-tab {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
   color: var(--sec);
+  padding: 4px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 140ms, background 140ms, box-shadow 140ms;
+}
+
+.group-tab:hover {
+  color: var(--text);
+}
+
+.group-tab.on {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--card);
+  box-shadow:
+    0 0 0 0.5px var(--line),
+    0 1px 2.5px rgba(0, 0, 0, 0.12);
+}
+
+.shell-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---- 侧栏（T 型竖边：当前组内的页面项） ---- */
+.side {
+  width: 196px;
+  flex-shrink: 0;
+  background: var(--side);
+  border-right: 0.5px solid var(--line);
+  padding: 14px 10px;
 }
 
 .nav {
@@ -219,38 +229,28 @@ body {
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: var(--text);
   font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.nav-ic {
-  display: inline-flex;
+  font-size: 13px;
   color: var(--sec);
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms, color 120ms;
 }
-
-/* 每项低饱和色相（色值见 :root 的 --ic-*，暗色提亮一档）；
-   选中态的白必须放在这些规则之后——同特异性靠源码顺序取胜 */
-.nav-item[data-nav="capture"] .nav-ic { color: var(--ic-capture); }
-.nav-item[data-nav="shortcuts"] .nav-ic { color: var(--ic-shortcuts); }
-.nav-item[data-nav="model"] .nav-ic { color: var(--ic-model); }
-.nav-item[data-nav="prompts"] .nav-ic { color: var(--ic-prompts); }
-.nav-item[data-nav="translate"] .nav-ic { color: var(--ic-translate); }
-.nav-item[data-nav="search"] .nav-ic { color: var(--ic-search); }
-.nav-item[data-nav="obsidian"] .nav-ic { color: var(--ic-obsidian); }
-.nav-item[data-nav="blocklist"] .nav-ic { color: var(--ic-blocklist); }
-.nav-item[data-nav="general"] .nav-ic { color: var(--ic-general); }
-.nav-item[data-nav="perms"] .nav-ic { color: var(--ic-perms); }
-.nav-item[data-nav="about"] .nav-ic { color: var(--ic-about); }
 
 .nav-item:hover {
+  color: var(--text);
   background: var(--hov);
 }
 
 .nav-item.active {
-  background: var(--accent);
   color: var(--on-accent);
+  background: var(--accent);
+  font-weight: 600;
+}
+
+.nav-ic {
+  display: flex;
+  color: var(--sec);
 }
 
 .nav-item.active .nav-ic {
@@ -270,13 +270,6 @@ body {
 
 .content > :last-child:not(.save-bar) {
   margin-bottom: 52px;
-}
-
-.content > h1 {
-  font-size: 21px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-  margin-bottom: 8px;
 }
 
 /* 页首导读：左侧细墨线标记 + 限宽（中文一行约 40 字），与操作区明确分层 */
@@ -311,21 +304,33 @@ h2.sec {
   margin: 28px 0 10px;
 }
 
-/* ---- 分组卡片 ---- */
+/* ---- 分组卡片：白卡轻浮起——发丝线定边界，两层极轻落影给厚度（暗色下落影
+   不可见，由发丝线兜底分离度）；圆角 12 与分段控件同一曲线语言 ---- */
 .card {
   background: var(--card);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 16px 18px;
   margin-bottom: 8px;
-  box-shadow: 0 0 0 0.5px var(--line);
+  box-shadow:
+    0 0 0 0.5px var(--line),
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 2px 8px rgba(0, 0, 0, 0.03);
 }
 
 .card + .card {
   margin-top: -4px; /* 同组卡片贴合 */
 }
 
+/* 卡内提示行：卡顶的次级说明（替代页首导读——说明跟着卡走，卡自述） */
+.card-hint {
+  margin: -2px 0 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--sec);
+}
+
 h2.sec + .card {
-  border-bottom-left-radius: 10px;
+  border-bottom-left-radius: 12px;
 }
 
 .grid {
@@ -1305,45 +1310,57 @@ button:focus-visible {
   line-height: 1.9;
 }
 
+/* 品牌信息：左图右文（居中竖排改为应用「关于」惯用的横排）。
+   大气 = 大图标 + 大名称 + 一句 slogan，层级少、留白足 */
 .about-card {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 32px 16px 28px;
+  gap: 32px;
+  padding: 42px 44px;
+}
+
+/* logo：裸图标出场（无底衬），尺寸本身即视觉重量 */
+.about-card .mark.big {
+  width: 108px;
+  height: 108px;
+  flex-shrink: 0;
+}
+
+.about-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .about-name {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
-/* 品牌语层级：主 slogan > 描述符 > 理念句 > 版本 */
-.about-slogan {
-  margin-top: 8px;
-  font-size: 16px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
+/* 品牌语层级（逐级递减，不抢重）：名称 > 定位句（是什么）> slogan（理念签名）> 版本 */
+.about-tagline {
+  margin-top: 6px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
   color: var(--text);
 }
 
-.about-desc {
-  font-size: 12px;
-  color: var(--sec);
-}
-
-.about-motto {
-  margin-top: 6px;
-  font-size: 12px;
-  letter-spacing: 0.14em; /* 理念句拉字距，箴言感 */
+/* slogan 收成安静的签名行：小一号、次级色、字距拉开显从容 */
+.about-slogan {
+  margin-top: 10px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
   color: var(--sec);
 }
 
 .about-ver {
-  margin-top: 10px;
-  font-size: 11px;
+  margin-top: 14px;
+  font-size: 11.5px;
   color: var(--sec);
-  opacity: 0.8;
+  opacity: 0.75;
 }
 
 /* 全局提示（截图取消/权限缺失等后台事件反馈）：顶部居中悬浮条 */
@@ -1405,6 +1422,107 @@ input.recording {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Anki 页单选下拉（Pick 组件）：与页内 input 同基线——透明底/细描边/28px/全宽，
+   聚焦同强调环；展开列表是就地卡片（无弹层阴影，同朗读页列表语言） */
+.pick-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.pick-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 9px;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 0.5px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pick-btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* 当前值占满剩余宽度，长名截断而不挤出箭头 */
+.pick-val {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pick-btn svg {
+  flex-shrink: 0;
+  color: var(--sec);
+  transition: transform 150ms;
+}
+
+.pick-btn.open svg {
+  transform: rotate(180deg);
+}
+
+.pick-list {
+  max-height: 240px;
+  overflow-y: auto;
+  margin-top: 4px;
+  padding: 4px;
+  border: 0.5px solid var(--line);
+  border-radius: 8px;
+}
+
+.pick-opt {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.pick-opt:hover {
+  background: var(--hov);
+}
+
+.pick-opt.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* 映射行的一对下拉（绑哪个字段 × 填什么数据）：均分宽度，窄卡不下挤 */
+.pick-pair {
+  display: flex;
+  gap: 8px;
+}
+
+.pick-pair > .pick-wrap {
+  flex: 1;
+}
+
+/* Anki 一键配置的就绪徽标（按钮旁的成功标识；样式与 voice-badge 同语言，
+   inline-flex 为容纳对勾图标） */
+.ready-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .voice-pick {

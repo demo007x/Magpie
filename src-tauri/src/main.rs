@@ -79,7 +79,7 @@ fn shortcut_display(s: &str) -> String {
 }
 
 /// 托盘右键菜单（快捷键变更后重建，让识图类各项旁始终显示当前设定的键）。
-/// 按功能分组：识图动作 / 应用导航 / 退出，组间用分隔线
+/// 按功能分组：识图动作 / 应用入口与外联 / 退出，组间用分隔线
 fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let s = settings::current(app);
     let label = |base: &str, shortcut: &str| {
@@ -96,7 +96,6 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let su_item = MenuItem::with_id(app, "ocr_summarize", &label(i18n::t("tray.ocrSummarize"), &s.ocr_summarize_shortcut), true, None::<&str>)?;
     let file_ocr_item = MenuItem::with_id(app, "file_ocr", &label(i18n::t("tray.fileOcr"), &s.file_ocr_shortcut), true, None::<&str>)?;
     let home_item = MenuItem::with_id(app, "home", i18n::t("tray.home"), true, None::<&str>)?;
-    let settings_item = MenuItem::with_id(app, "settings", i18n::t("tray.settings"), true, None::<&str>)?;
     let github_item = MenuItem::with_id(app, "github", i18n::t("tray.github"), true, None::<&str>)?;
     let feedback_item = MenuItem::with_id(app, "feedback", i18n::t("tray.feedback"), true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", i18n::t("tray.quit"), true, None::<&str>)?;
@@ -110,7 +109,6 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         &file_ocr_item,
         &sep1,
         &home_item,
-        &settings_item,
         &github_item,
         &feedback_item,
         &sep2,
@@ -653,11 +651,9 @@ fn main() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
+                    // 「打开拾趣」只亮窗不指定页：落到启动默认逻辑（未配模型 → 模型页，
+                    // 已配 → 划词页）；此前「功能设置」硬跳 model 页，智能默认后过时
                     "home" => show_main_window(app),
-                    "settings" => {
-                        show_main_window(app);
-                        let _ = app.emit_to("main", "nav://page", "model");
-                    }
                     "ocr" => start_ocr_flow(app.clone(), None),
                     "ocr_translate" => start_ocr_flow(app.clone(), Some("translate")),
                     "ocr_explain" => start_ocr_flow(app.clone(), Some("explain")),
@@ -728,8 +724,10 @@ fn main() {
             obsidian::obsidian_append,
             anki::anki_version,
             anki::anki_deck_names,
+            anki::anki_create_deck,
             anki::anki_model_names,
             anki::anki_model_fields,
+            anki::anki_create_model,
             anki::anki_add_note,
             entities::detect_places,
             entities::open_in_calendar,

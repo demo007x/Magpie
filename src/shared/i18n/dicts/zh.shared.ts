@@ -42,8 +42,8 @@ export const zhShared = {
   "actionDesc.tel": "选中含电话号码时，一键复制号码",
   "actionDesc.date": "选中含日期时间时（如“周四下午3点”），一键预填进日历",
   "actionDesc.addr": "选中含地点时（如“国贸B座”），一键在地图打开",
-  "actionDesc.obsidian": "已配置 Obsidian vault 时，把选中内容按摘录模板追加进日记",
-  "actionDesc.anki": "已连接 AnkiConnect 时，把选中内容一键建卡进牌组；结果窗语境背面为 AI 释义",
+  "actionDesc.obsidian": "选中内容按模板追加进 Obsidian 日记",
+  "actionDesc.anki": "划词存入 Anki 牌组，背面自动带释义",
 
   // 翻译服务注册表（label/blurb/docs/凭据字段均存键，消费端 t() 解析）
   "tsvc.ai.label": "AI 翻译",

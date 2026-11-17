@@ -1,121 +1,208 @@
-// Anki 页：AnkiConnect 连接测试、默认牌组/笔记类型、字段映射与标签（docs/08）。
-// 字段映射是唯一配置面：连接测试自动预填（第 1 字段 = 选中文本、两字段类型
-// 第 2 字段 = AI 释义），每个字段是「数据来源」下拉，自定义模板才展开输入框；
-// 字段列表自动跟随笔记类型（已接入即拉取，Anki 未运行时静默隐藏映射区）。
+// Anki 页：连接自动检测（打开页面/改地址即探测，保留手动按钮）+ 一键创建
+// Anki 集合（牌组「拾趣」两个子牌组 + 两种配套笔记类型，docs/08）。
+// 零配置是主路径：建卡时智能默认 + 配套类型出厂映射（shared/anki.ts，不落盘）
+// 兜底；牌组/标签均无配置面（牌组由建卡路由在两个子牌组间决定，标签走出厂默认）。
 import { invoke } from "@tauri-apps/api/core";
+import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
-import { DEFAULT_TAGS } from "./labels";
 import type { PageProps } from "./types";
+import {
+  COMPANION_CONTENT,
+  COMPANION_ITEMS,
+  COMPANION_WORD,
+  isCompanionModel,
+} from "../../shared/anki";
 import { t, useLocale } from "../../shared/i18n";
 
-/** 模板变量说明里的 {text} 等字面量：经 vars 显式注入，避免被 t() 当占位符吃掉 */
-const TEMPLATE_VARS = {
-  fText: "{text}",
-  fResult: "{result}",
-  fSource: "{source}",
-  fDate: "{date}",
-  fTime: "{time}",
-  fUrl: "{url}",
-};
+/** 下拉按钮共用的基础字体族（与 .card 内全局 input 的 font: inherit 对齐） */
+const SANS = `-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`;
 
-/** 映射下拉的数据源预设：把拾趣能提供的值作为语义选项（值为落盘的模板串，
-    与 fieldTemplates 直接匹配；用户手写的非预设模板走「自定义」形态） */
-const SOURCE_PRESETS: Array<[string, string]> = [
-  ["{text}", "anki.mapText"],
-  ["{result}", "anki.mapResult"],
-  ["{source} · {date}", "anki.mapSourceDate"],
-  ["{source}", "anki.mapSource"],
-  ["{date}", "anki.mapDate"],
-  ["{time}", "anki.mapTime"],
-  ["{url}", "anki.mapUrl"],
+/** 配套笔记类型的出厂 createModel 定义（样式/模板归笔记类型，docs/08 §7）。
+    模板语法用 Anki 条件替换（{{#字段}}…{{/字段}}）包裹溯源行，字段为空时整块
+    省略，不留孤儿括号；.meta:empty 兜底整行隐藏。两类型字段同构，只差排版：
+    单词卡居中大字（查词场景），内容卡左对齐换行（摘录场景） */
+const COMPANION_MODELS = [
+  {
+    def: {
+      modelName: COMPANION_WORD,
+      inOrderFields: ["正面", "背面", "来源", "链接", "日期"],
+      css: `.card {
+  font-family: ${SANS};
+  font-size: 15px;
+  line-height: 1.8;
+  text-align: center;
+  color: #1a1a1a;
+  background-color: #fafafa;
+  padding: 16px;
+  word-break: break-word;
+}
+.front { font-size: 26px; }
+hr#answer { border: none; border-top: 1px solid #ddd; margin: 12px auto; width: 60%; }
+.meta { font-size: 12px; color: #888; margin-top: 12px; }
+.meta:empty { display: none; }
+.meta a { color: #888; }`,
+      cardTemplates: [
+        {
+          Name: "划词卡",
+          Front: `<div class="front">{{正面}}</div>`,
+          Back: `{{正面}}
+<hr id="answer">
+{{背面}}
+<div class="meta">{{#来源}}来源：{{来源}}&ensp;{{/来源}}{{#链接}}<a href="{{链接}}">页面链接</a>&ensp;{{/链接}}{{#日期}}{{日期}}{{/日期}}</div>`,
+        },
+      ],
+    },
+  },
+  {
+    def: {
+      modelName: COMPANION_CONTENT,
+      inOrderFields: ["正面", "背面", "来源", "链接", "日期"],
+      css: `.card {
+  font-family: ${SANS};
+  font-size: 16px;
+  line-height: 1.7;
+  text-align: left;
+  color: #1a1a1a;
+  background-color: #fafafa;
+  padding: 16px;
+  word-break: break-word;
+}
+hr#answer { border: none; border-top: 1px solid #ddd; margin: 12px 0; }
+.meta { font-size: 12px; color: #888; margin-top: 12px; }
+.meta:empty { display: none; }
+.meta a { color: #888; }`,
+      cardTemplates: [
+        {
+          Name: "划词卡",
+          Front: `<div class="front">{{正面}}</div>`,
+          Back: `{{正面}}
+<hr id="answer">
+{{背面}}
+<div class="meta">{{#来源}}来源：{{来源}}&ensp;{{/来源}}{{#链接}}<a href="{{链接}}">页面链接</a>&ensp;{{/链接}}{{#日期}}{{日期}}{{/日期}}</div>`,
+        },
+      ],
+    },
+  },
 ];
 
-export default function AnkiPage({ settings, patch, save, saved }: PageProps) {
+export default function AnkiPage({ settings, patch, save, saved, saveNow }: PageProps) {
   useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
   const anki = settings.anki;
-  /** 本轮「连接测试」的结果：成功存版本号（下拉数据随 patch 落进 settings.anki） */
-  const [test, setTest] = useState<{ ok: boolean; version?: string; msg?: string } | null>(null);
+  /** 最近一次连接探测的结果：auto = 自动检测（失败只柔和提示，不弹错误文案） */
+  const [test, setTest] = useState<
+    { ok: boolean; msg?: string; auto?: boolean } | null
+  >(null);
   const [testing, setTesting] = useState(false);
-  /** 当前笔记类型的字段名列表（自动跟随笔记类型实拉；驱动映射区渲染，不落盘） */
-  const [fields, setFields] = useState<string[]>([]);
-  /** 用户显式切到「自定义模板」的字段：此时在该字段下展开模板输入框 */
-  const [customMap, setCustomMap] = useState<Record<string, boolean>>({});
+  /** 配套类型创建中（按钮忙态；两型一起创建，幂等） */
+  const [creating, setCreating] = useState(false);
+  /** 就绪判定（缓存 vs 实拉的桥）：牌组与笔记类型**都**在才算就绪——用户在
+      Anki 侧删掉其中一半（删牌组不会连带删类型，反之亦然）时必须回到
+      「一键配置」态，否则徽标在说谎 */
+  const companionReady = COMPANION_ITEMS.every(
+    (i) => anki.models.includes(i.model) && anki.decks.includes(i.deck),
+  );
 
-  const runTest = () => {
-    setTesting(true);
+  /** 连接探测：实拉牌组/笔记类型缓存（就绪判定的数据源）。不做字段预填——
+      智能默认与配套类型出厂映射在建卡时兜底（零配置主路径）。牌组无配置面：
+      一键创建后由程序在两个子牌组间路由 */
+  const probe = (manual: boolean) => {
+    if (!anki.connectUrl) return;
+    if (manual) setTesting(true);
     const url = anki.connectUrl;
     invoke<string>("anki_version", { url })
-      .then((version) =>
+      .then(() =>
         Promise.all([
           invoke<string[]>("anki_deck_names", { url }),
           invoke<string[]>("anki_model_names", { url }),
         ])
-          .then(async ([decks, models]) => {
-            // 选择值校正：受控下拉的 value 不在实拉列表里时浏览器会「幻影显示」
-            // 第一项（看着选了、实际没选）——当前值不在列表里就取第一项
-            const model = models.includes(anki.modelName)
-              ? anki.modelName
-              : models[0] ?? anki.modelName;
-            const fields = model
-              ? await invoke<string[]>("anki_model_fields", { url, model }).catch(
-                  () => [] as string[],
-                )
-              : [];
-            // 映射预填（只填从未配置过的字段，显式「不填」与已有选择不覆盖）：
-            // 第 1 字段 = 选中文本；恰好两个字段的类型第 2 字段 = AI 释义
-            const tpl = { ...anki.fieldTemplates };
-            const pre = (name: string | undefined, v: string) => {
-              if (name && tpl[name] === undefined) tpl[name] = v;
-            };
-            pre(fields[0], "{text}");
-            if (fields.length === 2) pre(fields[1], "{result}");
-            setTest({ ok: true, version });
-            setFields(fields);
+          .then(([decks, models]) => {
             patch((s) => ({
               anki: {
-                ...anki,
+                ...s.anki,
+                connectUrl: url,
                 decks,
                 models,
-                deck: decks.includes(anki.deck) ? anki.deck : decks[0] ?? "",
-                modelName: model,
-                fieldTemplates: tpl,
               },
               actionOrder: s.actionOrder.includes("anki")
                 ? s.actionOrder
                 : [...s.actionOrder, "anki"],
             }));
+            setTest({ ok: true });
           })
           .catch((e) => {
-            setTest({ ok: false, msg: String(e) });
-            setFields([]);
+            setTest({ ok: false, msg: String(e), auto: !manual });
           }),
       )
       .catch((e) => {
-        setTest({ ok: false, msg: String(e) });
-        setFields([]);
+        setTest({ ok: false, msg: String(e), auto: !manual });
       })
       .finally(() => setTesting(false));
   };
 
-  // 字段列表自动跟随所选笔记类型：已接入（deck 非空）即拉取，无需手动重跑
-  // 连接测试；Anki 未运行时静默留空（映射区随之隐藏）。地址/类型变化同触发
+  // 连接自动检测：打开页面与地址变化（防抖）即探测；手动按钮同走 probe
   useEffect(() => {
-    if (!anki.deck) return;
-    invoke<string[]>("anki_model_fields", {
-      url: anki.connectUrl,
-      model: anki.modelName,
-    })
-      .then(setFields)
-      .catch(() => setFields([]));
+    const h = setTimeout(() => probe(false), 600);
+    return () => clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anki.deck, anki.modelName, anki.connectUrl]);
+  }, [anki.connectUrl]);
 
-  const setFieldTpl = (name: string, v: string) =>
-    patch({ anki: { ...anki, fieldTemplates: { ...anki.fieldTemplates, [name]: v } } });
+  /** 一键创建 Anki 集合（幂等，缺啥补啥）：牌组「拾趣」+ 两种配套笔记类型，
+      并把默认牌组落到「拾趣」。建卡时按划词长短自动路由类型，所以没有
+      「选用哪一种」的独立状态。即时落盘——按钮的用户预期是立即生效 */
+  const createCompanions = () => {
+    setCreating(true);
+    const url = anki.connectUrl;
+    invoke<string[]>("anki_model_names", { url })
+      .then((models) => {
+        const missing = COMPANION_MODELS.filter(
+          (m) => !models.includes(m.def.modelName),
+        );
+        const ensured =
+          missing.length === 0
+            ? Promise.resolve(models)
+            : Promise.all(
+                missing.map((m) =>
+                  invoke("anki_create_model", { url, model: m.def }).then(
+                    () => m.def.modelName,
+                  ),
+                ),
+              ).then((created) => [...models, ...created]);
+        return ensured;
+      })
+      .then((models) =>
+        // 子牌组幂等建（已存在不报错），父牌组「拾趣」随首个子牌组自动出现；
+        // 缓存同步补上，默认牌组落第一个子牌组
+        Promise.all(
+          COMPANION_ITEMS.map((i) => invoke("anki_create_deck", { url, deck: i.deck })),
+        ).then(() => models),
+      )
+      .then((models) => {
+        patch((s) => {
+          const decks = [...s.anki.decks];
+          for (const i of COMPANION_ITEMS) {
+            if (!decks.includes(i.deck)) decks.push(i.deck);
+          }
+          return {
+            anki: {
+              ...s.anki,
+              models,
+              decks,
+              deck: decks.includes(s.anki.deck) ? s.anki.deck : COMPANION_ITEMS[0].deck,
+              modelName: isCompanionModel(s.anki.modelName)
+                ? s.anki.modelName
+                : COMPANION_WORD,
+            },
+          };
+        });
+        saveNow?.();
+      })
+      .catch((e) => setTest({ ok: false, msg: String(e) }))
+      .finally(() => setCreating(false));
+  };
 
   return (
     <>
-      <h1>Anki</h1>
+      {/* 无页级标题：左栏导航已标明页面，说明行直接开场 */}
       <p className="page-hint">{t("anki.hint")}</p>
 
       <div className="card">
@@ -129,7 +216,7 @@ export default function AnkiPage({ settings, patch, save, saved }: PageProps) {
             />
           </div>
           <div className="row-ctl">
-            <button className="btn sm" disabled={testing} onClick={runTest}>
+            <button className="btn sm" disabled={testing} onClick={() => probe(true)}>
               {testing ? t("anki.testing") : t("anki.test")}
             </button>
           </div>
@@ -138,127 +225,42 @@ export default function AnkiPage({ settings, patch, save, saved }: PageProps) {
           <div className="row-between">
             <span className="row-sub">
               {test.ok
-                ? t("anki.testOk", { version: test.version ?? "" })
-                : test.msg || t("anki.testFail")}
+                ? t("anki.testOk")
+                : test.auto
+                  ? t("anki.autoFail")
+                  : test.msg || t("anki.testFail")}
             </span>
           </div>
         )}
 
         <div className="row-between sep">
-          <div className="field wide">
-            <span>{t("anki.deck")}</span>
-            <select
-              value={anki.deck}
-              onChange={(e) => patch({ anki: { ...anki, deck: e.target.value } })}
-            >
-              {anki.decks.length ? (
-                anki.decks.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))
-              ) : (
-                <option value="">{t("anki.selectUnset")}</option>
-              )}
-            </select>
+          <span className="row-sub">{t("anki.companionHint")}</span>
+          <div className="row-ctl">
+            {/* 就绪与配置互斥：未配置 = 按钮引导触发；已配置 = 徽标表达成功，
+                不再提供无意义的再配置入口 */}
+            {companionReady ? (
+              <span className="ready-badge">
+                <Check size={11} strokeWidth={2.5} />
+                {t("anki.readyBadge")}
+              </span>
+            ) : (
+              <button
+                className="btn sm"
+                disabled={creating}
+                onClick={createCompanions}
+                title={t("anki.companionUse")}
+              >
+                {creating ? t("anki.companionCreating") : t("anki.companionCreate")}
+              </button>
+            )}
           </div>
         </div>
-
-        <div className="row-between sep">
-          <div className="field wide">
-            <span>{t("anki.modelName")}</span>
-            <select
-              value={anki.modelName}
-              onChange={(e) => patch({ anki: { ...anki, modelName: e.target.value } })}
-            >
-              {anki.models.length ? (
-                anki.models.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))
-              ) : (
-                <option value={anki.modelName}>{anki.modelName || t("anki.selectUnset")}</option>
-              )}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <h2 className="sec">{t("anki.fieldsSec")}</h2>
-      <div className="card">
-        <div className="row-between">
-          <div className="row-sub">{t("anki.fieldsHint")}</div>
-        </div>
-        {fields.map((f) => {
-          // 值分类：空 = 不填；预设 = 语义选项直接下拉；其余 = 自定义模板
-          const val = anki.fieldTemplates[f] ?? "";
-          const isPreset = val === "" || SOURCE_PRESETS.some(([p]) => p === val);
-          const showCustom = Boolean(customMap[f]) || (val !== "" && !isPreset);
-          return (
-            <div className="row-between sep" key={f}>
-              <div className="field wide">
-                <span>{f}</span>
-                <select
-                  value={showCustom ? "custom" : val}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === "custom") {
-                      setCustomMap((m) => ({ ...m, [f]: true }));
-                      if (val === "") setFieldTpl(f, "{text}");
-                      return;
-                    }
-                    setCustomMap((m) => ({ ...m, [f]: false }));
-                    // 空值同样落盘：Rust 侧跳过空模板，语义即「不填」
-                    setFieldTpl(f, v);
-                  }}
-                >
-                  <option value="">{t("anki.mapNone")}</option>
-                  {SOURCE_PRESETS.map(([p, key]) => (
-                    <option key={p} value={p}>
-                      {t(key)}
-                    </option>
-                  ))}
-                  <option value="custom">{t("anki.mapCustom")}</option>
-                </select>
-                {showCustom && (
-                  <input
-                    value={val}
-                    placeholder="{source} · {date}"
-                    onChange={(e) => setFieldTpl(f, e.target.value)}
-                  />
-                )}
-              </div>
-            </div>
-          );
-        })}
-        {fields.length === 0 && (
+        {/* 未就绪且落在自定义类型时提示：建卡只按通用规则自动填充 */}
+        {!companionReady && !isCompanionModel(anki.modelName) && (
           <div className="row-between">
-            <span className="row-sub">{t("anki.fieldsUnavailable")}</span>
+            <span className="row-sub">{t("anki.customTypeInUse", { name: anki.modelName })}</span>
           </div>
         )}
-      </div>
-
-      <div className="card">
-        <div className="row-between">
-          <div className="field wide">
-            <span>{t("anki.tags")}</span>
-            <input
-              value={anki.tags}
-              placeholder={DEFAULT_TAGS}
-              onChange={(e) => patch({ anki: { ...anki, tags: e.target.value } })}
-            />
-          </div>
-          <button
-            className="btn sm"
-            disabled={anki.tags === DEFAULT_TAGS}
-            title={t("anki.resetTplTitle")}
-            onClick={() => patch({ anki: { ...anki, tags: DEFAULT_TAGS } })}
-          >
-            {t("common.resetDefault")}
-          </button>
-        </div>
-        <p className="row-sub">{t("anki.tagsVars", TEMPLATE_VARS)}</p>
       </div>
 
       <div className="save-bar">

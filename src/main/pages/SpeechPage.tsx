@@ -283,7 +283,7 @@ export default function SpeechPage({ settings, patch, saveNow }: PageProps) {
 
   return (
     <>
-      <h1>{t("nav.speech")}</h1>
+      {/* 无页级标题：左栏导航已标明页面，说明行直接开场 */}
       <p className="page-hint">{t("speech.hint")}</p>
 
       {status.supported && (

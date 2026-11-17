@@ -150,7 +150,7 @@ function ShortcutRecorder({
 
   return (
           <>
-            <h1>{t("nav.shortcuts")}</h1>
+            {/* 无页级标题：左栏导航已标明页面，说明行直接开场 */}
             <p className="page-hint">
               {t("sc.hint")}
             </p>

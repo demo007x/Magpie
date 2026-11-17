@@ -53,17 +53,17 @@ export default function AboutPage({ appVersion, upd, checking, runUpdateCheck }:
   useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
   return (
     <>
-      <h1>{t("nav.about")}</h1>
-      <p className="page-hint">{t("about.hint")}</p>
+      {/* 品牌卡即页面主角，不设页级标题（h1/hint 与卡片信息重复）。
+          两行文案各司其职：tagline 说「是什么」（与官网 hero 同源），slogan 是理念签名 */}
       <div className="card about-card">
         <img className="mark big" src={markIcon} alt={t("main.appName")} />
-        <div className="about-name">{t("main.appName")}</div>
-        <div className="about-slogan">{t("about.slogan")}</div>
-        <div className="about-desc">{t("about.desc")}</div>
-        <div className="about-motto">{t("about.motto")}</div>
-        <div className="about-ver">{t("about.version", { version: appVersion || "—" })}</div>
+        <div className="about-info">
+          <div className="about-name">{t("main.appName")}</div>
+          <div className="about-tagline">{t("about.tagline")}</div>
+          <div className="about-slogan">{t("about.slogan")}</div>
+          <div className="about-ver">{t("about.version", { version: appVersion || "—" })}</div>
+        </div>
       </div>
-      <h2 className="sec">{t("about.updateSec")}</h2>
       <div className="card">
         <div className="row-between">
           <div>
@@ -85,7 +85,6 @@ export default function AboutPage({ appVersion, upd, checking, runUpdateCheck }:
           </div>
         </div>
       </div>
-      <h2 className="sec">{t("about.feedbackSec")}</h2>
       <div className="card">
         <div className="row-between">
           <div>

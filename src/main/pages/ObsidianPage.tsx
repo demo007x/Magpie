@@ -23,7 +23,7 @@ export default function ObsidianPage({ settings, patch, save, saved }: PageProps
   useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
   return (
           <>
-            <h1>Obsidian</h1>
+            {/* 无页级标题：左栏导航已标明页面，说明行直接开场 */}
             <p className="page-hint">
               {t("obsidian.hint")}
             </p>

@@ -20,10 +20,13 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "nav.search": "Search",
   "nav.obsidian": "Obsidian",
   "nav.anki": "Anki",
-  "nav.blocklist": "Blocklist",
+  "nav.blocklist": "Blocked apps",
   "nav.general": "General",
   "nav.perms": "Permissions",
   "nav.about": "About",
+  "nav.group.ai": "AI services",
+  "nav.group.dest": "Save to",
+  "nav.group.app": "Settings",
 
   // Shared across pages
   "common.dragToSort": "Drag to reorder",
@@ -39,12 +42,11 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "common.done": "Done",
 
   // Capture page
-  "capture.hint":
-    "Choose which actions the floating bar shows and in what order: drag the handle to reorder, use the switch to turn one off. Switches, order and custom action edits apply right away and save automatically.",
+  "capture.actionsHint":
+    "Drag the handle to reorder, use the switch to turn one off; changes apply right away and save automatically.",
   "capture.extractHint":
-    "“Extract info” only shows up when the selected text contains a URL, email, phone number, verification code, or date{addr}.",
+    "These actions only show up when the selected text contains a URL, email, phone number, verification code, or date{addr}.",
   "capture.extractHintAddr": " / location",
-  "capture.capsuleSec": "Capsules",
   "capture.showCount": "Actions shown",
   "capture.showCountHint": "Default 4 (2–8)",
   "capture.allOff":
@@ -56,8 +58,6 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "capture.customMax": "Up to {max} custom actions",
   "capture.customAddTitle": "Create a custom AI action",
   "capture.addCustom": "New AI action",
-  "capture.actionsSec": "Actions",
-  "capture.extractSec": "Extract info",
   "capture.extractModeAria": "Extraction method",
   "capture.modeAi": "AI understanding",
   "capture.modeSystem": "System detection",
@@ -105,10 +105,8 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "sc.reset": "Reset",
 
   // Model services page
-  "model.title": "Model services",
   "model.hint":
     "Pick a preset to add a service — you only need the API key and model name; the default service is used by all actions. Keys are stored on this device only. Click “Save changes” to make them permanent.",
-  "model.servicesSec": "Services",
   "model.unnamedSvc": "Unnamed service",
   "model.noModel": "No model set",
   "model.fName": "Name",
@@ -129,7 +127,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Translate page
   "translate.hint":
-    "Use “Add service” to pick a provider; adding it turns it on right away. Switches turn services off without losing their settings, and keys are filled in inline. “Default” is the one-click option; drag to reorder. The translation direction is detected automatically. Click “Save changes” to make them permanent.",
+    "The default service is the one-click option in Translate; drag to reorder the list. Translation direction is detected automatically. Click “Save changes” to apply changes.",
   "translate.setDefaultTitle": "Set as the default translate service",
   "translate.enableHint": "Turn on to show it in the Translate list",
   "translate.removeSvcTitle": "Remove this service",
@@ -143,7 +141,6 @@ export const enMain: Record<keyof typeof zhMain, string> = {
     "Remove “{name}”? Keys you entered will be deleted too. To keep them, just turn the service off.",
 
   // Search engines page
-  "search.title": "Search engines",
   "search.hint":
     "Drag to reorder; “Default” is the one-click option. {qq} in the link is replaced with the selected text. Click “Save changes” to make them permanent.",
   "search.setDefaultTitle": "Set as the default engine",
@@ -179,32 +176,20 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Anki page
   "anki.hint":
-    "Saves selections and results as Anki cards in one click (in the result window the AI answer becomes the back side). Requires Anki running locally with the AnkiConnect add-on. Once configured, an Anki action appears on the capsule and result window. Changes take effect after saving.",
+    "Turn a selection into an Anki card in one click — the original text on the front, the translation, explanation or summary you just got on the back. Requires Anki running locally with the AnkiConnect add-on; this page connects automatically. Changes take effect after saving.",
   "anki.connectUrl": "AnkiConnect URL (default localhost:8765)",
-  "anki.test": "Test connection",
-  "anki.testing": "Connecting…",
-  "anki.testOk": "Connected — Anki version {version}",
+  "anki.test": "Re-detect",
+  "anki.testing": "Detecting…",
+  "anki.testOk": "Connected",
   "anki.testFail": "Connection failed: make sure Anki is running with the AnkiConnect add-on installed",
-  "anki.deck": "Default deck",
-  "anki.modelName": "Note type",
-  "anki.selectUnset": "Available after a successful connection test",
-  "anki.tplVars": "Variables: {fText} selected text · {fResult} AI answer (result window) / selection · {fSource} source app · {fDate} date · {fTime} time · {fUrl} page URL",
-  "anki.mapNone": "(leave empty)",
-  "anki.mapText": "Selected text",
-  "anki.mapResult": "AI answer (result window) / selection",
-  "anki.mapSourceDate": "Source · date",
-  "anki.mapSource": "Source app",
-  "anki.mapDate": "Date",
-  "anki.mapTime": "Time",
-  "anki.mapUrl": "Page URL",
-  "anki.mapCustom": "Custom template…",
-  "anki.fieldsSec": "Field mapping",
-  "anki.fieldsHint":
-    "Assign what Magpie provides to card fields via the dropdowns; \"Custom template…\" allows hand-written variable combinations. On connection test the mapping is pre-filled: field 1 = selected text; for two-field types field 2 = AI answer (result window) / selection.",
-  "anki.fieldsUnavailable": "Anki didn't respond or the fields couldn't be read — make sure Anki is running, then run the connection test again.",
-  "anki.tags": "Tags (space-separated)",
-  "anki.tagsVars": "Variables: {fDate} date · {fSource} source app",
-  "anki.resetTplTitle": "Restore the factory default template",
+  "anki.autoFail": "Anki not detected — it will connect automatically once Anki is running",
+  "anki.companionHint":
+    "Creates a \"Magpie\" deck in Anki, plus two card templates: Word and Content.",
+  "anki.companionCreate": "Set up in one click",
+  "anki.companionUse": "Existing decks and templates are not created twice",
+  "anki.readyBadge": "Ready",
+  "anki.companionCreating": "Setting up…",
+  "anki.customTypeInUse": "Using your own note type \"{name}\".",
 
   // Prompts page
   "prompts.hint":
@@ -224,8 +209,6 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "blocklist.pickApp": "Choose app…",
 
   // Permissions page
-  "perms.hint":
-    "Text capture needs Accessibility and Input Monitoring; screenshots need Screen Recording. Come back after granting and the status refreshes on its own.",
   "perms.accessibility": "Accessibility",
   "perms.accessibilityMissing": "Required for text capture — grant it to read selected text.",
   "perms.accessibilityDesc": "Reads selected text for translate, explain and summarize.",
@@ -249,26 +232,19 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "perms.grantScreen": "Allow Screen Recording",
 
   // General page
-  "general.hint":
-    "App-level settings for appearance, launch, Dock and the result window. Changes apply immediately unless noted.",
-  "general.themeSec": "Appearance",
   "general.appearance": "App appearance",
   "general.appearanceAuto": "Auto",
   "general.appearanceLight": "Light",
   "general.appearanceDark": "Dark",
   "search.addCustom": "Custom",
-  "general.languageSec": "Language",
-  "general.launchSec": "Launch",
   "general.uiLocaleTitle": "Interface language",
   "general.uiLocaleSub": "Follow the system or pick one; applies immediately.",
   "general.uiLocaleAuto": "Auto",
   "general.launchAtLogin": "Launch at login",
   "general.launchAtLoginSub": "Runs quietly in the menu bar after login.",
   "general.setFailed": "Couldn't update the setting: {error}",
-  "general.dockSec": "Dock",
   "general.dockIcon": "Show icon in the Dock",
   "general.dockIconSub": "When off, the app runs in the menu bar only; quit from its right-click menu.",
-  "general.resultSec": "Result window",
   "general.resultSize": "Default size",
   "general.sizeCompactH": "Compact · Wide",
   "general.sizeCompactV": "Compact · Tall",
@@ -313,12 +289,9 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "speech.uninstallFailed": "Couldn't turn it off: {error}",
 
   // About page
-  "about.hint": "Version info, update checks and ways to reach us.",
+  "about.tagline": "An immersive, customizable AI selection tool",
   "about.slogan": "Glean from every selection, gain from every read",
-  "about.desc": "Magpie · the reading companion that makes any selected text instantly clear",
-  "about.motto": "From reading, into thought",
   "about.version": "Version {version}",
-  "about.updateSec": "Updates",
   "about.checkTitle": "Check for new versions",
   "about.checking": "Checking…",
   "about.checkNow": "Check for updates",
@@ -330,7 +303,6 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "about.updateFailed":
     "The check didn't go through this time (no network, or GitHub is temporarily unreachable). It will retry automatically next launch.",
   "about.updateIdle": "You'll be told when a new version is out — nothing installs automatically.",
-  "about.feedbackSec": "Feedback",
   "about.feedbackSub": "Found a problem or have an idea? We'd love to hear it.",
   "about.feedbackFeishu": "Feishu form",
   "about.copyLog": "Copy logs",

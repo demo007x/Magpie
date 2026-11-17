@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import markIcon from "./assets/mark.svg";
 import { toast } from "../shared/toast";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
@@ -22,11 +23,11 @@ import { t, useLocale } from "../shared/i18n";
 import {
   translateMissingReason,
 } from "../shared/translate";
-import markIcon from "./assets/mark.svg";
 import type { Settings } from "../shared/types";
 import PromptsPage from "./pages/PromptsPage";
 import SearchPage from "./pages/SearchPage";
 import PermsPage from "./pages/PermsPage";
+import BlocklistPage from "./pages/BlocklistPage";
 import TranslatePage from "./pages/TranslatePage";
 import SpeechPage from "./pages/SpeechPage";
 import ObsidianPage from "./pages/ObsidianPage";
@@ -36,20 +37,19 @@ import CapturePage from "./pages/CapturePage";
 import GeneralPage from "./pages/GeneralPage";
 import AboutPage, { type UpdateInfo } from "./pages/AboutPage";
 import ShortcutsPage from "./pages/ShortcutsPage";
-import BlocklistPage from "./pages/BlocklistPage";
 
 type Page =
   | "model"
   | "prompts"
   | "capture"
   | "shortcuts"
-  | "perms"
+  | "blocklist"
   | "translate"
   | "speech"
   | "search"
   | "obsidian"
   | "anki"
-  | "blocklist"
+  | "perms"
   | "general"
   | "about";
 
@@ -58,17 +58,18 @@ const NAV_ICONS: Record<Page, React.ReactNode> = {
   prompts: <Sparkles size={15} strokeWidth={1.75} />,
   capture: <TextCursorInput size={15} strokeWidth={1.75} />,
   shortcuts: <Keyboard size={15} strokeWidth={1.75} />,
-  perms: <ShieldCheck size={15} strokeWidth={1.75} />,
+  blocklist: <Ban size={15} strokeWidth={1.75} />,
   translate: <Languages size={15} strokeWidth={1.75} />,
   speech: <Volume2 size={15} strokeWidth={1.75} />,
   search: <Search size={15} strokeWidth={1.75} />,
   obsidian: <NotebookPen size={15} strokeWidth={1.75} />,
   anki: <Layers size={15} strokeWidth={1.75} />,
-  blocklist: <Ban size={15} strokeWidth={1.75} />,
+  perms: <ShieldCheck size={15} strokeWidth={1.75} />,
   general: <SlidersHorizontal size={15} strokeWidth={1.75} />,
   about: <Info size={15} strokeWidth={1.75} />,
 };
 const IS_MAC = /Mac/i.test(navigator.platform);
+
 
 // 系统内置引擎（与 Rust default_engines 同名单）：不可删除，只可停用/排序
 
@@ -82,13 +83,66 @@ const IS_MAC = /Mac/i.test(navigator.platform);
 
 export default function App() {
   useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
-  const [page, setPage] = useState<Page>("model");
+  const [settings, setSettings] = useState<Settings | null>(null);
+  // 启动默认页（智能默认）：一个模型服务都没配过 → 停在「模型」页（引导完成 BYOK
+  // 关键配置）；已配置 → 进「划词」页（产品核心）。用户点过导航后 userPage 落定，
+  // 此后去哪页完全由用户掌控
+  const [userPage, setUserPage] = useState<Page | null>(null);
+  const page = userPage ?? (settings && settings.providers.length > 0 ? "capture" : "model");
+  const setPage = (p: Page) => setUserPage(p);
   // 应用版本：运行时读取 tauri.conf.json 的权威值（不再手写，避免与配置漂移）
   const [appVersion, setAppVersion] = useState("");
-  // 划词捕获能力位：后端真实可用才显示「划词/黑名单」导航（Windows 后端落地自动出现）
+  // 划词捕获能力位：后端真实可用才显示「划词/禁用应用」导航（Windows 后端落地自动出现）
   const [captureReady, setCaptureReady] = useState(false);
   // 本地朗读能力位：仅 macOS（音色包按需下载，与平台能力门控同一约定）
   const [speechReady, setSpeechReady] = useState(false);
+
+  /** T 型导航分组（顶部横条切组、左栏切组内页）：每页恰属一组——组无独立
+      状态，由 page 推导，点组 tab 跳该组第一个可见页。13 页（黑名单、权限
+      曾并入他页，2026-11-17 起各自恢复独立子菜单）。平台能力门控在渲染层生效 */
+  const NAV_GROUPS: Array<{
+    label: string;
+    items: Array<[Page, string, boolean]>;
+  }> = [
+    {
+      label: "nav.capture",
+      items: [
+        ["capture", "nav.capture", captureReady],
+        ["shortcuts", "nav.shortcuts", true],
+        // 禁用应用只影响划词行为，随划词能力显隐
+        ["blocklist", "nav.blocklist", captureReady],
+      ],
+    },
+    {
+      label: "nav.group.ai",
+      items: [
+        ["model", "nav.model", true],
+        ["prompts", "nav.prompts", true],
+        ["translate", "nav.translate", true],
+        ["speech", "nav.speech", speechReady],
+        ["search", "nav.search", true],
+      ],
+    },
+    {
+      label: "nav.group.dest",
+      items: [
+        ["obsidian", "nav.obsidian", true],
+        ["anki", "nav.anki", true],
+      ],
+    },
+    {
+      label: "nav.group.app",
+      items: [
+        // 授权仅在 macOS 有意义（辅助功能/输入监控/屏幕录制），Windows 无此项
+        ["perms", "nav.perms", IS_MAC],
+        ["general", "nav.general", true],
+        ["about", "nav.about", true],
+      ],
+    },
+  ];
+  const activeGroup =
+    NAV_GROUPS.find((g) => g.items.some(([id]) => id === page)) ?? NAV_GROUPS[0];
+
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => undefined);
@@ -169,11 +223,6 @@ export default function App() {
     invoke("set_ui_locale", { locale: pref }).catch(() => undefined);
   };
 
-  /** 结果窗口预设档位（逻辑坐标），横竖两个方向 × 紧凑/宽敞两个量级：
-      横向宽度顶格 560（拖拽钳制上限）、竖向大档高度顶格 800（同上）。
-      点选立即作用于结果窗并持久化（走 Rust 命令，不经过本页保存按钮）；
-      用户拖拽微调仍会记忆，拖后与预设不一致时高亮自然消失 */
-  const [settings, setSettings] = useState<Settings | null>(null);
   // settings 的同步镜像：同一 tick 内连发的多个 patch 依次叠加在 ref 上，紧随其后
   // 的 saveNow() 读 ref 即得最新值（函数式 setState 的更新在事件结束后才提交，
   // 靠它做「改完即存」会存到旧值——自定义动作丢字问题的同源坑）
@@ -291,57 +340,58 @@ export default function App() {
 
   return (
     <div className="shell">
-      <aside className="side">
+      {/* T 型两级导航：顶部横条切组、左侧竖栏切组内页面。组无独立状态——
+          由 page 推导（页面必属于某组），点组 tab 跳该组第一个可见页 */}
+      <header className="topbar">
+        {/* 品牌区一行化：图标 + 名称；版本号只在关于页出现（顶栏那份是冗余） */}
         <div className="brand">
           <img className="mark" src={markIcon} alt={t("main.appName")} />
-          <div className="brand-text">
-            <div className="brand-name">{t("main.appName")}</div>
-            <div className="brand-ver">{appVersion || "—"}</div>
-          </div>
+          <div className="brand-name">{t("main.appName")}</div>
         </div>
-        <nav className="nav">
-          {(
-            [
-              // 导航用最短名词，风格统一：不带「设置/服务/引擎」等可由
-              // 「这是设置 App」推断的后缀；品牌名（Obsidian）保留原文。
-              // 平台能力门控：本平台没有的能力不显示（winVmac Windows 约定）——
-              // 划词/黑名单随 capture_status.captureAvailable 自动显隐
-              ["capture", "nav.capture", captureReady],
-              ["shortcuts", "nav.shortcuts", true],
-              ["model", "nav.model", true],
-              ["prompts", "nav.prompts", true],
-              ["translate", "nav.translate", true],
-              ["speech", "nav.speech", speechReady],
-              ["search", "nav.search", true],
-              ["obsidian", "nav.obsidian", true],
-              ["anki", "nav.anki", true],
-              ["blocklist", "nav.blocklist", captureReady],
-              ["general", "nav.general", true],
-              ["perms", "nav.perms", IS_MAC],
-              ["about", "nav.about", true],
-            ] as Array<[Page, string, boolean]>
-          )
-            .filter(([, , show]) => show)
-            .map(([id, labelKey]) => (
-              <button
-                key={id}
-                data-nav={id}
-                className={`nav-item ${page === id ? "active" : ""}`}
-                onClick={() => setPage(id)}
-              >
-                <span className="nav-ic">{NAV_ICONS[id]}</span>
-                {t(labelKey)}
-              </button>
-            ))}
-        </nav>
-      </aside>
+        <div className="group-tabs">
+          {NAV_GROUPS.map((g) => (
+            <button
+              key={g.label}
+              className={`group-tab ${g.items.some(([id]) => id === page) ? "on" : ""}`}
+              onClick={() => {
+                const first = g.items.find(([, , show]) => show);
+                if (first) setPage(first[0]);
+              }}
+            >
+              {t(g.label)}
+            </button>
+          ))}
+        </div>
+      </header>
+      <div className="shell-body">
+        <aside className="side">
+          <nav className="nav">
+            {activeGroup.items
+              .filter(([, , show]) => show)
+              .map(([id, labelKey]) => (
+                <button
+                  key={id}
+                  data-nav={id}
+                  className={`nav-item ${page === id ? "active" : ""}`}
+                  onClick={() => setPage(id)}
+                >
+                  <span className="nav-ic">{NAV_ICONS[id]}</span>
+                  {t(labelKey)}
+                </button>
+              ))}
+          </nav>
+        </aside>
 
       <main className="content">
-        {page === "capture" && (
-          <CapturePage settings={settings} patch={patch} saveNow={saveNow} />
+          {page === "capture" && (
+            <CapturePage settings={settings} patch={patch} saveNow={saveNow} />
         )}
         {page === "shortcuts" && (
           <ShortcutsPage settings={settings} patch={patch} save={save} saved={saved} />
+        )}
+
+        {page === "blocklist" && captureReady && (
+          <BlocklistPage settings={settings} patch={patch} saveNow={saveNow} />
         )}
 
         {page === "speech" && (
@@ -353,8 +403,6 @@ export default function App() {
           <PromptsPage settings={settings} patch={patch} save={save} saved={saved} />
         )}
 
-
-        {page === "perms" && <PermsPage />}
 
         {page === "translate" && <TranslatePage
           settings={settings}
@@ -370,10 +418,11 @@ export default function App() {
 
         {page === "obsidian" && <ObsidianPage settings={settings} patch={patch} save={save} saved={saved} />}
 
-        {page === "anki" && <AnkiPage settings={settings} patch={patch} save={save} saved={saved} />}
+        {page === "anki" && (
+          <AnkiPage settings={settings} patch={patch} save={save} saved={saved} saveNow={saveNow} />
+        )}
 
-        {page === "blocklist" && <BlocklistPage settings={settings} patch={patch} save={save} saved={saved} />}
-
+        {page === "perms" && IS_MAC && <PermsPage />}
         {page === "general" && (
           <GeneralPage
             settings={settings}
@@ -395,6 +444,7 @@ export default function App() {
           />
         )}
       </main>
+      </div>
     </div>
   );
 }

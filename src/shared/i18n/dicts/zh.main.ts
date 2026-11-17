@@ -18,10 +18,13 @@ export const zhMain = {
   "nav.search": "搜索",
   "nav.obsidian": "Obsidian",
   "nav.anki": "Anki",
-  "nav.blocklist": "黑名单",
+  "nav.blocklist": "禁用应用",
   "nav.general": "通用",
-  "nav.perms": "权限",
+  "nav.perms": "授权",
   "nav.about": "关于",
+  "nav.group.ai": "AI 服务",
+  "nav.group.dest": "应用集成",
+  "nav.group.app": "设置",
 
   // 跨页面共用
   "common.dragToSort": "拖动排序",
@@ -37,11 +40,9 @@ export const zhMain = {
   "common.done": "完成",
 
   // 划词页
-  "capture.hint":
-    "设定浮动条显示哪些动作及其排列顺序：拖动把手调序，开关停用某项。开关、顺序与自定义动作的编辑即时生效并自动保存。",
-  "capture.extractHint": "「提取信息」仅在所选文字含网址 / 邮箱 / 电话 / 验证码 / 日期{addr}时出现。",
+  "capture.actionsHint": "拖动把手调整顺序，开关停用某项；更改即时生效并自动保存。",
+  "capture.extractHint": "以下动作仅在所选文字包含网址 / 邮箱 / 电话 / 验证码 / 日期{addr}时出现。",
   "capture.extractHintAddr": " / 地点",
-  "capture.capsuleSec": "胶囊",
   "capture.showCount": "显示动作数",
   "capture.showCountHint": "默认 4（可设 2–8）",
   "capture.allOff":
@@ -53,8 +54,6 @@ export const zhMain = {
   "capture.customMax": "最多 {max} 个自定义动作",
   "capture.customAddTitle": "新建一个自定义 AI 动作",
   "capture.addCustom": "新建 AI 动作",
-  "capture.actionsSec": "动作",
-  "capture.extractSec": "提取信息",
   "capture.extractModeAria": "提取方式",
   "capture.modeAi": "AI 理解",
   "capture.modeSystem": "系统识别",
@@ -100,10 +99,8 @@ export const zhMain = {
   "sc.reset": "重置",
 
   // 模型服务页
-  "model.title": "模型服务",
   "model.hint":
     "添加服务选预设，只填密钥和模型名；设为默认的一项供所有动作使用。密钥仅保存在本机。点「保存更改」永久生效。",
-  "model.servicesSec": "服务",
   "model.unnamedSvc": "未命名服务",
   "model.noModel": "未配置模型",
   "model.fName": "名称",
@@ -123,7 +120,7 @@ export const zhMain = {
 
   // 翻译页
   "translate.hint":
-    "「添加服务」选择服务商，添加即启用；开关可随时停用，配置保留；密钥在行内填写，「默认」为单击直达项，拖动调整顺序；译文方向自动识别。点「保存更改」永久生效。",
+    "默认项即划词「翻译」的单击直达项，拖动调整列表顺序；译文方向自动识别。更改需点「保存更改」生效。",
   "translate.setDefaultTitle": "设为默认翻译服务",
   "translate.enableHint": "启用后进入「翻译」展开列表",
   "translate.removeSvcTitle": "移除该服务",
@@ -136,7 +133,6 @@ export const zhMain = {
   "translate.removeText": "移除「{name}」？已填写的密钥会一并删除；停用可保留配置。",
 
   // 搜索引擎页
-  "search.title": "搜索引擎",
   "search.hint":
     "拖动调整顺序，「默认」为单击直达项；链接中的 {qq} 代入选中文字。点「保存更改」永久生效。",
   "search.setDefaultTitle": "设为默认引擎",
@@ -170,32 +166,19 @@ export const zhMain = {
 
   // Anki 页
   "anki.hint":
-    "把划词与结果一键存成 Anki 卡片（结果窗语境背面为 AI 释义）。需要本机运行 Anki 并安装 AnkiConnect 插件。配置后，胶囊与结果窗会出现「Anki」。更改需保存后生效。",
+    "划中的词句一键存入 Anki——正面是原文，背面是你刚拿到的翻译、解释或总结。需要本机运行 Anki 并安装 AnkiConnect 插件，本页会自动连接。更改需保存后生效。",
   "anki.connectUrl": "AnkiConnect 地址（默认本机 8765）",
-  "anki.test": "连接测试",
-  "anki.testing": "连接中…",
-  "anki.testOk": "已连接，Anki 版本 {version}",
+  "anki.test": "重新检测",
+  "anki.testing": "检测中…",
+  "anki.testOk": "已连接",
   "anki.testFail": "连接失败：请确认 Anki 已启动并安装 AnkiConnect 插件",
-  "anki.deck": "默认牌组",
-  "anki.modelName": "笔记类型",
-  "anki.selectUnset": "连接测试成功后可选",
-  "anki.tplVars": "变量：{fText} 选中文本 · {fResult} AI 释义（结果窗）/ 原文 · {fSource} 来源应用 · {fDate} 日期 · {fTime} 时间 · {fUrl} 页面链接",
-  "anki.mapNone": "（不填）",
-  "anki.mapText": "选中文本",
-  "anki.mapResult": "AI 释义（结果窗）/ 原文",
-  "anki.mapSourceDate": "来源 · 日期",
-  "anki.mapSource": "来源应用",
-  "anki.mapDate": "日期",
-  "anki.mapTime": "时间",
-  "anki.mapUrl": "页面链接",
-  "anki.mapCustom": "自定义模板…",
-  "anki.fieldsSec": "字段映射",
-  "anki.fieldsHint":
-    "把拾趣提供的信息分配到卡片字段：下拉选数据来源，「自定义模板…」可手写变量组合。连接测试时自动预填：第 1 个字段 = 选中文本；恰好两个字段的类型第 2 个字段 = AI 释义（结果窗）/ 原文。",
-  "anki.fieldsUnavailable": "Anki 未响应或字段读取失败——确认 Anki 已启动后重新连接测试。",
-  "anki.tags": "标签（空格分隔）",
-  "anki.tagsVars": "变量：{fDate} 日期 · {fSource} 来源应用",
-  "anki.resetTplTitle": "恢复出厂默认模板",
+  "anki.autoFail": "未检测到 Anki——启动 Anki 后本页会自动连接",
+  "anki.companionHint": "在 Anki 中创建「拾趣」牌组，以及单词卡、内容卡两种卡片模板。",
+  "anki.companionCreate": "一键配置",
+  "anki.companionUse": "已存在的牌组和模板不会重复创建",
+  "anki.readyBadge": "已就绪",
+  "anki.companionCreating": "配置中…",
+  "anki.customTypeInUse": "正在使用你自己的笔记类型「{name}」。",
 
   // 提示词页
   "prompts.hint": "编辑各动作发给模型的指令；{lang} 按界面语言解析为简体中文或 English，{date} 解析为当天日期，所选文字随后附带。更改需保存后生效。",
@@ -212,8 +195,7 @@ export const zhMain = {
   "blocklist.removeTitle": "移出禁用列表",
   "blocklist.pickApp": "选择应用…",
 
-  // 权限页
-  "perms.hint": "划词需「辅助功能」与「输入监控」，识图需「屏幕录制」。授权后返回，状态自动刷新。",
+  // 授权页
   "perms.accessibility": "辅助功能",
   "perms.accessibilityMissing": "划词必需，授权后才能读取所选文字。",
   "perms.accessibilityDesc": "读取所选文字，供翻译、解释、总结使用。",
@@ -236,25 +218,19 @@ export const zhMain = {
   "perms.grantScreen": "授权屏幕录制",
 
   // 通用页
-  "general.hint": "主题、启动、程序坞与结果窗口的应用级设置，除注明外更改即时生效。",
-  "general.themeSec": "主题",
   "general.appearance": "应用外观",
   "general.appearanceAuto": "跟随系统",
   "general.appearanceLight": "亮色",
   "general.appearanceDark": "暗色",
   "search.addCustom": "自定义",
-  "general.languageSec": "语言",
-  "general.launchSec": "启动",
   "general.uiLocaleTitle": "界面语言",
   "general.uiLocaleSub": "跟随系统或手动选择，即时生效。",
   "general.uiLocaleAuto": "跟随系统",
   "general.launchAtLogin": "登录时自动启动",
   "general.launchAtLoginSub": "启动后在菜单栏后台运行。",
   "general.setFailed": "设置失败：{error}",
-  "general.dockSec": "程序坞",
   "general.dockIcon": "在程序坞中显示图标",
   "general.dockIconSub": "关闭后仅保留菜单栏运行，从菜单栏右键退出。",
-  "general.resultSec": "结果窗口",
   "general.resultSize": "默认尺寸",
   "general.sizeCompactH": "紧凑·横",
   "general.sizeCompactV": "紧凑·竖",
@@ -298,12 +274,9 @@ export const zhMain = {
   "speech.uninstallFailed": "关闭失败：{error}",
 
   // 关于页
-  "about.hint": "查看版本信息、检查更新与反馈问题。",
+  "about.tagline": "沉浸式自定义 AI 划词工具",
   "about.slogan": "划词拾趣，阅有所得",
-  "about.desc": "拾趣 Magpie · 划词即懂的阅读伴侣",
-  "about.motto": "得于阅，存于思",
   "about.version": "版本 {version}",
-  "about.updateSec": "更新",
   "about.checkTitle": "检查新版本",
   "about.checking": "检查中…",
   "about.checkNow": "检查更新",
@@ -312,7 +285,6 @@ export const zhMain = {
   "about.updateCurrent": "已是最新版本（v{current}），检查于 {time}。拾趣每天自动检查一次，也可随时手动检查。",
   "about.updateFailed": "这次没检查成（网络不通或 GitHub 暂时访问不了），下次启动会自动重试。",
   "about.updateIdle": "有新版本时提醒你，不会自动安装。",
-  "about.feedbackSec": "反馈问题",
   "about.feedbackSub": "遇到问题或有想法，欢迎告诉我们。",
   "about.feedbackFeishu": "飞书反馈",
   "about.copyLog": "复制日志",

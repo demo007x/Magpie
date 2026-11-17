@@ -14,7 +14,3 @@ export const actionDesc = (id: string): string => t(`actionDesc.${id}`);
 export const DEFAULT_EXCERPT_TEMPLATE = "- **{time}** · {source}\n  > {text}";
 export const DEFAULT_TASK_TEMPLATE = "- [ ] {text} {dueTag}";
 export const DEFAULT_CARD_TEMPLATE = "- **{time}** · {source}\n  > {text}";
-
-/** Anki 模板出厂默认值，与 src-tauri/src/settings.rs 的 AnkiConfig::default 保持一致
-    （「恢复默认」按钮的目标值；anki 配置为全量存储，没有缺省回落机制）。 */
-export const DEFAULT_TAGS = "magpie {date}";
