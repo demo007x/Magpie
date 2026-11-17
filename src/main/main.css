@@ -321,6 +321,23 @@ h2.sec {
   margin-top: -4px; /* 同组卡片贴合 */
 }
 
+/* 行内文字链接（错误提示内嵌教程入口等）：主题蓝 + 下划线，hover 减淡 */
+.text-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  margin-left: 6px;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.text-link:hover {
+  opacity: 0.8;
+}
+
 /* 卡内提示行：卡顶的次级说明（替代页首导读——说明跟着卡走，卡自述） */
 .card-hint {
   margin: -2px 0 10px;

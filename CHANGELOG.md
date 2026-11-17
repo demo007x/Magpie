@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- 本文件仅在发版时依据 docs/release/release-vX.Y.Z.md 的已勾选条目生成版本节，开发阶段勿改 -->
 
+## [0.1.23] - 2026-11-17
+
+### Added
+
+- Save to Anki, in one click: an Anki action appears on the capsule and in the result window once a local Anki with the AnkiConnect add-on is detected. The card's front is the selected text; clipping from the result window stores the latest action's result (translation / explanation / summary) on the back, and cards are tagged by day (magpie + date) with source, link and date attached.
+- Cards go into the Magpie deck with Word / Content note types chosen automatically by selection length — a word or phrase lands on a large, centered word card, longer text on a content card with line breaks. The capsule's chevron lets you pick the card type yourself.
+- One-click setup on the Anki settings page: after the connection is detected, a single button creates the Magpie deck (with two sub-decks) and both companion note types with factory styling. Decks and templates that already exist are skipped, your own content is never touched, and custom note types fall back intelligently; existing installations get the companion card styles upgraded silently on the next connection check.
+- AI results saved to Anki render as markdown — bold, lists and code blocks display properly instead of raw symbols — exactly as they do in the result window; machine translations are stored as plain text. Duplicate cards are detected with a clear message, and Anki must be running (a failed save tells you so).
+
+### Changed
+
+- The settings window opens with a new layout: the brand sits on a single line (icon + name) and the four top-level groups — Capture, AI services, Save to and Settings — are centered in a macOS-style segmented control with a floating white card marking the active group. Two groups were renamed: "AI 能力" → "AI services", "应用" → "Settings".
+- Settings pages drop their page and section headings — the sidebar already names the page and row titles describe themselves — so every page opens straight onto its content. Cards are softened (12 px radius, subtle lift), and the About page is now a brand card: larger icon, the positioning line "An immersive, customizable AI selection tool", slogan and version.
+- Two pages return to the sidebar as their own entries: Permissions (授权 — Accessibility, Input Monitoring, Screen Recording and the capture health check) sits above General on macOS, and Blocked apps (禁用应用, renamed from the blacklist) follows Shortcuts in the Capture group.
+- Smart start page: the app opens on the Model page until a model service is configured — guiding the one setup the product requires — and on Capture afterwards. Wherever you navigate, your own choice always wins.
+- Tray menu tidied: "Home" and "Settings" merge into a single "Open Magpie" that follows the smart start page; "Capture from Finder Image" is renamed "Capture from Image File…" (图片取字, pairing with 识图取字); "Quit" becomes "Quit Magpie".
+- Help text now lives where the setting is: the Capture page's intro is split into hint lines inside the action card (how reordering and toggles work) and the info-extraction card (when those actions appear), and the Translate page's six-sentence intro is tightened to the facts you can't see on screen — what Default is for, what dragging changes, and that changes need Save.
+
+### Fixed
+
+- The floating capsule could take seconds to dismiss in apps where selection queries keep failing (Electron-based apps such as ZCode): each failed gesture blocked the pipeline for 5+ seconds, so clicking elsewhere or pressing Esc queued behind it. Dismissal is now immediate, with normal selection behaviour and success rates unchanged.
+
 ## [0.1.22] - 2026-11-11
 
 ### Added

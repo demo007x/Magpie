@@ -173,6 +173,7 @@ export const zhMain = {
   "anki.testOk": "已连接",
   "anki.testFail": "连接失败：请确认 Anki 已启动并安装 AnkiConnect 插件",
   "anki.autoFail": "未检测到 Anki——启动 Anki 后本页会自动连接",
+  "anki.tutorialLink": "Anki 安装教程",
   "anki.companionHint": "在 Anki 中创建「拾趣」牌组，以及单词卡、内容卡两种卡片模板。",
   "anki.companionCreate": "一键配置",
   "anki.companionUse": "已存在的牌组和模板不会重复创建",

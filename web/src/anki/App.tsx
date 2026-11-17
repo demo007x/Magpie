@@ -89,6 +89,31 @@ function AnkiNav() {
     耗时标注回答「要多久」，站点动效语言（Reveal/渐变轨）的延伸 */
 const STEP_ICONS = [Download, Plug, MousePointerClick, Wand2, ScanText];
 
+/** 行内链接渲染：文案里的 [label](url) 转外链（下载 mention 直达 Releases/官网/插件页） */
+function Rich({ text }: { text: string }) {
+  const parts = text.split(/(\[[^\]]+\]\([^)]+\))/g);
+  return (
+    <>
+      {parts.map((p, i) => {
+        const m = p.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+        return m ? (
+          <a
+            key={i}
+            href={m[2]}
+            target="_blank"
+            rel="noreferrer"
+            className="text-accent underline-offset-2 transition-colors hover:underline"
+          >
+            {m[1]}
+          </a>
+        ) : (
+          p
+        );
+      })}
+    </>
+  );
+}
+
 function StepsTimeline({ steps }: { steps: AnkiCopy["steps"] }) {
   const railRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
@@ -125,12 +150,16 @@ function StepsTimeline({ steps }: { steps: AnkiCopy["steps"] }) {
                     {s.time}
                   </span>
                 </div>
-                <p className="mt-2.5 text-[14px] leading-relaxed text-mute">{s.body}</p>
+                <p className="mt-2.5 text-[14px] leading-relaxed text-mute">
+                  <Rich text={s.body} />
+                </p>
                 <ul className="mt-3 space-y-2">
                   {s.points.map((p) => (
                     <li key={p} className="flex gap-2.5 text-[13px] leading-relaxed text-mute">
                       <Check size={14} strokeWidth={2.2} className="mt-0.5 shrink-0 text-accent" />
-                      {p}
+                      <span>
+                        <Rich text={p} />
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -203,7 +232,9 @@ export function AnkiApp() {
             <Reveal key={it.title}>
               <div className="lift rounded-2xl border border-line bg-panel p-6">
                 <h3 className="text-[15px] font-semibold tracking-tight">{it.title}</h3>
-                <p className="mt-2 text-[13.5px] leading-relaxed text-mute">{it.desc}</p>
+                <p className="mt-2 text-[13.5px] leading-relaxed text-mute">
+                  <Rich text={it.desc} />
+                </p>
               </div>
             </Reveal>
           ))}

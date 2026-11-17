@@ -183,6 +183,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "anki.testOk": "Connected",
   "anki.testFail": "Connection failed: make sure Anki is running with the AnkiConnect add-on installed",
   "anki.autoFail": "Anki not detected — it will connect automatically once Anki is running",
+  "anki.tutorialLink": "Anki setup guide",
   "anki.companionHint":
     "Creates a \"Magpie\" deck in Anki, plus two card templates: Word and Content.",
   "anki.companionCreate": "Set up in one click",

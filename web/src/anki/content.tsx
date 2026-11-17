@@ -1,4 +1,5 @@
 import type { Locale } from "../i18n";
+import { RELEASES } from "../data";
 
 /** Anki 教程页（/anki/）文案：zh 为源，en 对齐翻译。
     语域同专题页：允许步骤指引与第二人称（「你」），不用感叹号与口号式排比。 */
@@ -90,8 +91,8 @@ export const ANKI: Record<Locale, AnkiCopy> = {
       eyebrow: "开始之前",
       title: "准备两样东西",
       items: [
-        { title: "拾趣", desc: "从 GitHub Releases 下载安装。macOS 是通用 .dmg，Windows 是 x64 安装包。" },
-        { title: "Anki 2.1.50+", desc: "桌面版（Windows / macOS / Linux），免费开源，本地运行，不联网也能用。" },
+        { title: "拾趣", desc: `从 [GitHub Releases](${RELEASES}) 下载安装。macOS 是通用 .dmg，Windows 是 x64 安装包。` },
+        { title: "Anki 2.1.50+", desc: "从 [apps.ankiweb.net](https://apps.ankiweb.net/) 下载桌面版（Windows / macOS / Linux），免费开源，本地运行，不联网也能用。" },
       ],
     },
     steps: {
@@ -103,7 +104,7 @@ export const ANKI: Record<Locale, AnkiCopy> = {
           n: "01",
           title: "安装 Anki",
           time: "约 3 分钟",
-          body: "访问 Anki 官网 apps.ankiweb.net，下载对应系统的桌面版并安装。Anki 是免费开源软件，数据全部存在你自己的电脑里。",
+          body: "访问 Anki 官网 [apps.ankiweb.net](https://apps.ankiweb.net/)，下载对应系统的桌面版并安装。Anki 是免费开源软件，数据全部存在你自己的电脑里。",
           points: [
             "Windows 选 64 位安装包，macOS 选 Apple Silicon 或 Intel 对应版本",
             "首次打开会引导你创建一个空集合（profile），直接用默认即可",
@@ -118,14 +119,14 @@ export const ANKI: Record<Locale, AnkiCopy> = {
             "插件代码：2055492159（AnkiConnect 是官方插件目录里的免费开源插件）",
             "菜单路径：工具 Tools → 插件 Add-ons → 获取插件 Get Add-ons…",
             "粘贴代码后必须重启 Anki，否则拾趣检测不到",
-            "也可在浏览器打开 ankiweb.net/shared/info/2055492159 查看插件详情",
+            "也可在浏览器打开 [ankiweb.net/shared/info/2055492159](https://ankiweb.net/shared/info/2055492159) 查看插件详情",
           ],
         },
         {
           n: "03",
           title: "安装拾趣",
           time: "约 2 分钟",
-          body: "回到本页顶部或首页的下载入口，从 GitHub Releases 下载拾趣并安装。macOS 未签名：首次打开右键 →「打开」；Windows：SmartScreen 提示处选择「仍要运行」。",
+          body: `回到本页顶部或首页的下载入口，从 [GitHub Releases](${RELEASES}) 下载拾趣并安装。macOS 未签名：首次打开右键 →「打开」；Windows：SmartScreen 提示处选择「仍要运行」。`,
           points: [
             "首次使用划词需在系统设置里授予辅助功能权限（macOS）",
             "安装说明以首页下载卡为准",
@@ -232,8 +233,8 @@ export const ANKI: Record<Locale, AnkiCopy> = {
       eyebrow: "Before you start",
       title: "Two things to prepare",
       items: [
-        { title: "Magpie", desc: "Download and install from GitHub Releases. macOS ships a universal .dmg; Windows ships an x64 installer." },
-        { title: "Anki 2.1.50+", desc: "The desktop app (Windows / macOS / Linux). Free, open source, runs locally, works offline." },
+        { title: "Magpie", desc: `Download and install from [GitHub Releases](${RELEASES}). macOS ships a universal .dmg; Windows ships an x64 installer.` },
+        { title: "Anki 2.1.50+", desc: "Get the desktop app from [apps.ankiweb.net](https://apps.ankiweb.net/) (Windows / macOS / Linux). Free, open source, runs locally, works offline." },
       ],
     },
     steps: {
@@ -245,7 +246,7 @@ export const ANKI: Record<Locale, AnkiCopy> = {
           n: "01",
           title: "Install Anki",
           time: "~3 min",
-          body: "Visit apps.ankiweb.net, download the desktop build for your system and install it. Anki is free and open source; all data stays on your computer.",
+          body: "Visit [apps.ankiweb.net](https://apps.ankiweb.net/), download the desktop build for your system and install it. Anki is free and open source; all data stays on your computer.",
           points: [
             "Windows: 64-bit installer; macOS: pick Apple Silicon or Intel",
             "First launch walks you through a blank profile — the default is fine",
@@ -260,14 +261,14 @@ export const ANKI: Record<Locale, AnkiCopy> = {
             "Add-on code: 2055492159 (AnkiConnect is a free, open-source add-on from the official directory)",
             "Menu path: Tools → Add-ons → Get Add-ons…",
             "Restart Anki after pasting the code, or Magpie won't detect it",
-            "You can also open ankiweb.net/shared/info/2055492159 in a browser to see the add-on details",
+            "You can also open [ankiweb.net/shared/info/2055492159](https://ankiweb.net/shared/info/2055492159) in a browser to see the add-on details",
           ],
         },
         {
           n: "03",
           title: "Install Magpie",
           time: "~2 min",
-          body: "Use the download link at the top of this page or on the homepage, then install from GitHub Releases. macOS build is unsigned: right-click → Open on first launch. Windows: choose \"Keep anyway\" on the SmartScreen prompt.",
+          body: `Use the download link at the top of this page or on the homepage, then install from [GitHub Releases](${RELEASES}). macOS build is unsigned: right-click → Open on first launch. Windows: choose \"Keep anyway\" on the SmartScreen prompt.`,
           points: [
             "Clipping needs the Accessibility permission on macOS (granted in System Settings)",
             "Install notes live in the homepage download card",

@@ -132,7 +132,7 @@ static ZH: &[(&str, &str)] = &[
     ("err.fileOpenFailed", "无法打开文件"),
     ("err.writeFailed", "写入失败"),
     // Anki 接入（docs/08）
-    ("err.ankiUnreachable", "未能存入 Anki——请确认 Anki 已启动（首次使用需安装 AnkiConnect 插件，见设置 › Anki 的教程链接）"),
+    ("err.ankiUnreachable", "未能存入 Anki——请确认 Anki 已启动并安装 AnkiConnect 插件"),
     ("err.ankiDuplicate", "Anki 里已有这张卡，没有重复创建"),
     ("err.ankiInvalidUrl", "AnkiConnect 地址不合法（仅支持本机地址）"),
     ("err.ankiParseFailed", "未能存入 Anki——Anki 返回了无法识别的内容"),
@@ -230,7 +230,7 @@ static EN: &[(&str, &str)] = &[
     ("err.fileOpenFailed", "Couldn't open the file"),
     ("err.writeFailed", "Couldn't write the file"),
     // Anki integration (docs/08)
-    ("err.ankiUnreachable", "Couldn\'t save to Anki — make sure Anki is running (first-time setup needs the AnkiConnect add-on; see the tutorial link in Settings › Anki)"),
+    ("err.ankiUnreachable", "Couldn\'t save to Anki — make sure Anki is running and the AnkiConnect add-on is installed"),
     ("err.ankiDuplicate", "This card already exists in Anki — nothing was created twice"),
     ("err.ankiInvalidUrl", "Invalid AnkiConnect URL (loopback addresses only)"),
     ("err.ankiParseFailed", "Couldn\'t save to Anki — Anki returned something unexpected"),

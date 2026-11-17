@@ -12,7 +12,7 @@ import {
   COMPANION_WORD,
   isCompanionModel,
 } from "../../shared/anki";
-import { t, useLocale } from "../../shared/i18n";
+import { t, useLocale, getLocale } from "../../shared/i18n";
 
 /** 下拉按钮共用的基础字体族（与 .card 内全局 input 的 font: inherit 对齐） */
 const SANS = `-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`;
@@ -271,6 +271,22 @@ export default function AnkiPage({ settings, patch, save, saved, saveNow }: Page
                 : test.auto
                   ? t("anki.autoFail")
                   : test.msg || t("anki.testFail")}
+              {/* 检测失败时内嵌教程入口：官网 Anki 教程（按界面语言取中文/英文页） */}
+              {!test.ok && (
+                <button
+                  className="text-link"
+                  onClick={() =>
+                    invoke("open_url", {
+                      url:
+                        getLocale() === "en"
+                          ? "https://demo007x.github.io/Magpie/en/anki/"
+                          : "https://demo007x.github.io/Magpie/anki/",
+                    }).catch(() => undefined)
+                  }
+                >
+                  {t("anki.tutorialLink")}
+                </button>
+              )}
             </span>
           </div>
         )}

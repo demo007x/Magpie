@@ -21,17 +21,14 @@ export function Footer() {
           <a href={RELEASES} target="_blank" rel="noreferrer" className="transition-colors hover:text-ink">
             {d.footer.updates}
           </a>
-          {page === "home" && (
-            <>
-              <a href={`${root}translate/`} className="transition-colors hover:text-ink">
-                {d.footer.topic}
-              </a>
-              <a href={`${root}anki/`} className="transition-colors hover:text-ink">
-                {d.footer.anki}
-              </a>
-            </>
-          )}
-          <a href="#download" className="transition-colors hover:text-ink">
+          {/* 专题互联链接全页显示（主页/翻译/Anki 互链）；下载项在专题页跳回主页下载区 */}
+          <a href={`${root}translate/`} className="transition-colors hover:text-ink">
+            {d.footer.topic}
+          </a>
+          <a href={`${root}anki/`} className="transition-colors hover:text-ink">
+            {d.footer.anki}
+          </a>
+          <a href={page === "home" ? "#download" : `${root}#download`} className="transition-colors hover:text-ink">
             {d.footer.download}
           </a>
           <span className="text-mute-soft">© {new Date().getFullYear()} {d.footer.copyright}</span>

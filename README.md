@@ -22,9 +22,9 @@ Every piece of text on your screen is one mouse gesture away: select or capture 
 
 ## Introduction
 
-**Magpie (拾趣)** is a text-selection AI tool: select text in *any* app on macOS or Windows, or capture a region of the screen, and a floating bar appears on the spot — translate, explain and summarize stream in; URLs, phone numbers and dates are extracted in one step; results go straight into Obsidian or a pre-filled calendar event. It covers more than selectable text: content in images, videos and scans can be recognized and handled the same way. Bring your own model service, with no vendor lock-in; downstream, it connects to the apps you already use — **integrate, don't rebuild**.
+**Magpie (拾趣)** is a text-selection AI tool: select text in *any* app on macOS or Windows, or capture a region of the screen, and a floating bar appears on the spot — translate, explain and summarize stream in; URLs, phone numbers and dates are extracted in one step; results go straight into Obsidian, Anki or a pre-filled calendar event. It covers more than selectable text: content in images, videos and scans can be recognized and handled the same way. Bring your own model service, with no vendor lock-in; downstream, it connects to the apps you already use — **integrate, don't rebuild**.
 
-**Website**: [demo007x.github.io/Magpie](https://demo007x.github.io/Magpie/) — product intro & screenshots
+**Website**: [demo007x.github.io/Magpie](https://demo007x.github.io/Magpie/) — product intro & screenshots · [Anki setup guide](https://demo007x.github.io/Magpie/anki/)
 
 ### Why Magpie
 
@@ -63,18 +63,19 @@ Magpie exists to make on-screen text actionable where it is: select to translate
 
 - **Global selection capture** — select text in any app to trigger the bar; drag-select or double-click both work
 - **Floating bar** — pops above the mouse cursor, auto edge-clamping, never steals focus; light / dark / follow-system themes; native per-card shadows on Windows
-- **Eleven actions** — Translate / Explain / Summarize (AI-generated, streamed) + Copy / Search / Open Link / Compose Email / Copy Code / Copy Phone + Add to Calendar / Open in Maps; order and visibility configurable in settings
+- **Fourteen actions** — Translate / Explain / Summarize (AI-generated, streamed) + Copy / Search / Read Aloud / Open Link / Compose Email / Copy Code / Copy Phone + Add to Calendar / Open in Maps / Save to Obsidian / Save to Anki; order and visibility configurable in settings
 - **Context-aware actions** — links, emails, verification codes, phone numbers, dates and places in the selected text are detected automatically: a single entity is one click away (open / compose / copy / calendar / maps), multiple entities open a grouped panel for batch operations; with a model service configured, dates and places are understood by the AI in context (date ranges, event titles), and calendar events carry the source link, selected text and invitees
 - **Save to Obsidian** — write the selection or OCR result straight into your vault as a daily-note excerpt, a task line or a knowledge card, each with its own template; no Obsidian plugin required
+- **Save to Anki** — clip any selection into your local Anki (via AnkiConnect) in one click — short text becomes a word card, longer text a content card, with source and date attached; first use creates the Magpie deck and card templates in one click
 - **Screen OCR** — a custom global hotkey or the tray menu starts a region capture, on-device OCR reads the text, with one-step OCR translate / explain / summarize; Snipaste-style pinned images can loop back into OCR
 - **Result window** — AI results and recognized text open in a standalone persistent window that can be pinned, dragged, and remembers position & size, with default-size presets in the appearance settings
 - **Custom AI actions** — a name + prompt + icon become capsule buttons (up to 10, ordered with the built-ins), with a try-run preview
-- **Dedicated permissions page (macOS)** — Accessibility, Input Monitoring, and a capture health check in one place, with one-click guided authorization; the Windows build needs no permission grants
+- **Dedicated permissions page (macOS)** — Accessibility, Input Monitoring, Screen Recording and a capture health check in one place, with one-click guided authorization; the Windows build needs no permission grants
 - **Ten translation channels** — AI translation (LLM) plus nine machine-translation engines: Google, Microsoft, DeepL, Baidu, Youdao, Tencent, Alibaba, Volcengine and Caiyun; click runs the default, the chevron lists them all, and services can be added, paused or reordered anytime
 - **Custom search engines** — ships with Baidu AI / Baidu / Google AI / Google / Bing / GitHub; any `{q}` URL template works
 - **BYOK model services** — bring your own API key; one-click presets for DeepSeek, Volcengine (Doubao), Zhipu, Kimi, Qwen, Xiaomi MiMo, SiliconFlow, OpenAI, xAI and OpenRouter, plus any OpenAI-compatible endpoint — in both Chat Completions and OpenAI Responses forms; the prompts behind Translate / Explain / Summarize are customizable
 - **Tray resident** — lives in the menu bar (macOS) / system tray (Windows); closing the main window just hides it while capture keeps running; GitHub update notifications
-- **App blocklist** — selection is disabled inside terminals, password managers, and other sensitive apps; system apps are reliably covered
+- **Blocked apps** — selection is disabled inside terminals, password managers, and other sensitive apps; system apps are reliably covered
 - **Compatibility mode (macOS)** — text selection also works in WeChat, Office, and similar apps, without disturbing your clipboard contents
 
 ## Prerequisites
@@ -151,7 +152,7 @@ Run into a problem or have an idea? Scan the QR code (Feishu form, no account ne
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the full, self-contained roadmap. Top priorities (M2): **clip-to-collection** into Notion / flomo / Apple Notes (Obsidian shipped in v0.1.9; custom AI actions in v0.1.6), follow-up Q&A in the result window, AI search & Q&A, context-aware selection, and moving API keys to the system keychain. Windows capture (UIA backend) shipped in v0.1.14. Mid-term (M3) converges built-ins, custom actions, integrations, and workflows into one unified action model; long-term (M4) adds hosted models for zero configuration.
+See [ROADMAP.md](ROADMAP.md) for the full, self-contained roadmap. Top priorities (M2): **clip-to-collection** into Notion / flomo / Apple Notes (Obsidian shipped in v0.1.9, Anki in v0.1.23; custom AI actions in v0.1.6), follow-up Q&A in the result window, AI search & Q&A, and moving API keys to the system keychain. Windows capture (UIA backend) shipped in v0.1.14. Mid-term (M3) converges built-ins, custom actions, integrations, and workflows into one unified action model; long-term (M4) adds hosted models for zero configuration.
 
 > The architecture already reserves hooks for these capabilities (platform capture backends, the action registry); they will land milestone by milestone.
 
