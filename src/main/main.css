@@ -321,6 +321,28 @@ h2.sec {
   margin-top: -4px; /* 同组卡片贴合 */
 }
 
+/* Star / 分享 / 反馈：一段轻文案流（次级色、居中），动作是行内链接。
+   组内 6px 紧排，组间 20px 拉开——两组的节奏一眼可辨 */
+.star-line {
+  margin: 14px 0 0;
+  display: grid;
+  justify-items: center;
+  row-gap: 6px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--sec);
+}
+
+.star-line p {
+  margin: 0;
+}
+
+/* 反馈组与 Star/分享组之间的语义分隔（拉大间距，不加线） */
+.star-line .gap-top {
+  margin-top: 20px;
+}
+
 /* 行内文字链接（错误提示内嵌教程入口等）：主题蓝 + 下划线，hover 减淡 */
 .text-link {
   border: 0;

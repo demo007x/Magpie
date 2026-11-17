@@ -6,6 +6,7 @@ import { t, useLocale, getLocale } from "../../shared/i18n";
 
 /** 飞书反馈表单（免登录可填）与 GitHub Issue 入口：跳转后由用户自行填写 */
 const FEEDBACK_FORM_URL = "https://tvxjr8zl48.feishu.cn/share/base/form/shrcnF78Kl495G3iUVz8iWvnA6e";
+const REPO_URL = "https://github.com/demo007x/Magpie";
 const ISSUE_URL = "https://github.com/demo007x/Magpie/issues/new";
 
 export type UpdateInfo = {
@@ -85,37 +86,61 @@ export default function AboutPage({ appVersion, upd, checking, runUpdateCheck }:
           </div>
         </div>
       </div>
-      <div className="card">
-        <div className="row-between">
-          <div>
-            <div className="row-sub">{t("about.feedbackSub")}</div>
-          </div>
-          <div className="row-ctl">
-            <button
-              className="btn sm"
-              onClick={() => invoke("open_url", { url: FEEDBACK_FORM_URL }).catch(() => undefined)}
-            >
-              {t("about.feedbackFeishu")}
-            </button>
-            <button
-              className="btn sm"
-              onClick={() => invoke("open_url", { url: ISSUE_URL }).catch(() => undefined)}
-            >
-              GitHub Issue
-            </button>
-            <button
-              className="btn sm"
-              onClick={() => {
-                invoke<number>("copy_debug_log").then(
-                  (n) => toast(t("about.logCopied", { count: n }), "info"),
-                  (e) => toast(t("about.logCopyFailed", { error: String(e) }), "err"),
-                );
-              }}
-            >
-              {t("about.copyLog")}
-            </button>
-          </div>
-        </div>
+      {/* Star / 分享 / 反馈：同一段轻文案流（次级色居中），动作全是行内链接。
+          分享 = 复制预置文案（含仓库链接）进剪贴板，复制成功走 toast。
+          动线：好用 → Star / 分享 → 遇到问题 → 三个反馈入口 */}
+      <div className="star-line">
+        <p>
+          {t("about.starLead")}
+          <button
+            className="text-link"
+            onClick={() => invoke("open_url", { url: REPO_URL }).catch(() => undefined)}
+          >
+            {t("about.starAction")}
+          </button>
+        </p>
+        <p>
+          {t("about.shareLead")}
+          <button
+            className="text-link"
+            onClick={() =>
+              navigator.clipboard
+                .writeText(t("about.shareText", { url: REPO_URL }))
+                .then(() => toast(t("about.shareCopied"), "info"))
+                .catch(() => undefined)
+            }
+          >
+            {t("about.shareAction")}
+          </button>
+        </p>
+        <p className="gap-top">{t("about.feedbackSub")}</p>
+        <p>
+          <button
+            className="text-link"
+            onClick={() => invoke("open_url", { url: FEEDBACK_FORM_URL }).catch(() => undefined)}
+          >
+            {t("about.feedbackFeishu")}
+          </button>
+          <span aria-hidden> · </span>
+          <button
+            className="text-link"
+            onClick={() => invoke("open_url", { url: ISSUE_URL }).catch(() => undefined)}
+          >
+            GitHub Issue
+          </button>
+          <span aria-hidden> · </span>
+          <button
+            className="text-link"
+            onClick={() => {
+              invoke<number>("copy_debug_log").then(
+                (n) => toast(t("about.logCopied", { count: n }), "info"),
+                (e) => toast(t("about.logCopyFailed", { error: String(e) }), "err"),
+              );
+            }}
+          >
+            {t("about.copyLog")}
+          </button>
+        </p>
       </div>
     </>
   );

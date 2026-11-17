@@ -304,8 +304,15 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "about.updateFailed":
     "The check didn't go through this time (no network, or GitHub is temporarily unreachable). It will retry automatically next launch.",
   "about.updateIdle": "You'll be told when a new version is out — nothing installs automatically.",
-  "about.feedbackSub": "Found a problem or have an idea? We'd love to hear it.",
+  "about.feedbackSub": "Found a problem or have an idea? We'd love to hear it",
   "about.feedbackFeishu": "Feishu form",
+  "about.starLead": "If Magpie has genuinely made things easier for you, ",
+  "about.starAction": "give it a Star ★ on GitHub,",
+  "about.shareLead": "and share that ease with more people — ",
+  "about.shareAction": "copy share text",
+  "about.shareText":
+    "Magpie — a free AI selection tool for macOS & Windows. Select any text to translate, explain or summarize in place, and save straight into Obsidian or Anki. {url}",
+  "about.shareCopied": "Share text copied — paste it to a friend",
   "about.copyLog": "Copy logs",
   "about.logCopied": "Logs copied ({count} characters) — you can paste them along with your feedback",
   "about.logCopyFailed": "Couldn't copy logs: {error}",
