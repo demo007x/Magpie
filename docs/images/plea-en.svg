@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="104" viewBox="0 0 860 104" role="img" aria-label="I lost my job, and this is what I built at home. My wife says it doesn't make money — driving ride-share or delivering food would pay better. I can't win the argument, so please give me a Star ★ — I just want to show her it means something.">
+  <!-- Personal banner for the README header: GitHub strips inline styles from markdown, colored text has to live in an SVG -->
+  <g font-family="-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="17" font-weight="600">
+    <text x="0" y="24" fill="#2ea043">I lost my job, and this is what I built at home. My wife says it doesn't make money —</text>
+    <text x="0" y="52" fill="#2ea043">driving ride-share or delivering food would pay better. I can't win the argument,</text>
+    <text x="0" y="80" fill="#2ea043">so please give me a <tspan fill="#f0b429">Star ★</tspan> — I just want to show her it means something.</text>
+  </g>
+</svg>

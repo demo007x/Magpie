@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="96" viewBox="0 0 900 96" role="img" aria-label="失业在家，做了个这东西，我媳妇儿说又不挣钱，还不如去跑个滴滴，送个外卖挣钱。我说不过她，请你们给我点个 Star ★，我就想证明一下给她看。">
+  <!-- README 头部的个人心声横幅：GitHub 会剥掉 markdown 的内联样式，彩色文字只能走 SVG -->
+  <g font-family="-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif" font-size="18" font-weight="600">
+    <text x="0" y="30" fill="#2ea043">失业在家，做了个这东西，我媳妇儿说又不挣钱，还不如去跑个滴滴，送个外卖挣钱。</text>
+    <text x="0" y="66" fill="#2ea043">我说不过她，请你们给我点个 <tspan fill="#f0b429">Star ★</tspan>，我就想证明一下给她看。</text>
+  </g>
+</svg>
