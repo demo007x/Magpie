@@ -184,3 +184,34 @@ pub async fn anki_add_note(
     .await
     .map(|_| ())
 }
+
+/// 指定笔记类型的卡片 CSS（设置页配套样式升级的读取端：与出厂值比对，
+/// 判断卡型是否被用户改过）
+#[tauri::command]
+pub async fn anki_model_styling(url: String, model: String) -> Result<String, String> {
+    let v = anki_request(&url, "modelStyling", json!({ "modelName": model })).await?;
+    Ok(v.get("css")
+        .and_then(|c| c.as_str())
+        .unwrap_or_default()
+        .to_string())
+}
+
+/// 更新指定笔记类型的卡片 CSS（配套样式升级的写入端；调用方须先用
+/// anki_model_styling 确认当前值仍为出厂样式，避免覆盖用户自定义）。
+/// 注意 AnkiConnect 的 updateModelStyling 参数是嵌套对象——model 为
+/// {name, css} 结构而非裸字符串（裸字符串会在 AnkiConnect 内被当 dict
+/// 取索引报 "string indices must be integers"）
+#[tauri::command]
+pub async fn anki_update_model_styling(
+    url: String,
+    model: String,
+    css: String,
+) -> Result<(), String> {
+    anki_request(
+        &url,
+        "updateModelStyling",
+        json!({ "model": { "name": model, "css": css } }),
+    )
+    .await
+    .map(|_| ())
+}

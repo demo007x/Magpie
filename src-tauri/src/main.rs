@@ -729,6 +729,8 @@ fn main() {
             anki::anki_model_fields,
             anki::anki_create_model,
             anki::anki_add_note,
+            anki::anki_model_styling,
+            anki::anki_update_model_styling,
             entities::detect_places,
             entities::open_in_calendar,
             pageurl::frontmost_web_url,

@@ -44,6 +44,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import { renderToStaticMarkup } from "react-dom/server";
 
 // AI 输出里的图片不自动加载：远程图片会在渲染时向第三方服务器发起请求
 //（跟踪像素类的外联，与"不收集使用数据"的产品承诺冲突），死链还会显示破图。
@@ -52,6 +53,21 @@ import remarkGfm from "remark-gfm";
 const mdComponents: Components = {
   img: ({ src, alt }) => (src ? <a href={src}>{alt || src}</a> : null),
 };
+
+/** markdown → HTML 字符串：与结果窗完全同一渲染管线（remarkGfm + remarkBreaks +
+    mdComponents），面板里渲染成什么样、Anki 卡里就是什么样。静态串行渲染
+    （react-dom/server）不挂 React 树，仅供「要 HTML 字符串」的场景取结果 */
+const mdToHtml = (md: string) =>
+  renderToStaticMarkup(
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>
+      {md}
+    </ReactMarkdown>,
+  );
+
+/** 纯文本 → 字段 HTML：只把换行换成 <br>（Anki 字段按 HTML 渲染，多行不转
+    会被挤成一行）。逐字材料（正面划词原文、机器翻译结果）走此路，不做
+    markdown 解释——与结果窗对这两类内容的纯文本渲染同构 */
+const nl2br = (s: string) => s.replaceAll("\n", "<br>");
 import {
   AudioLines,
   ChevronDown,
@@ -1645,12 +1661,21 @@ export default function App() {
         // 空，模板条件块自动省略「来源：」整块，标签同样不带——宁缺毋错
         const srcRaw = appNameFrom(sourceAppRef.current);
         const src = srcRaw === t("floating.unknownApp") ? "" : srcRaw;
-        // AI 结果只在结果窗语境存在；胶囊直建没有（建卡时背面留空，符合 Anki
-        // 「先存卡、复习时再补释义」的挖卡习惯，避免正面背面同文）
-        const aiBody =
-          phase.kind === "ocr" && phase.actionId && phase.output && !phase.error
-            ? phase.output
-            : "";
+        // 背面内容的字段 HTML：与结果窗的渲染决策同构（plain 纯文本 / 翻译拆
+        // 主译+附注后走 markdown / 其余 AI 动作整段 markdown），面板里什么样
+        // 卡里就什么样。空串 = 胶囊直建或无输出——背面留空，符合 Anki「先存卡、
+        // 复习时再补释义」的挖卡习惯，避免正面背面同文
+        let backHtml = "";
+        if (phase.kind === "ocr" && phase.actionId && phase.output && !phase.error) {
+          if (phase.plain) {
+            backHtml = nl2br(phase.output);
+          } else if (phase.actionId === "translate") {
+            const tr = splitTranslate(phase.output);
+            backHtml = mdToHtml(tr.main) + (tr.notes ? mdToHtml(tr.notes) : "");
+          } else {
+            backHtml = mdToHtml(phase.output);
+          }
+        }
         // 牌组由下方「牌组×类型」路由决定（⌄ 显式指定或按划词长短）
         const tags = cfg.tags
           .replaceAll("{date}", date)
@@ -1663,17 +1688,20 @@ export default function App() {
           .catch(() => null)
           .then((pageUrl) => {
             const url = pageUrl ?? "";
-            // 变量语义：{text} 永远是划词原文；{result} 仅结果窗建卡时是 AI 输出，
-            // 其余语境为空（明示语义，不做静默回落）
+            // 变量语义：{text} 永远是划词原文（逐字替换，不过 markdown）；
+            // {result} 仅结果窗建卡时是渲染好的背面 HTML（决策同结果窗，见
+            // backHtml），其余语境为空（明示语义，不做静默回落）。
+            // 替换值全部走函数形式——$ 开头的序列（$& $$ $` $'）在替换串里有
+            // 特殊语义，逐字内容（bash $$ 等）会被静默改写，函数直返保字面
             const fill = (tpl: string) => {
               const t2 = url ? tpl : tpl.split("\n").filter((l) => l.trim() !== "{url}").join("\n");
               return t2
-                .replaceAll("{text}", source)
-                .replaceAll("{result}", aiBody)
-                .replaceAll("{source}", src)
-                .replaceAll("{date}", date)
-                .replaceAll("{time}", time)
-                .replaceAll("{url}", url);
+                .replaceAll("{text}", () => source)
+                .replaceAll("{result}", () => backHtml)
+                .replaceAll("{source}", () => src)
+                .replaceAll("{date}", () => date)
+                .replaceAll("{time}", () => time)
+                .replaceAll("{url}", () => url);
             };
             // 牌组×类型成对路由：⌄ 菜单显式指定（子牌组）优先；无指定时配套就绪
             // 则按划词长短自动选（单词卡/内容卡字段同构，判错只差排版不丢数据）；
@@ -1706,10 +1734,9 @@ export default function App() {
               .then((names) => {
                 const factory = isCompanionModel(model) ? COMPANION_FIELD_MAP : {};
                 const fieldMap: Record<string, string> = {};
-                // 智能默认填的是纯文本（划词原文/AI 输出），Anki 字段按 HTML 渲染、
-                // 换行须显式 <br>（多行选区不转会被挤成一行）；出厂模板走 fill 渲染，
-                // 不做替换（「模板不校验 HTML」边界）
-                const nl2br = (s: string) => s.replaceAll("\n", "<br>");
+                // 智能默认：正面是纯文本（划词原文逐字入卡，不过 markdown——字面
+                // * # 会被语法吃掉）；背面直接用上面决策好的 backHtml。
+                // 出厂模板走 fill 渲染，不做替换（「模板不校验 HTML」边界）
                 names.forEach((name, i) => {
                   const tpl = factory[name];
                   if (tpl !== undefined) {
@@ -1718,8 +1745,8 @@ export default function App() {
                     return;
                   }
                   if (i === 0) fieldMap[name] = nl2br(source);
-                  else if (i === 1 && names.length === 2 && aiBody)
-                    fieldMap[name] = nl2br(aiBody);
+                  else if (i === 1 && names.length === 2 && backHtml)
+                    fieldMap[name] = backHtml;
                 });
                 invoke("anki_add_note", {
                   url: cfg.connectUrl,

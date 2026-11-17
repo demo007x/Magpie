@@ -17,16 +17,11 @@ import { t, useLocale } from "../../shared/i18n";
 /** 下拉按钮共用的基础字体族（与 .card 内全局 input 的 font: inherit 对齐） */
 const SANS = `-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`;
 
-/** 配套笔记类型的出厂 createModel 定义（样式/模板归笔记类型，docs/08 §7）。
-    模板语法用 Anki 条件替换（{{#字段}}…{{/字段}}）包裹溯源行，字段为空时整块
-    省略，不留孤儿括号；.meta:empty 兜底整行隐藏。两类型字段同构，只差排版：
-    单词卡居中大字（查词场景），内容卡左对齐换行（摘录场景） */
-const COMPANION_MODELS = [
-  {
-    def: {
-      modelName: COMPANION_WORD,
-      inOrderFields: ["正面", "背面", "来源", "链接", "日期"],
-      css: `.card {
+/** 配套类型上线时的出厂 CSS（现役出厂值 = 此串 + MD_CSS）。留存为升级指纹：
+    设置页连接探测时若卡型现值与之逐字一致（即用户没改过卡型），静默补上
+    MD_CSS——markdown 渲染改造前的老安装也能拿到新样式 */
+const FACTORY_CSS_V1: Record<string, string> = {
+  [COMPANION_WORD]: `.card {
   font-family: ${SANS};
   font-size: 15px;
   line-height: 1.8;
@@ -41,6 +36,45 @@ hr#answer { border: none; border-top: 1px solid #ddd; margin: 12px auto; width: 
 .meta { font-size: 12px; color: #888; margin-top: 12px; }
 .meta:empty { display: none; }
 .meta a { color: #888; }`,
+  [COMPANION_CONTENT]: `.card {
+  font-family: ${SANS};
+  font-size: 16px;
+  line-height: 1.7;
+  text-align: left;
+  color: #1a1a1a;
+  background-color: #fafafa;
+  padding: 16px;
+  word-break: break-word;
+}
+hr#answer { border: none; border-top: 1px solid #ddd; margin: 12px 0; }
+.meta { font-size: 12px; color: #888; margin-top: 12px; }
+.meta:empty { display: none; }
+.meta a { color: #888; }`,
+};
+
+/** markdown 元素样式：背面 AI 输出按 markdown 渲染后入卡（floating App.tsx 的
+    mdToHtml），代码块/引用块/表格在裸卡面上会退回浏览器默认观感，出厂统一收敛。
+    居中排版的单词卡里代码块/列表/引用强制左对齐 */
+const MD_CSS = `
+.card pre { background: #f3f3f5; border-radius: 6px; padding: 10px 12px; overflow-x: auto; text-align: left; font-size: 13px; }
+.card code { background: #f3f3f5; border-radius: 4px; padding: 1px 5px; font-size: 0.9em; }
+.card pre code { background: none; padding: 0; }
+.card ul, .card ol { margin: 8px 0; padding-left: 1.4em; text-align: left; }
+.card blockquote { margin: 8px 0; padding: 2px 12px; border-left: 3px solid #ddd; color: #555; text-align: left; }
+.card table { border-collapse: collapse; margin: 8px auto; }
+.card th, .card td { border: 1px solid #ddd; padding: 4px 10px; font-size: 0.92em; }
+.card img { max-width: 100%; }`;
+
+/** 配套笔记类型的出厂 createModel 定义（样式/模板归笔记类型，docs/08 §7）。
+    模板语法用 Anki 条件替换（{{#字段}}…{{/字段}}）包裹溯源行，字段为空时整块
+    省略，不留孤儿括号；.meta:empty 兜底整行隐藏。两类型字段同构，只差排版：
+    单词卡居中大字（查词场景），内容卡左对齐换行（摘录场景） */
+const COMPANION_MODELS = [
+  {
+    def: {
+      modelName: COMPANION_WORD,
+      inOrderFields: ["正面", "背面", "来源", "链接", "日期"],
+      css: FACTORY_CSS_V1[COMPANION_WORD] + MD_CSS,
       cardTemplates: [
         {
           Name: "划词卡",
@@ -57,20 +91,7 @@ hr#answer { border: none; border-top: 1px solid #ddd; margin: 12px auto; width: 
     def: {
       modelName: COMPANION_CONTENT,
       inOrderFields: ["正面", "背面", "来源", "链接", "日期"],
-      css: `.card {
-  font-family: ${SANS};
-  font-size: 16px;
-  line-height: 1.7;
-  text-align: left;
-  color: #1a1a1a;
-  background-color: #fafafa;
-  padding: 16px;
-  word-break: break-word;
-}
-hr#answer { border: none; border-top: 1px solid #ddd; margin: 12px 0; }
-.meta { font-size: 12px; color: #888; margin-top: 12px; }
-.meta:empty { display: none; }
-.meta a { color: #888; }`,
+      css: FACTORY_CSS_V1[COMPANION_CONTENT] + MD_CSS,
       cardTemplates: [
         {
           Name: "划词卡",
@@ -84,6 +105,25 @@ hr#answer { border: none; border-top: 1px solid #ddd; margin: 12px 0; }
     },
   },
 ];
+
+/** 配套类型卡片样式静默升级：现值仍为出厂样式（用户没改过卡型）时补上
+    MD_CSS；改过则完全不动。指纹不匹配或请求失败都静默——样式升级是卫生
+    动作，不进连接判定、不弹提示（与连接自动探测同一克制程度） */
+const upgradeCompanionCss = (url: string, models: string[]) => {
+  COMPANION_ITEMS.forEach(({ model }) => {
+    if (!models.includes(model)) return;
+    invoke<string>("anki_model_styling", { url, model })
+      .then((css) => {
+        if (css !== FACTORY_CSS_V1[model]) return;
+        return invoke("anki_update_model_styling", {
+          url,
+          model,
+          css: FACTORY_CSS_V1[model] + MD_CSS,
+        });
+      })
+      .catch(() => {});
+  });
+};
 
 export default function AnkiPage({ settings, patch, save, saved, saveNow }: PageProps) {
   useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
@@ -127,6 +167,8 @@ export default function AnkiPage({ settings, patch, save, saved, saveNow }: Page
                 ? s.actionOrder
                 : [...s.actionOrder, "anki"],
             }));
+            // 连接就绪后顺带做配套样式卫生升级（静默，失败不进连接状态）
+            upgradeCompanionCss(url, models);
             setTest({ ok: true });
           })
           .catch((e) => {
