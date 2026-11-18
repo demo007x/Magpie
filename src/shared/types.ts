@@ -102,7 +102,7 @@ export interface ObsidianConfig {
   cardTemplate: string;
 }
 
-/** Anki 接入配置（docs/08）：经 AnkiConnect 本地 HTTP 一键建卡。
+/** Anki 接入配置：经 AnkiConnect 本地 HTTP 一键建卡。
  *  deck 为空 = 未接入，相关动作不出现。无状态一次性送达：写入本地集合即完，
  *  多端同步归 Anki 自身，不建队列。 */
 export interface AnkiConfig {
