@@ -66,6 +66,10 @@ const ANIM_MS: u64 = 500;
 /// 未到达（eval 失败等）则到点直接滚入，toast 不至于永不出现
 const ROLLIN_FALLBACK_MS: u64 = 300;
 
+/// 临时诊断（toast 迟到问题）：show_toast 进入时刻，resize_toast 到达时算
+/// 「唤醒 + 渲染」耗时写 magpie.log；数据取到后随锚点日志一并移除
+static TOAST_T0: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+
 /// 触发待滚入的 toast：显示并滚入。resize_toast 量尺寸完成或兜底定时调用；
 /// 若序号已过期（被更新的 toast 顶替 / 已被 hide 收场）则丢弃。
 /// 居中 x 与滚入起止 y 都在此刻据最新卡片尺寸计算（量尺寸前不定位）
@@ -384,6 +388,8 @@ fn push_toast(app: &AppHandle, message: &str, kind: &str) -> u64 {
 }
 
 pub fn show_toast(app: &AppHandle, message: &str, kind: &str) {
+    crate::user_log("[toast] show_toast 收到");
+    *TOAST_T0.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
     if app.get_webview_window("toast").is_none() {
         eprintln!("[magpie:toast] toast 窗口不存在：{message}");
         return;
@@ -489,6 +495,17 @@ pub fn notify(app: AppHandle, message: String, kind: Option<String>) {
 pub fn resize_toast(window: WebviewWindow, width: f64, height: f64) {
     if window.label() != "toast" {
         return;
+    }
+    // 临时诊断：show_toast 进入到渲染回调的耗时（唤醒 + 渲染），数据取到后移除
+    if let Some(t0) = TOAST_T0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()
+    {
+        crate::user_log(&format!(
+            "[toast] 渲染回调 +{}ms",
+            (std::time::Instant::now() - t0).as_millis()
+        ));
     }
     // 卡片宽度上限 420 与 toast.css 的 .toast-pop max-width 对齐；
     // 下限取 40：比 120 更贴近短文案（「正在识别…」）的自然宽度——

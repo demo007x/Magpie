@@ -166,13 +166,13 @@ export const zhMain = {
 
   // Anki 页
   "anki.hint":
-    "划中的词句一键存入 Anki——正面是原文，背面是你刚拿到的翻译、解释或总结。需要本机运行 Anki 并安装 AnkiConnect 插件，本页会自动连接。更改需保存后生效。",
+    "划中的词句一键存入 Anki：正面是原文，背面是你刚拿到的翻译、解释或总结。需要本机运行 Anki 并安装 AnkiConnect 插件，本页会自动连接。更改需保存后生效。",
   "anki.connectUrl": "AnkiConnect 地址（默认本机 8765）",
   "anki.test": "重新检测",
   "anki.testing": "检测中…",
   "anki.testOk": "已连接",
   "anki.testFail": "连接失败：请确认 Anki 已启动并安装 AnkiConnect 插件",
-  "anki.autoFail": "未检测到 Anki——启动 Anki 后本页会自动连接",
+  "anki.autoFail": "未检测到 Anki，启动 Anki 后本页会自动连接",
   "anki.tutorialLink": "Anki 安装教程",
   "anki.companionHint": "在 Anki 中创建「拾趣」牌组，以及单词卡、内容卡两种卡片模板。",
   "anki.companionCreate": "一键配置",
@@ -297,7 +297,7 @@ export const zhMain = {
   "about.shareLead": "也可以把这份轻松的体验",
   "about.shareAction": "分享给更多人",
   "about.shareText":
-    "推荐一个免费的划词 AI 工具「拾趣 Magpie」——屏幕上任何文字，划词即翻译、解释、总结，还能一键存进 Obsidian 和 Anki。macOS / Windows 双端：{url}",
+    "推荐一个免费的划词 AI 工具「拾趣 Magpie」：屏幕上任何文字，划词即翻译、解释、总结，还能一键存进 Obsidian 和 Anki。macOS / Windows 双端：{url}",
   "about.shareCopied": "分享文案已复制，去发给朋友吧",
   "about.copyLog": "复制日志",
   "about.logCopied": "已复制运行日志（{count} 字），可随反馈一并粘贴",

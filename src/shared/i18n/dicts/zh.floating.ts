@@ -30,7 +30,7 @@ export const zhFloating = {
   "floating.savedFile": "已存入 {name}",
   "floating.obsidianFailed": "存入 Obsidian 失败",
   "floating.ankiSaved": "已存入 Anki {card}",
-  "floating.ankiNotConfigured": "还没有配置 Anki——在设置 › Anki 里完成一键配置后就能划词建卡",
+  "floating.ankiNotConfigured": "Anki 还没配置，去设置 › Anki 一键开启",
   "floating.cardFallbackName": "卡片 {date} {time}",
 
   // 图标钮的 aria-label（无可见文字，读屏依赖）

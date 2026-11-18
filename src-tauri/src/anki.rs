@@ -11,8 +11,11 @@ use serde_json::{json, Value};
 
 use crate::i18n::t;
 
-/// 本地服务 2s 足够：Anki 无响应即视为不可达（给用户「请启动 Anki」的明确提示）
-const ANKI_TIMEOUT: Duration = Duration::from_secs(2);
+/// 本地回环 800ms 足够：健康的 Anki 应答是毫秒级；无响应即不可达。2026-11-18
+/// 从 2s 收紧——部分安全软件对陌生二进制（dev 重编译后哈希常新）的出站连接
+/// 做静默放行检查（DROP 非 REJECT），2s 超时把「Anki 未启动」的错误提示拖到
+/// 两秒后才出。TLS 握手不存在（纯 http 回环），800ms 不误伤慢应答
+const ANKI_TIMEOUT: Duration = Duration::from_millis(800);
 const ANKI_PROTOCOL_VERSION: i32 = 6;
 
 /// 校验地址为回环地址并归一（剥尾部斜杠）。IPv4 回环 / localhost / IPv6 [::1]

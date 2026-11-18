@@ -50,7 +50,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "capture.showCount": "Actions shown",
   "capture.showCountHint": "Default 4 (2–8)",
   "capture.allOff":
-    "Every action is off: the floating bar will no longer appear when you select text. You can still open this window from the menu bar icon — turn any switch back on to restore it.",
+    "Every action is off: the floating bar will no longer appear when you select text. You can still open this window from the menu bar icon. Turn any switch back on to restore it.",
   "capture.iconAlt": "Action icon",
   "capture.tagMine": "Mine",
   "capture.editActionTitle": "Edit the action (name, icon, prompt, test run)",
@@ -63,7 +63,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "capture.modeSystem": "System detection",
   "capture.modeAiHint": "AI understanding needs a service set up on the Model page first",
   "capture.modeAiOnHint": "More accurate, but needs a model service",
-  "capture.modeSystemHint": "No setup needed — recognized right on this device",
+  "capture.modeSystemHint": "No setup needed, recognized right on this device",
   "capture.newAction": "New action",
   "capture.tryNeedPrompt": "Enter a prompt first",
   "capture.tryNeedSample": "Enter a sample text first",
@@ -87,7 +87,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Shortcuts page
   "sc.hint":
-    "Click a box and press the new key combination — it must include ⌘ / Ctrl / Alt / Shift; press Esc to cancel. Combinations already used by other apps won't take effect. Click “Save changes” to make them permanent.",
+    "Click a box and press the new key combination. It must include ⌘ / Ctrl / Alt / Shift; press Esc to cancel. Combinations already used by other apps won't take effect. Click “Save changes” to make them permanent.",
   "sc.ocr.label": "Capture text from screen",
   "sc.ocr.desc": "Frame any area of the screen, then pick an action to recognize it.",
   "sc.ocrTranslate.label": "Capture and translate",
@@ -106,7 +106,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Model services page
   "model.hint":
-    "Pick a preset to add a service — you only need the API key and model name; the default service is used by all actions. Keys are stored on this device only. Click “Save changes” to make them permanent.",
+    "Pick a preset to add a service. You only need the API key and model name; the default service is used by all actions. Keys are stored on this device only. Click “Save changes” to make them permanent.",
   "model.unnamedSvc": "Unnamed service",
   "model.noModel": "No model set",
   "model.fName": "Name",
@@ -149,7 +149,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Obsidian page
   "obsidian.hint":
-    "Write captured text and screenshot results into markdown files in your vault using templates — no Obsidian plugin needed. Once configured, “Obsidian” appears in the capsules and result window. Changes take effect after saving.",
+    "Write captured text and screenshot results into markdown files in your vault using templates. No Obsidian plugin needed. Once configured, “Obsidian” appears in the capsules and result window. Changes take effect after saving.",
   "obsidian.vaultTitle": "Vault folder",
   "obsidian.vaultSet": "Connected. Writes stay inside this folder.",
   "obsidian.vaultUnset": "Pick the folder that contains .obsidian.",
@@ -176,13 +176,13 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Anki page
   "anki.hint":
-    "Turn a selection into an Anki card in one click — the original text on the front, the translation, explanation or summary you just got on the back. Requires Anki running locally with the AnkiConnect add-on; this page connects automatically. Changes take effect after saving.",
+    "Turn a selection into an Anki card in one click: the original text on the front, the translation, explanation or summary you just got on the back. Requires Anki running locally with the AnkiConnect add-on; this page connects automatically. Changes take effect after saving.",
   "anki.connectUrl": "AnkiConnect URL (default localhost:8765)",
   "anki.test": "Re-detect",
   "anki.testing": "Detecting…",
   "anki.testOk": "Connected",
   "anki.testFail": "Connection failed: make sure Anki is running with the AnkiConnect add-on installed",
-  "anki.autoFail": "Anki not detected — it will connect automatically once Anki is running",
+  "anki.autoFail": "Anki not detected. It will connect automatically once Anki is running",
   "anki.tutorialLink": "Anki setup guide",
   "anki.companionHint":
     "Creates a \"Magpie\" deck in Anki, plus two card templates: Word and Content.",
@@ -215,13 +215,13 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Permissions page
   "perms.accessibility": "Accessibility",
-  "perms.accessibilityMissing": "Required for text capture — grant it to read selected text.",
+  "perms.accessibilityMissing": "Required for text capture. Grant it to read selected text.",
   "perms.accessibilityDesc": "Reads selected text for translate, explain and summarize.",
   "perms.inputMonitoring": "Input Monitoring",
-  "perms.inputMissing": "Required for the floating bar — grant it so selecting text brings it up.",
+  "perms.inputMissing": "Required for the floating bar. Grant it so selecting text brings it up.",
   "perms.inputDesc": "Watches for text selection and brings up the floating bar.",
   "perms.screen": "Screen Recording",
-  "perms.screenMissing": "Required for capturing text — grant it to recognize text on screen.",
+  "perms.screenMissing": "Required for capturing text. Grant it to recognize text on screen.",
   "perms.screenDesc":
     "The basis of text capture; recognition happens entirely on this device and the image never leaves it.",
   "perms.selfCheck": "Capture health check",
@@ -258,7 +258,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Read-aloud page
   "speech.hint":
-    "Read text aloud with voices that live on your computer. Download once, then it works offline — nothing you read is uploaded.",
+    "Read text aloud with voices that live on your computer. Download once, then it works offline. Nothing you read is uploaded.",
   "speech.installTitle": "Voice pack",
   "speech.installSub": "About {size} MB to download; download once, then it works offline.",
   "speech.installSubNoNum": "Download once, then it works offline.",
@@ -307,17 +307,17 @@ export const enMain: Record<keyof typeof zhMain, string> = {
     "You're up to date (v{current}), last checked {time}. Magpie checks once a day automatically, and you can check anytime.",
   "about.updateFailed":
     "The check didn't go through this time (no network, or GitHub is temporarily unreachable). It will retry automatically next launch.",
-  "about.updateIdle": "You'll be told when a new version is out — nothing installs automatically.",
+  "about.updateIdle": "You'll be told when a new version is out. Nothing installs automatically.",
   "about.feedbackSub": "Found a problem or have an idea? We'd love to hear it",
   "about.feedbackFeishu": "Feishu form",
   "about.starLead": "If Magpie has genuinely made things easier for you, ",
   "about.starAction": "give it a Star ★ on GitHub,",
-  "about.shareLead": "and share that ease with more people — ",
+  "about.shareLead": "and share that ease with more people: ",
   "about.shareAction": "copy share text",
   "about.shareText":
-    "Magpie — a free AI selection tool for macOS & Windows. Select any text to translate, explain or summarize in place, and save straight into Obsidian or Anki. {url}",
-  "about.shareCopied": "Share text copied — paste it to a friend",
+    "Magpie: a free AI selection tool for macOS & Windows. Select any text to translate, explain or summarize in place, and save straight into Obsidian or Anki. {url}",
+  "about.shareCopied": "Share text copied. Paste it to a friend",
   "about.copyLog": "Copy logs",
-  "about.logCopied": "Logs copied ({count} characters) — you can paste them along with your feedback",
+  "about.logCopied": "Logs copied ({count} characters). You can paste them along with your feedback",
   "about.logCopyFailed": "Couldn't copy logs: {error}",
 };

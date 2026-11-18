@@ -1723,35 +1723,44 @@ html.win .pop.overflow:not(.rail) {
 }
 
 /* 悬浮感 = 双层轻投影（近距定形 + 远距环境）画在出血区 + 1px 发丝内描边。
-   blur 10 的尾部越出 8px 出血被窗口边界裁掉的是近零 alpha，不可见；
-   影强不得落回 toast 的 0.16/0.1 淡影区间——那是「透明圈」的成因 */
+   影的下坠范围（y 偏移 + blur）必须收在 8px 出血内且尽量贴卡：1+4=5——
+   曾用 3+10=13px，越出出血 5px 被窗口边界硬切，白底上是一条下坠黑带
+   （2026-11-18 用户反馈「阴影太高」，两级收紧后的定稿值）。影强不得落回
+   toast 的 0.16/0.1 淡影区间——那是「透明圈」的成因 */
 html.win .bar,
 html.win .panel,
 html.win .pop.menu,
 html.win .pop.overflow:not(.rail) {
   box-shadow:
-    0 3px 10px rgba(0, 0, 0, 0.22),
-    0 1px 3px rgba(0, 0, 0, 0.14),
+    0 1px 4px rgba(0, 0, 0, 0.22),
+    0 1px 1px rgba(0, 0, 0, 0.14),
     inset 0 0 0 1px rgba(0, 0, 0, 0.14);
 }
 
-/* 暗色主题：白 14% 细边 + 加重的投影（暗卡贴暗壁纸，0.22 读不出层次） */
+/* 暗色主题：白 14% 细边 + 加重的投影（比亮色 0.22/0.14 略重，暗壁纸靠发丝边
+   + 影读层次）。2026-11-18 从 0.45/0.3 降回 0.3/0.2——加重值按「暗卡贴暗壁纸」
+   调的，胶囊实际经常浮在白色内容页上，0.45 在白底是一团黑；几何随基类收短
+   （1+4=5 收在出血内，详见上方悬浮感注释）。收纳面板（.pop.overflow:not(.rail)）
+   与胶囊同待遇——此前漏列，暗色下面板回落亮色值、发丝边是黑 14%（暗卡上
+   不成立） */
 html.win.theme-dark .bar,
 html.win.theme-dark .panel,
-html.win.theme-dark .pop.menu {
+html.win.theme-dark .pop.menu,
+html.win.theme-dark .pop.overflow:not(.rail) {
   box-shadow:
-    0 3px 10px rgba(0, 0, 0, 0.45),
-    0 1px 3px rgba(0, 0, 0, 0.3),
+    0 1px 4px rgba(0, 0, 0, 0.3),
+    0 1px 1px rgba(0, 0, 0, 0.18),
     inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 @media (prefers-color-scheme: dark) {
   html.win:not(.theme-light):not(.theme-dark) .bar,
   html.win:not(.theme-light):not(.theme-dark) .panel,
-  html.win:not(.theme-light):not(.theme-dark) .pop.menu {
+  html.win:not(.theme-light):not(.theme-dark) .pop.menu,
+  html.win:not(.theme-light):not(.theme-dark) .pop.overflow:not(.rail) {
     box-shadow:
-      0 3px 10px rgba(0, 0, 0, 0.45),
-      0 1px 3px rgba(0, 0, 0, 0.3),
+      0 1px 4px rgba(0, 0, 0, 0.3),
+      0 1px 1px rgba(0, 0, 0, 0.18),
       inset 0 0 0 1px rgba(255, 255, 255, 0.14);
   }
 }
