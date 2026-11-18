@@ -47,8 +47,11 @@ fn validate_loopback(raw: &str) -> Result<String, String> {
 /// 排查「设置页已连接、建卡却无法连接」这类状态漂移问题靠日志里的真实原因
 async fn anki_request(url: &str, action: &str, params: Value) -> Result<Value, String> {
     let url = validate_loopback(url)?;
+    // no_proxy：AnkiConnect 恒为本机回环地址，永不该走系统代理——否则代理截胡
+    // 本机请求，「Anki 未启动」的连接被拒被伪装成代理的 HTTP 502（2026-11-18 实测）
     let client = reqwest::Client::builder()
         .timeout(ANKI_TIMEOUT)
+        .no_proxy()
         .build()
         .map_err(|e| e.to_string())?;
     let resp = client
@@ -58,12 +61,12 @@ async fn anki_request(url: &str, action: &str, params: Value) -> Result<Value, S
         .await
         .map_err(|e| {
             crate::user_log(&format!("[anki] {action} 请求失败: {e}（url={url}）"));
-            t("err.ankiUnreachable").to_string()
+            t("err.ankiNotRunning").to_string()
         })?;
     if !resp.status().is_success() {
         let status = resp.status();
         crate::user_log(&format!("[anki] {action} HTTP {status}（url={url}）"));
-        return Err(format!("{} (HTTP {status})", t("err.ankiUnreachable")));
+        return Err(t("err.ankiNotRunning").to_string());
     }
     let v: Value = resp
         .json()
@@ -96,13 +99,63 @@ fn string_list(v: Value) -> Vec<String> {
 /// 旧版协议版本是数字（如 6），按任意标量收敛为展示串
 #[tauri::command]
 pub async fn anki_version(url: String) -> Result<String, String> {
-    let v = anki_request(&url, "version", json!({})).await?;
+    let v = anki_request(&url, "version", json!({})).await.map_err(|e| {
+        // 连接失败时按安装状态分层提示：应用都没装 → 引导安装；装了没开/没装
+        // 插件 → 引导启动。其余错误（地址不合法等）原样透传
+        if e == t("err.ankiNotRunning") {
+            if anki_installed() {
+                e
+            } else {
+                t("err.ankiMissing").to_string()
+            }
+        } else {
+            e
+        }
+    })?;
     Ok(match v {
         Value::String(s) => s,
         Value::Number(n) => n.to_string(),
         Value::Null => String::new(),
         _ => v.to_string(),
     })
+}
+
+/// Anki 应用是否安装：探测链 = 惯例路径（/Applications、~/Applications）→
+/// Spotlight 按 bundle id 全盘定位（net.ankiweb.dtop，装在任何注册过的位置都能
+/// 找到；未索引的卷会被漏掉，故路径检查在前）。Windows 查惯例安装路径。
+/// 「Anki 未启动」与「AnkiConnect 插件未装」在网络层不可区分（端口都无人应答），
+/// 安装状态探测是与它们区分的唯一抓手
+#[tauri::command]
+pub fn anki_installed() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME").unwrap_or_default();
+        for p in [
+            "/Applications/Anki.app".to_string(),
+            format!("{home}/Applications/Anki.app"),
+        ] {
+            if std::path::Path::new(&p).exists() {
+                return true;
+            }
+        }
+        std::process::Command::new("mdfind")
+            .arg("kMDItemCFBundleIdentifier == 'net.ankiweb.dtop'")
+            .output()
+            .map(|o| !o.stdout.is_empty())
+            .unwrap_or(false)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::path::Path::new(&format!(
+            "{}\\Programs\\Anki\\anki.exe",
+            std::env::var("LOCALAPPDATA").unwrap_or_default()
+        ))
+        .exists()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        false
+    }
 }
 
 /// 牌组列表（设置页下拉缓存）

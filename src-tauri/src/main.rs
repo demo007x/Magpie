@@ -723,6 +723,7 @@ fn main() {
             entities::detect_dates,
             obsidian::obsidian_append,
             anki::anki_version,
+            anki::anki_installed,
             anki::anki_deck_names,
             anki::anki_create_deck,
             anki::anki_model_names,

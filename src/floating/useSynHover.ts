@@ -63,6 +63,10 @@ export function useSynHover(opts: {
   // （非 key 窗口收不到逐元素 mousemove，但 document 级离开/进入边沿可靠——
   // ghost-state 修复已依赖同一对事件），null = 光标在胶囊∪浮层内
   const dwellRef = useRef<{ trig: HoverMenuId; since: number } | null>(null);
+  // 驻留一次性定时器：hover://move 只在鼠标移动时产生，划到 ⌄ 项上停住不动
+  // 就再也不会有事件——驻留开合若只靠事件流判定，「到位停住」永远开不出二级
+  // （微动一下才开的旧问题）。驻留开始即起表，到点校验仍停在同一项才开
+  const dwellTimerRef = useRef(0);
   const menuStateRef = useRef(menu);
   menuStateRef.current = menu;
   // 子菜单退场快照：纯收起/切换时旧菜单值在此多挂 MENU_FADE_MS 毫秒，
@@ -314,6 +318,18 @@ export function useSynHover(opts: {
           switchMenu(trig);
         } else if (dwellRef.current?.trig !== trig) {
           dwellRef.current = { trig, since: now };
+          // 到位即起表：停满 OPEN 到点自动开（见 dwellTimerRef 注释）。
+          // fire 时校验仍停在同一项且时长已满——划走重进时旧表不误开新项
+          window.clearTimeout(dwellTimerRef.current);
+          dwellTimerRef.current = window.setTimeout(() => {
+            if (
+              dwellRef.current?.trig === trig &&
+              performance.now() - dwellRef.current.since >= HOVER_OPEN_MS
+            ) {
+              dwellRef.current = null;
+              switchMenu(trig);
+            }
+          }, HOVER_OPEN_MS);
         } else if (now - dwellRef.current.since >= HOVER_OPEN_MS) {
           dwellRef.current = null;
           switchMenu(trig);
@@ -412,6 +428,7 @@ export function useSynHover(opts: {
       listenCancelled = true;
       unlisteners.forEach((u) => u());
       window.clearTimeout(fadeTimerRef.current);
+      window.clearTimeout(dwellTimerRef.current);
       document.removeEventListener("mouseleave", markHoverLeft);
       document.removeEventListener("mouseenter", markHoverInside);
     };

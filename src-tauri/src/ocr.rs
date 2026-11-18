@@ -125,7 +125,7 @@ pub fn push_ocr_result(
     image: PathBuf,
     run: Option<(String, Option<String>)>,
 ) {
-    super::floating::ocr_set_pending(text, Some(image), run);
+    super::floating::ocr_set_pending(text, Some(image), run, String::new());
     let _ = app.emit(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
@@ -235,7 +235,7 @@ pub fn warmup() {
 /// emit_to 的按窗口过滤不匹配 Any 监听器（此前识别面板因此永不出现）。
 /// 其他窗口收到后按 app=="ocr" 忽略。
 pub fn push_text_to_ocr_window(app: &tauri::AppHandle, text: String, image: Option<PathBuf>) {
-    super::floating::ocr_set_pending(text, image, None);
+    super::floating::ocr_set_pending(text, image, None, String::new());
     let _ = app.emit(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),

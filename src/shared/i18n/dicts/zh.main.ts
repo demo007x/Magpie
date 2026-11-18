@@ -155,14 +155,14 @@ export const zhMain = {
   "obsidian.cardFolder": "知识卡目录（vault 内路径）",
   "obsidian.templatesSec": "模板",
   "obsidian.excerptTpl": "摘录块模板",
-  "obsidian.excerptTplVars": "变量：{fText} 选中文本 · {fSource} 来源应用 · {fTime} 时间 · {fDate} 日期",
+  "obsidian.excerptTplVars": "变量：{fText} 选中文本 · {fSource} 来源应用 · {fTime} 时间 · {fDate} 日期 · {fLink} 来源页面链接（非网页为空）",
   "obsidian.taskTpl": "任务行模板",
-  "obsidian.taskTplVars": "变量：{fText} 任务内容 · {fDue} 截止日期 · {fDueTag} 日历标记（无日期时整段省略）",
+  "obsidian.taskTplVars": "变量：{fText} 任务内容 · {fDue} 截止日期 · {fDueTag} 日历标记（无日期时整段省略） · {fLink} 来源页面链接（非网页为空）",
   "obsidian.cardTpl": "知识卡模板",
   "obsidian.cardTplVars":
-    "变量：{fText} 选中文本 · {fSource} 来源应用 · {fTime} 时间 · {fDate} 日期。一卡一文件，文件名取选中文本首行（≤20 字）。",
+    "变量：{fText} 选中文本 · {fSource} 来源应用 · {fTime} 时间 · {fDate} 日期 · {fLink} 来源页面链接（非网页为空）。一卡一文件，文件名取选中文本首行（≤20 字）。",
   "obsidian.resetTplTitle": "恢复出厂默认模板",
-  "obsidian.excerptNote": "多行选中文本会逐行保持 markdown 引用形态。",
+  "obsidian.excerptNote": "多行选中文本会逐行保持 markdown 引用形态。含 {fLink} 的行在未取到链接时整行省略。",
 
   // Anki 页
   "anki.hint":
@@ -180,6 +180,10 @@ export const zhMain = {
   "anki.readyBadge": "已就绪",
   "anki.companionCreating": "配置中…",
   "anki.customTypeInUse": "正在使用你自己的笔记类型「{name}」。",
+  "anki.defaultCardLabel": "主按钮默认卡型",
+  "anki.defaultCardAuto": "自动",
+  "anki.defaultCardWord": "单词卡",
+  "anki.defaultCardContent": "内容卡",
 
   // 提示词页
   "prompts.hint": "编辑各动作发给模型的指令；{lang} 按界面语言解析为简体中文或 English，{date} 解析为当天日期，所选文字随后附带。更改需保存后生效。",

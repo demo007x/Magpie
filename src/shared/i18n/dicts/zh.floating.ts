@@ -25,6 +25,7 @@ export const zhFloating = {
   "floating.translateMissing": "未启用翻译服务",
   "floating.vaultMissing": "未配置 Obsidian vault，请在设置页选择",
   "floating.savedTask": "已存入任务",
+  "floating.obsidianOriginal": "原文",
   "floating.savedCard": "已存入卡片：{title}",
   "floating.savedFile": "已存入 {name}",
   "floating.obsidianFailed": "存入 Obsidian 失败",

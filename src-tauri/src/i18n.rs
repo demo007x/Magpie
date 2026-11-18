@@ -132,7 +132,9 @@ static ZH: &[(&str, &str)] = &[
     ("err.fileOpenFailed", "无法打开文件"),
     ("err.writeFailed", "写入失败"),
     // Anki 接入（docs/08）
-    ("err.ankiUnreachable", "未能存入 Anki——请确认 Anki 已启动并安装 AnkiConnect 插件"),
+    ("err.ankiUnreachable", "Anki 连接失败——请确认 Anki 已启动并安装 AnkiConnect 插件"),
+    ("err.ankiNotRunning", "Anki 未启动——打开 Anki 后重试（首次使用需安装 AnkiConnect 插件）"),
+    ("err.ankiMissing", "未检测到 Anki——请先安装 Anki 应用（可参考下方安装教程）"),
     ("err.ankiDuplicate", "Anki 里已有这张卡，没有重复创建"),
     ("err.ankiInvalidUrl", "AnkiConnect 地址不合法（仅支持本机地址）"),
     ("err.ankiParseFailed", "未能存入 Anki——Anki 返回了无法识别的内容"),
@@ -230,7 +232,9 @@ static EN: &[(&str, &str)] = &[
     ("err.fileOpenFailed", "Couldn't open the file"),
     ("err.writeFailed", "Couldn't write the file"),
     // Anki integration (docs/08)
-    ("err.ankiUnreachable", "Couldn\'t save to Anki — make sure Anki is running and the AnkiConnect add-on is installed"),
+    ("err.ankiUnreachable", "Couldn\'t reach Anki — make sure Anki is running and the AnkiConnect add-on is installed"),
+    ("err.ankiNotRunning", "Anki isn\'t running — open it and try again (first-time setup needs the AnkiConnect add-on)"),
+    ("err.ankiMissing", "Anki not found — install the Anki app first (see the setup guide below)"),
     ("err.ankiDuplicate", "This card already exists in Anki — nothing was created twice"),
     ("err.ankiInvalidUrl", "Invalid AnkiConnect URL (loopback addresses only)"),
     ("err.ankiParseFailed", "Couldn\'t save to Anki — Anki returned something unexpected"),

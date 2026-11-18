@@ -164,15 +164,15 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "obsidian.templatesSec": "Templates",
   "obsidian.excerptTpl": "Excerpt template",
   "obsidian.excerptTplVars":
-    "Variables: {fText} selected text · {fSource} source app · {fTime} time · {fDate} date",
+    "Variables: {fText} selected text · {fSource} source app · {fTime} time · {fDate} date · {fLink} source page URL (empty outside browsers)",
   "obsidian.taskTpl": "Task template",
   "obsidian.taskTplVars":
-    "Variables: {fText} task content · {fDue} due date · {fDueTag} calendar tag (omitted entirely when there is no date)",
+    "Variables: {fText} task content · {fDue} due date · {fDueTag} calendar tag (omitted entirely when there is no date) · {fLink} source page URL (empty outside browsers)",
   "obsidian.cardTpl": "Note card template",
   "obsidian.cardTplVars":
-    "Variables: {fText} selected text · {fSource} source app · {fTime} time · {fDate} date. One card per file, named after the first line of the selected text (up to 20 characters).",
+    "Variables: {fText} selected text · {fSource} source app · {fTime} time · {fDate} date · {fLink} source page URL (empty outside browsers). One card per file, named after the first line of the selected text (up to 20 characters).",
   "obsidian.resetTplTitle": "Restore the factory default template",
-  "obsidian.excerptNote": "Multi-line selections keep their markdown quote form line by line.",
+  "obsidian.excerptNote": "Multi-line selections keep their markdown quote form line by line. Lines containing {fLink} are omitted when no link is available.",
 
   // Anki page
   "anki.hint":
@@ -191,6 +191,10 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "anki.readyBadge": "Ready",
   "anki.companionCreating": "Setting up…",
   "anki.customTypeInUse": "Using your own note type \"{name}\".",
+  "anki.defaultCardLabel": "Default card type",
+  "anki.defaultCardAuto": "Auto",
+  "anki.defaultCardWord": "Word",
+  "anki.defaultCardContent": "Content",
 
   // Prompts page
   "prompts.hint":

@@ -118,6 +118,8 @@ export interface AnkiConfig {
   modelName: string;
   /** 标签模板（空格分隔；变量 {date}/{source}） */
   tags: string;
+  /** 主按钮默认卡型：auto = 按划词长短自动选；word = 单词卡；content = 内容卡 */
+  defaultCard: string;
 }
 
 /** 本地朗读配置：默认音色 + 功能开关（模型是否已安装由 Rust 侧文件系统判定） */

@@ -23,6 +23,7 @@ export const enFloating: Record<keyof typeof zhFloating, string> = {
   "floating.translateMissing": "No translation service enabled",
   "floating.vaultMissing": "No Obsidian vault set — choose one in Settings",
   "floating.savedTask": "Task saved",
+  "floating.obsidianOriginal": "Original",
   "floating.savedCard": "Saved to card: {title}",
   "floating.savedFile": "Saved to {name}",
   "floating.obsidianFailed": "Failed to save to Obsidian",

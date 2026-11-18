@@ -421,6 +421,10 @@ body,
   flex-direction: column;
   gap: 1px;
   width: max-content;
+  /* 最小宽度（2026-11-18 用户定稿）：两字短项菜单（如 Obsidian 的笔记/任务/卡片）
+     不再贴文字宽——托到 64px 给条目留呼吸感；四字菜单自然宽度已在此之上，
+     基本不受影响。旧原则「短项菜单不撑宽」就此只对 .pop.overflow 保留 */
+  min-width: 56px;
   padding: 3px; /* 底色继承 .pop 的 --surface（与收纳面板同一菜单语言、同底色） */
 }
 

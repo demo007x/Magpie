@@ -74,4 +74,6 @@ export interface PendingView {
   imagePath: string | null;
   run: { id: string; service: string | null } | null;
   pid: number;
+  /** 选区来源应用路径（划词导流携带；截屏 OCR 为空串） */
+  app: string;
 }

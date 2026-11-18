@@ -268,9 +268,7 @@ export default function AnkiPage({ settings, patch, save, saved, saveNow }: Page
             <span className="row-sub">
               {test.ok
                 ? t("anki.testOk")
-                : test.auto
-                  ? t("anki.autoFail")
-                  : test.msg || t("anki.testFail")}
+                : test.msg || (test.auto ? t("anki.autoFail") : t("anki.testFail"))}
               {/* 检测失败时内嵌教程入口：官网 Anki 教程（按界面语言取中文/英文页） */}
               {!test.ok && (
                 <button
@@ -317,6 +315,32 @@ export default function AnkiPage({ settings, patch, save, saved, saveNow }: Page
         {!companionReady && !isCompanionModel(anki.modelName) && (
           <div className="row-between">
             <span className="row-sub">{t("anki.customTypeInUse", { name: anki.modelName })}</span>
+          </div>
+        )}
+        {/* 主按钮默认卡型（配套两种类型就绪时才有选择意义）：
+            主按钮按所选卡型建卡，⌄ 菜单可临时指定 */}
+        {companionReady && (
+          <div className="row-between sep">
+            <div className="row-title">{t("anki.defaultCardLabel")}</div>
+            <div className="row-ctl">
+              <div className="seg" role="radiogroup" aria-label={t("anki.defaultCardLabel")}>
+                {(
+                  [
+                    ["auto", t("anki.defaultCardAuto")],
+                    ["word", t("anki.defaultCardWord")],
+                    ["content", t("anki.defaultCardContent")],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    className={(anki.defaultCard ?? "auto") === value ? "on" : ""}
+                    onClick={() => patch((s) => ({ anki: { ...s.anki, defaultCard: value } }))}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>

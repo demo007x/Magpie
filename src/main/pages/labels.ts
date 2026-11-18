@@ -11,6 +11,6 @@ export const actionDesc = (id: string): string => t(`actionDesc.${id}`);
     （「恢复默认」按钮的目标值；obsidian 配置为全量存储，没有缺省回落机制）。
     模板是随 settings 存储的用户数据、不随界面语言切换，默认值因此用中性写法：
     {source} 本身是应用名，无需「来源：」标签（2026-11-07 界面双语化时调整） */
-export const DEFAULT_EXCERPT_TEMPLATE = "- **{time}** · {source}\n  > {text}";
+export const DEFAULT_EXCERPT_TEMPLATE = "- **{time}** · {source}\n  > {text}\n  > {link}";
 export const DEFAULT_TASK_TEMPLATE = "- [ ] {text} {dueTag}";
-export const DEFAULT_CARD_TEMPLATE = "- **{time}** · {source}\n  > {text}";
+export const DEFAULT_CARD_TEMPLATE = "- **{time}** · {source}\n  > {text}\n  > {link}";

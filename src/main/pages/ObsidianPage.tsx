@@ -17,6 +17,7 @@ const TEMPLATE_VARS = {
   fDate: "{date}",
   fDue: "{due}",
   fDueTag: "{dueTag}",
+  fLink: "{link}",
 };
 
 export default function ObsidianPage({ settings, patch, save, saved }: PageProps) {
@@ -159,7 +160,7 @@ export default function ObsidianPage({ settings, patch, save, saved }: PageProps
                   })
                 }
               />
-              <p className="row-sub">{t("obsidian.excerptNote")}</p>
+              <p className="row-sub">{t("obsidian.excerptNote", TEMPLATE_VARS)}</p>
             </div>
 
             <div className="card">

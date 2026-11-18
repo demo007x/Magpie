@@ -799,6 +799,7 @@ export default function App() {
             actionId: "__extract",
             service: null,
             pid: sourcePidRef.current,
+            sourceApp: sourceAppRef.current,
           }).catch(() => undefined);
           invoke("hide_floating_bar").catch(() => undefined);
           setPhase({ kind: "bar" });
@@ -901,6 +902,8 @@ export default function App() {
           setUsedTranslate(null); // 选中态回落到默认服务
           setUsedEngine(null);
           setHoverSuppress(true);
+          // 导流带上了来源应用：结果窗存 Obsidian 的「来源」由此取名
+          sourceAppRef.current = p.app;
           setPhase({
             kind: "ocr",
             text: p.text,
@@ -1575,72 +1578,103 @@ export default function App() {
         const dailyRel = [cfg.dailyFolder.replace(/^\/+|\/+$/g, ""), fname]
           .filter(Boolean)
           .join("/");
-        // 保存内容择优：结果窗里已有 AI 结果时存结果，否则存原文
+        // 保存内容择优：结果窗里已有 AI 结果时存「原文 + 动作结果」——只有结论没有
+        // 引文，回看时不知道解释的是什么；动作名（解释/翻译/总结/自定义动作名）作
+        // 小标题，byId 同时覆盖内置与自定义注册表。任务例外：待办本身来自选中文本，
+        // 塞进 AI 结果反而不可执行，恒存原文
+        const ocr =
+          phase.kind === "ocr" && phase.actionId && phase.output && !phase.error ? phase : null;
+        const def = ocr ? byId(ocr.actionId ?? "") : undefined;
         const body =
-          phase.kind === "ocr" && phase.actionId && phase.output && !phase.error
-            ? phase.output
+          ocr && def
+            ? `**${t("floating.obsidianOriginal")}：**\n${source}\n\n**${actionLabel(def)}：**\n${ocr.output}`
             : source;
 
-        // 存任务：写入任务目标文件（空 = 当日日记）。{due} 取选中文本里的日期实体
-        //（detect_dates µs 级，用时重检——与「提取信息」面板同一模式，不跨窗口传状态）；
-        // {dueTag} = "📅 日期" 或空，模板用它占位即可在无日期时整段省略
-        if (target === "task") {
-          const rel = cfg.taskFile.trim() ? cfg.taskFile.trim() : dailyRel;
-          const oneLine = body.replace(/\s*\n\s*/g, " ").trim();
-          invoke<DateHit[]>("detect_dates", { text: oneLine })
-            .then((hits) => {
-              const h = (hits ?? [])[0];
-              const d = h ? new Date(h.unix * 1000) : null;
-              const due = d
-                ? `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`
-                : "";
-              const dueTag = d ? `📅 ${due}` : "";
-              const line = cfg.taskTemplate
-                .replaceAll("{text}", oneLine)
-                .replaceAll("{due}", due)
-                .replaceAll("{dueTag}", dueTag);
-              invoke("obsidian_append", { relPath: rel, content: line })
-                .then(() => toast(t("floating.savedTask")))
+        // 来源页面 URL（{link}）：按选区来源 pid 反查浏览器当前地址——仅网页场景
+        // 有效，非网页应用返回 null，{link} 落空串；查询失败同样按空处理
+        invoke<string | null>("frontmost_web_url", { pid: sourcePidRef.current })
+          .catch(() => null)
+          .then((pageUrl) => {
+            const link = pageUrl ?? "";
+
+            // 存任务：写入任务目标文件（空 = 当日日记）。{due} 取选中文本里的日期实体
+            //（detect_dates µs 级，用时重检——与「提取信息」面板同一模式，不跨窗口传状态）；
+            // {dueTag} = "📅 日期" 或空，模板用它占位即可在无日期时整段省略
+            if (target === "task") {
+              const rel = cfg.taskFile.trim() ? cfg.taskFile.trim() : dailyRel;
+              const oneLine = source.replace(/\s*\n\s*/g, " ").trim();
+              invoke<DateHit[]>("detect_dates", { text: oneLine })
+                .then((hits) => {
+                  const h = (hits ?? [])[0];
+                  const d = h ? new Date(h.unix * 1000) : null;
+                  const due = d
+                    ? `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`
+                    : "";
+                  const dueTag = d ? `📅 ${due}` : "";
+                  const line = cfg.taskTemplate
+                    .replaceAll("{text}", oneLine)
+                    .replaceAll("{due}", due)
+                    .replaceAll("{dueTag}", dueTag)
+                    .replaceAll("{link}", link);
+                  invoke("obsidian_append", { relPath: rel, content: line })
+                    .then(() => toast(t("floating.savedTask")))
+                    .catch(() => toast(t("floating.obsidianFailed"), "err"));
+                })
                 .catch(() => toast(t("floating.obsidianFailed"), "err"));
-            })
-            .catch(() => toast(t("floating.obsidianFailed"), "err"));
-          return;
-        }
+              return;
+            }
 
-        // 存卡片：一卡一文件写入知识卡目录，文件名 = 选中文本首行清理后截 20 字
-        //（非法文件名字符剔除，超长截断，空选区回退时间戳命名）
-        if (target === "card") {
-          const first = body.split("\n").map((s) => s.trim()).find(Boolean) ?? "";
-          const safe = first
-            .replace(/[/\\:*?"<>|#^[\]]/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-          const title =
-            Array.from(safe).slice(0, 20).join("") ||
-            t("floating.cardFallbackName", { date, time: time.replace(":", "") });
-          const rel = [cfg.cardFolder.replace(/^\/+|\/+$/g, ""), `${title}.md`]
-            .filter(Boolean)
-            .join("/");
-          const content = cfg.cardTemplate
-            .replaceAll("{date}", date)
-            .replaceAll("{time}", time)
-            .replaceAll("{source}", src)
-            .replaceAll("{text}", body.split("\n").join("\n> "));
-          invoke("obsidian_append", { relPath: rel, content: content })
-            .then(() => toast(t("floating.savedCard", { title })))
-            .catch(() => toast(t("floating.obsidianFailed"), "err"));
-          return;
-        }
+            // 存卡片：一卡一文件写入知识卡目录，文件名 = 选中文本首行清理后截 20 字
+            //（非法文件名字符剔除，超长截断，空选区回退时间戳命名）。
+            // {link} 条件行：未取到链接时整行省略（避免留下空引用行）
+            if (target === "card") {
+              const first = source.split("\n").map((s) => s.trim()).find(Boolean) ?? "";
+              const safe = first
+                .replace(/[/\\:*?"<>|#^[\]]/g, " ")
+                .replace(/\s+/g, " ")
+                .trim();
+              const title =
+                Array.from(safe).slice(0, 20).join("") ||
+                t("floating.cardFallbackName", { date, time: time.replace(":", "") });
+              const rel = [cfg.cardFolder.replace(/^\/+|\/+$/g, ""), `${title}.md`]
+                .filter(Boolean)
+                .join("/");
+              // 多行正文前缀同样从卡片模板推导（见下方存笔记的说明）
+              const cardPrefix = lastLinePrefix(cfg.cardTemplate);
+              const content = cfg.cardTemplate
+                .split("\n")
+                .filter((ln) => link || !ln.includes("{link}"))
+                .join("\n")
+                .replaceAll("{date}", date)
+                .replaceAll("{time}", time)
+                .replaceAll("{source}", src)
+                .replaceAll("{link}", link)
+                .replaceAll("{text}", body.split("\n").join("\n" + cardPrefix));
+              invoke("obsidian_append", { relPath: rel, content: content })
+                .then(() => toast(t("floating.savedCard", { title })))
+                .catch(() => toast(t("floating.obsidianFailed"), "err"));
+              return;
+            }
 
-        // 存笔记（默认）：摘录块追加当日日记，多行文本逐行补引用前缀保持 markdown 形态
-        const excerpt = cfg.excerptTemplate
-          .replaceAll("{date}", date)
-          .replaceAll("{time}", time)
-          .replaceAll("{source}", src)
-          .replaceAll("{text}", body.split("\n").join("\n> "));
-        invoke("obsidian_append", { relPath: dailyRel, content: excerpt })
-          .then(() => toast(t("floating.savedFile", { name: fname })))
-          .catch(() => toast(t("floating.obsidianFailed"), "err"));
+            // 存笔记（默认）：摘录块追加当日日记。多行正文的逐行前缀取模板 {text}
+            // 所在行的引用前缀（如 "  > " / "    | "）——此前固定补 "> "，0 缩进的续行
+            // 会把列表项的嵌套截断：续行落在列表外，Obsidian 折叠箭头收不进正文。
+            // 分段间补空行（前缀会同步续上引用符，引用块保持连续）。
+            // {link} 条件行：未取到链接时整行省略（避免留下空引用行）
+            const excerptPrefix = lastLinePrefix(cfg.excerptTemplate);
+            const excerpt = cfg.excerptTemplate
+              .split("\n")
+              .filter((ln) => link || !ln.includes("{link}"))
+              .join("\n")
+              .replaceAll("{date}", date)
+              .replaceAll("{time}", time)
+              .replaceAll("{source}", src)
+              .replaceAll("{link}", link)
+              .replaceAll("{text}", body.split("\n").join("\n" + excerptPrefix));
+            invoke("obsidian_append", { relPath: dailyRel, content: excerpt })
+              .then(() => toast(t("floating.savedFile", { name: fname })))
+              .catch(() => toast(t("floating.obsidianFailed"), "err"));
+          });
         return;
       }
 
@@ -1703,9 +1737,10 @@ export default function App() {
                 .replaceAll("{time}", () => time)
                 .replaceAll("{url}", () => url);
             };
-            // 牌组×类型成对路由：⌄ 菜单显式指定（子牌组）优先；无指定时配套就绪
-            // 则按划词长短自动选（单词卡/内容卡字段同构，判错只差排版不丢数据）；
-            // 自定义类型尊重用户选择（牌组/类型都用其配置）
+            // 牌组×类型成对路由：⌄ 菜单显式指定（子牌组）优先；无指定时按主按钮
+            // 默认卡型（设置页可配；auto = 按划词长短自动选——单词卡/内容卡字段
+            // 同构，判错只差排版不丢数据）；自定义类型尊重用户选择（牌组/类型都用
+            // 其配置）
             const hasWord = cfg.models?.includes(COMPANION_WORD) ?? false;
             const hasContent = cfg.models?.includes(COMPANION_CONTENT) ?? false;
             const pair =
@@ -1713,9 +1748,13 @@ export default function App() {
               (!isCompanionModel(cfg.modelName)
                 ? null
                 : hasWord && hasContent
-                  ? isShortSelection(source)
+                  ? cfg.defaultCard === "word"
                     ? COMPANION_ITEMS[0]
-                    : COMPANION_ITEMS[1]
+                    : cfg.defaultCard === "content"
+                      ? COMPANION_ITEMS[1]
+                      : isShortSelection(source)
+                        ? COMPANION_ITEMS[0]
+                        : COMPANION_ITEMS[1]
                   : hasWord
                     ? COMPANION_ITEMS[0]
                     : hasContent
@@ -1815,6 +1854,7 @@ export default function App() {
             actionId: id,
             service: svc,
             pid: sourcePidRef.current,
+            sourceApp: sourceAppRef.current,
           }).catch(() => undefined);
           invoke("hide_floating_bar").catch(() => undefined);
           setPhase({ kind: "bar" });
@@ -1887,6 +1927,7 @@ export default function App() {
         actionId: id,
         service: pushedSvc,
         pid: sourcePidRef.current,
+        sourceApp: sourceAppRef.current,
       }).catch(() => undefined);
       invoke("hide_floating_bar").catch(() => undefined);
       setPhase({ kind: "bar" });
@@ -2885,6 +2926,14 @@ export default function App() {
 }
 
 /** 进程路径 → 应用名（取末段、去 .app 后缀）："…/Safari.app/Contents/…" → Safari */
+/** 模板 {text} 所在行的引用前缀：{text} 之前、最后一个换行之后的字面量。
+    多行正文逐行续上前缀才能保持与列表项的嵌套（首行带 {time}/{source} 占位符，
+    不能把 {text} 之前的整段拿来当逐行前缀，否则每行都会长出一条未替换的列表项） */
+function lastLinePrefix(tpl: string): string {
+  const head = tpl.slice(0, tpl.indexOf("{text}"));
+  return head.slice(head.lastIndexOf("\n") + 1);
+}
+
 function appNameFrom(path: string): string {
   const last = path.split("/").filter(Boolean).pop() ?? "";
   return last.replace(/\.app$/i, "") || t("floating.unknownApp");

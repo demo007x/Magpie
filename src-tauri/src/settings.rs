@@ -279,11 +279,11 @@ pub struct ObsidianConfig {
     pub task_file: String,
     /// 知识卡目录（相对 vault）
     pub card_folder: String,
-    /// 摘录块模板（变量 {text}/{source}/{time}/{date}）
+    /// 摘录块模板（变量 {text}/{source}/{time}/{date}/{link}）
     pub excerpt_template: String,
-    /// 任务行模板（变量 {text}/{due}/{dueTag}）
+    /// 任务行模板（变量 {text}/{due}/{dueTag}/{link}）
     pub task_template: String,
-    /// 知识卡内容模板（变量 {text}/{source}/{time}/{date}）
+    /// 知识卡内容模板（变量 {text}/{source}/{time}/{date}/{link}）
     pub card_template: String,
 }
 
@@ -295,9 +295,9 @@ impl Default for ObsidianConfig {
             daily_file_name: "yyyy-MM-DD".into(),
             task_file: String::new(),
             card_folder: "Cards".into(),
-            excerpt_template: "- **{time}** · {source}\n  > {text}".into(),
+            excerpt_template: "- **{time}** · {source}\n  > {text}\n  > {link}".into(),
             task_template: "- [ ] {text} {dueTag}".into(),
-            card_template: "- **{time}** · {source}\n  > {text}".into(),
+            card_template: "- **{time}** · {source}\n  > {text}\n  > {link}".into(),
         }
     }
 }
@@ -320,6 +320,9 @@ pub struct AnkiConfig {
     pub model_name: String,
     /// 标签模板（空格分隔；变量 {date}/{source}）
     pub tags: String,
+    /// 主按钮默认卡型：auto = 按划词长短自动选；word = 单词卡；content = 内容卡
+    /// （仅配套两种类型齐备时生效；⌄ 菜单显式指定始终优先）
+    pub default_card: String,
 }
 
 impl Default for AnkiConfig {
@@ -331,6 +334,7 @@ impl Default for AnkiConfig {
             models: Vec::new(),
             model_name: "Basic".into(),
             tags: "magpie {date}".into(),
+            default_card: "auto".into(),
         }
     }
 }

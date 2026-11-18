@@ -98,6 +98,8 @@ export function useCaptureSession(opts: {
             o.setUsedTranslate(null); // 选中态回落到默认服务
             o.setUsedEngine(null);
             o.setHoverSuppress(true);
+            // 导流带上了来源应用：结果窗存 Obsidian 的「来源」由此取名
+            o.sourceAppRef.current = p.app;
             if (p.run?.id === "__extract") {
               o.showExtractPanel(p.text, p.pid);
             } else {

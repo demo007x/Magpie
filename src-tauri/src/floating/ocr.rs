@@ -96,6 +96,9 @@ struct OcrPending {
     /// 选区来源进程 pid（划词导流时携带）：智能提取/日历路径反查页面 URL 用；
     /// 截屏 OCR 无来源进程，置 0
     pid: i32,
+    /// 选区来源应用路径（划词导流时携带）：结果窗存 Obsidian 时「来源」展示用；
+    /// 截屏 OCR 无来源应用，置空
+    app: String,
 }
 
 static OCR_PENDING: Mutex<Option<OcrPending>> = Mutex::new(None);
@@ -146,6 +149,8 @@ pub struct PendingResult {
     pub run: Option<PendingRun>,
     /// 选区来源进程 pid（0 = 无来源，如截屏 OCR）
     pub pid: i32,
+    /// 选区来源应用路径（空 = 无来源，如截屏 OCR）
+    pub app: String,
 }
 
 /// 自动执行的动作（id + 可选翻译服务）
@@ -180,6 +185,7 @@ pub fn ocr_take_pending() -> Option<PendingResult> {
             from_ocr,
             run: Some((r.id.clone(), r.service.clone())),
             pid: p.pid,
+            app: p.app.clone(),
         });
     }
     Some(PendingResult {
@@ -190,6 +196,7 @@ pub fn ocr_take_pending() -> Option<PendingResult> {
         pinned: ocr_pinned(),
         run,
         pid: p.pid,
+        app: p.app,
     })
 }
 
@@ -209,14 +216,21 @@ pub fn ocr_set_pending(
     text: String,
     image: Option<std::path::PathBuf>,
     run: Option<(String, Option<String>)>,
+    app: String,
 ) {
     replace_ocr_image(image);
     let mut pending = OCR_PENDING.lock().unwrap();
-    *pending = Some(OcrPending { text, from_ocr: true, run, pid: 0 });
+    *pending = Some(OcrPending { text, from_ocr: true, run, pid: 0, app });
 }
 
 /// 存入划词导流结果（面板弹出后自动执行 run）
-pub fn set_selection_pending(text: String, action_id: String, service: Option<String>, pid: i32) {
+pub fn set_selection_pending(
+    text: String,
+    action_id: String,
+    service: Option<String>,
+    pid: i32,
+    app: String,
+) {
     // 划词不带图：清掉上一次识别遗留的截图
     replace_ocr_image(None);
     let mut pending = OCR_PENDING.lock().unwrap();
@@ -225,6 +239,7 @@ pub fn set_selection_pending(text: String, action_id: String, service: Option<St
         from_ocr: false,
         run: Some((action_id, service)),
         pid,
+        app,
     });
     drop(pending);
     RESULT_BELOW_ANCHOR.store(true, Ordering::Relaxed);
@@ -362,8 +377,9 @@ pub fn push_selection_result(
     action_id: String,
     service: Option<String>,
     pid: Option<i32>,
+    source_app: Option<String>,
 ) {
-    set_selection_pending(text, action_id, service, pid.unwrap_or(0));
+    set_selection_pending(text, action_id, service, pid.unwrap_or(0), source_app.unwrap_or_default());
     let _ = app.emit(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
