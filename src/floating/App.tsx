@@ -1765,15 +1765,11 @@ export default function App() {
             // 字段组装：配套类型叠加出厂映射（不落盘），其余字段走智能默认——
             // 第 1 字段 = 选中文本（Anki 以首字段查重，须为唯一标识）、恰好两字段
             // 类型第 2 字段 = 结果窗内容（胶囊直建留空）。字段顺序需实拉
-            // 临时诊断：建卡链分段计时（pick 到达/字段返回/建卡返回），定位
-            // 「错误 toast 迟到」的耗时段；数据取到后移除
-            const diagT0 = performance.now();
             invoke<string[]>("anki_model_fields", {
               url: cfg.connectUrl,
               model,
             })
               .then((names) => {
-                const diagT1 = performance.now();
                 const factory = isCompanionModel(model) ? COMPANION_FIELD_MAP : {};
                 const fieldMap: Record<string, string> = {};
                 // 智能默认：正面是纯文本（划词原文逐字入卡，不过 markdown，字面
@@ -1796,26 +1792,16 @@ export default function App() {
                   model,
                   fields: fieldMap,
                   tags,
-                }).then(() => {
-                  if (import.meta.env.DEV)
-                    invoke("ui_debug_log", {
-                      msg: `[anki] 链路 fields=${(diagT1 - diagT0).toFixed(0)}ms add=${(performance.now() - diagT1).toFixed(0)}ms`,
-                    });
+                }).then(() =>
                   // toast 传卡型产品名（单词卡/内容卡），不暴露 Anki 内部牌组路径；
                   // 自定义类型退回牌组名
-                  toast(t("floating.ankiSaved", { card: pair?.label ?? deck }));
-                });
+                  toast(t("floating.ankiSaved", { card: pair?.label ?? deck })),
+                );
               })
               // 字段实拉失败也在此 toast，不吞：Anki 不可达时若吞掉继续 addNote，
-              // 会在同一失败上重复烧一轮请求（无响应时各烧满 2s 超时），错误提示
+              // 会在同一失败上重复烧一轮请求（无响应时各烧满超时），错误提示
               // 晚一倍。Rust 侧错误已按界面语言本地化（不可达/重复卡/其他），直接展示
-              .catch((e) => {
-                if (import.meta.env.DEV)
-                  invoke("ui_debug_log", {
-                    msg: `[anki] 链路(失败) 耗时=${(performance.now() - diagT0).toFixed(0)}ms`,
-                  });
-                toast(String(e) || t("anki.testFail"), "err");
-              });
+              .catch((e) => toast(String(e) || t("anki.testFail"), "err"));
           });
         return;
       }

@@ -191,9 +191,6 @@ export function usePopsSync(opts: {
     (p: { kind: string; key: string; rowY: number | null }) => {
       if (p.kind === "action") {
         setMenu(null);
-        // 临时诊断：toast 迟到问题的链路锚点（数据取到后移除）
-        if (p.key === "anki" && import.meta.env.DEV)
-          invoke("ui_debug_log", { msg: "[anki] pick 到达，派发 runAction" });
         runAction(p.key);
         return;
       }
