@@ -132,6 +132,17 @@ pub fn pick_vault_dir() -> Option<String> {
     Some(path.to_string_lossy().into_owned())
 }
 
+/// 系统文件选择面板：选离线词库文件（本机已有的兼容词库，见 ADR-11——拾趣只读
+/// 这个文件，不复制、不改写）。用户取消 = None。必须在主线程调用（同 pick_vault_dir）。
+#[tauri::command]
+pub fn pick_dict_file() -> Option<String> {
+    let path = rfd::FileDialog::new()
+        .set_title(crate::i18n::t("picker.dictTitle"))
+        .add_filter(crate::i18n::t("picker.dictFilter"), &["sqlite", "sqlite3", "db"])
+        .pick_file()?;
+    Some(path.to_string_lossy().into_owned())
+}
+
 /// 系统文件选择面板：选一张图片供「访达选图取字」识别。用户取消 = None。
 /// 必须在主线程调用（rfd 对 AppKit 的线程约束同下方两个选择器）；
 /// 且不能在托盘菜单事件回调内直接调用——先交由独立线程承载，

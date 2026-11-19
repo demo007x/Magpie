@@ -225,6 +225,11 @@ export const ACTIONS: ActionDef[] = [
     kind: "local",
   },
   {
+    id: "dict",
+    label: "词典",
+    kind: "local",
+  },
+  {
     id: "translate",
     label: "翻译",
     kind: "ai",

@@ -28,6 +28,7 @@ export const zhShared = {
   "action.addr": "打开地图",
   "action.obsidian": "Obsidian",
   "action.anki": "Anki",
+  "action.dict": "词典",
 
   // 动作一句话描述（设置页动作卡）
   "actionDesc.translate": "译为界面语言（中/英），附学习要点",
@@ -44,6 +45,7 @@ export const zhShared = {
   "actionDesc.addr": "选中含地点时（如“国贸B座”），一键在地图打开",
   "actionDesc.obsidian": "选中内容按模板追加进 Obsidian 日记",
   "actionDesc.anki": "划词存入 Anki 牌组，背面自动带释义",
+  "actionDesc.dict": "用本机词典查词，不用联网",
 
   // 翻译服务注册表（label/blurb/docs/凭据字段均存键，消费端 t() 解析）
   "tsvc.ai.label": "AI 翻译",

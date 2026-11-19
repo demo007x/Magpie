@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import {
   Ban,
+  BookOpen,
   Cpu,
   Info,
   Image as ImageIcon,
@@ -34,6 +35,7 @@ import TranslatePage from "./pages/TranslatePage";
 import SpeechPage from "./pages/SpeechPage";
 import ObsidianPage from "./pages/ObsidianPage";
 import AnkiPage from "./pages/AnkiPage";
+import DictPage from "./pages/DictPage";
 import ModelPage from "./pages/ModelPage";
 import CapturePage from "./pages/CapturePage";
 import GeneralPage from "./pages/GeneralPage";
@@ -53,6 +55,7 @@ type Page =
   | "search"
   | "obsidian"
   | "anki"
+  | "dict"
   | "perms"
   | "general"
   | "about";
@@ -69,6 +72,7 @@ const NAV_ICONS: Record<Page, React.ReactNode> = {
   search: <Search size={15} strokeWidth={1.75} />,
   obsidian: <NotebookPen size={15} strokeWidth={1.75} />,
   anki: <Layers size={15} strokeWidth={1.75} />,
+  dict: <BookOpen size={15} strokeWidth={1.75} />,
   perms: <ShieldCheck size={15} strokeWidth={1.75} />,
   general: <SlidersHorizontal size={15} strokeWidth={1.75} />,
   about: <Info size={15} strokeWidth={1.75} />,
@@ -103,8 +107,9 @@ export default function App() {
   const [speechReady, setSpeechReady] = useState(false);
 
   /** T 型导航分组（顶部横条切组、左栏切组内页）：每页恰属一组——组无独立
-      状态，由 page 推导，点组 tab 跳该组第一个可见页。13 页（黑名单、权限
-      曾并入他页，2026-11-17 起各自恢复独立子菜单）。平台能力门控在渲染层生效 */
+      状态，由 page 推导，点组 tab 跳该组第一个可见页。14 页（黑名单、权限
+      曾并入他页，2026-11-17 起各自恢复独立子菜单；词典页 2026-11-19 新增）。
+      平台能力门控在渲染层生效 */
   const NAV_GROUPS: Array<{
     label: string;
     items: Array<[Page, string, boolean]>;
@@ -137,6 +142,7 @@ export default function App() {
       items: [
         ["obsidian", "nav.obsidian", true],
         ["anki", "nav.anki", true],
+        ["dict", "nav.dict", true],
       ],
     },
     {
@@ -299,11 +305,12 @@ export default function App() {
     setSaved(false);
   }, []);
 
-  // 即时落盘：读镜像 ref（恒为最新），供「改完即存」的路径调用
+  // 即时落盘：读镜像 ref（恒为最新），供「改完即存」的路径调用。返回落盘 promise，
+  // 让调用方能「存完再探」（词典页存完路径才重查词库，否则会读到旧配置的探测结果）
   const saveNow = useCallback(() => {
     const s = settingsRef.current;
-    if (!s) return;
-    invoke("save_settings", { settings: s })
+    if (!s) return Promise.resolve();
+    return invoke("save_settings", { settings: s })
       .then(() => setSaved(true))
       .catch((e) => toast(t("main.saveFailed", { error: String(e) }), "err"));
   }, []);
@@ -447,6 +454,10 @@ export default function App() {
 
         {page === "anki" && (
           <AnkiPage settings={settings} patch={patch} save={save} saved={saved} saveNow={saveNow} />
+        )}
+
+        {page === "dict" && (
+          <DictPage settings={settings} patch={patch} saveNow={saveNow} />
         )}
 
         {page === "perms" && IS_MAC && <PermsPage />}

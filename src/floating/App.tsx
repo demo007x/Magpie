@@ -113,7 +113,8 @@ import {
   extractTel,
   extractUrl,
 } from "../shared/textContext";
-import type { SearchEngine, Settings } from "../shared/types";
+import type { DictEntry, SearchEngine, Settings } from "../shared/types";
+import { formatDictEntry } from "../shared/dict";
 
 // 窗口身份与平台常量拆至 ./env.ts（App.tsx 拆分导航见本文件头部注释）
 import { IS_OCR, IS_PIN, POPS_EXTERNAL } from "./env";
@@ -328,6 +329,7 @@ export default function App() {
     defaultSearch,
     obsidianCfg,
     ankiCfg,
+    dictReady,
   } = useFloatingSettings();
   const [flashId, setFlashId] = useState<string | null>(null);
   const [flashMsg, setFlashMsg] = useState("");
@@ -730,6 +732,7 @@ export default function App() {
       if (actions[a.id] === false) return false;
       if (a.id === "obsidian") return Boolean(obsidianCfg?.vaultPath);
       if (a.id === "anki") return Boolean(ankiCfg?.deck);
+      if (a.id === "dict") return dictReady;
       if (a.id === "translate") return enabledTranslates.length > 0;
       if (a.id === "search") return enabledEngines.length > 0;
       return a.kind === "ai" && hasUsableModel;
@@ -755,6 +758,8 @@ export default function App() {
       // （连接测试选定牌组）时出现——与结果窗动作行、设置页口径一致
       if (a.id === "obsidian" && !obsidianCfg?.vaultPath) continue;
       if (a.id === "anki" && !ankiCfg?.deck) continue;
+      // 「词典」要本机有可读词库（探测在 useFloatingSettings 随设置刷新）
+      if (a.id === "dict" && !dictReady) continue;
       entries.push({
         id: a.id,
         label: actionLabel(a),
@@ -1540,6 +1545,46 @@ export default function App() {
           const msg = String(e);
           toast(msg.includes("尚未安装") ? t("floating.ttsMissing") : msg);
         });
+        return;
+      }
+
+      if (id === "dict") {
+        // 本机词库直查（ADR-11，毫秒级、不联网）。胶囊上点击先导流到结果窗再执行：
+        // 结果落进既有窗口，钉图/朗读/复制/存 Obsidian 与 Anki 背面全都免费可用
+        if (phase.kind !== "ocr" && sourceOverride === undefined) {
+          invoke("push_selection_result", {
+            text: source,
+            actionId: id,
+            service: null,
+            pid: sourcePidRef.current,
+            sourceApp: sourceAppRef.current,
+          }).catch(() => undefined);
+          invoke("hide_floating_bar").catch(() => undefined);
+          setPhase({ kind: "bar" });
+          return;
+        }
+        // 领走本轮运行号：结果落定前若上一条 AI 流还在吐字，一并作废（与机翻同规则）。
+        // 标志位必须自己置回来——旧流的回调遇到 runId 不符会提前 return，不会复位它，
+        // 卡住的 true 会让结果窗的 dismiss 一直被当成「任务进行中」误拦
+        const runId = ++runIdRef.current;
+        streamingRef.current = true;
+        const word = trimmed.length > 24 ? `${trimmed.slice(0, 24)}…` : trimmed;
+        invoke<DictEntry | null>("dict_lookup", { text: trimmed })
+          .then((entry) => {
+            if (runIdRef.current !== runId) return;
+            streamingRef.current = false;
+            const out = entry ? formatDictEntry(entry) : t("dict.miss", { word });
+            setPhase((p) =>
+              p.kind === "ocr"
+                ? { ...p, actionId: id, output: out, streaming: false, error: null, plain: false }
+                : p,
+            );
+          })
+          .catch(() => {
+            if (runIdRef.current !== runId) return;
+            streamingRef.current = false;
+            flash(id, t("floating.dictFailed"));
+          });
         return;
       }
 

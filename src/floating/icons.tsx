@@ -2,6 +2,7 @@
 // 从 App.tsx 拆出：pops.tsx（分离卡的弹层窗口是哑渲染端）与 App 共用同一套图标语言
 import {
   AlignLeft,
+  BookOpen,
   CalendarDays,
   Check,
   ClipboardCheck,
@@ -28,6 +29,7 @@ export const ICONS: Record<string, ReactNode> = {
   copy: <Copy size={14} strokeWidth={1.75} />,
   search: <Search size={14} strokeWidth={1.75} />,
   speak: <Volume2 size={14} strokeWidth={1.75} />,
+  dict: <BookOpen size={14} strokeWidth={1.75} />,
   translate: <Languages size={14} strokeWidth={1.75} />,
   explain: <Lightbulb size={14} strokeWidth={1.75} />,
   summarize: <AlignLeft size={14} strokeWidth={1.75} />,

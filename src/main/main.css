@@ -777,6 +777,11 @@ input[type="radio"] {
   line-height: 1.65;
 }
 
+/* 说明行的危险语气（如兼容取词的「会中断正在运行的命令」）：同一字号，只换色 */
+.row-sub.bad {
+  color: var(--bad);
+}
+
 /* 动作行：说明跟在动作名后面（同行弱化展示） */
 .action-desc {
   font-size: 12px;

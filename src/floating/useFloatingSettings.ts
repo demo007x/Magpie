@@ -15,6 +15,7 @@ import { actionRegistry } from "../shared/actions";
 import type {
   AnkiConfig,
   CustomAction,
+  DictStatus,
   ObsidianConfig,
   Provider,
   SearchEngine,
@@ -54,6 +55,9 @@ export function useFloatingSettings() {
   const [obsidianCfg, setObsidianCfg] = useState<ObsidianConfig | null>(null);
   // Anki 接入配置：deck 非空 = 「Anki」动作可用
   const [ankiCfg, setAnkiCfg] = useState<AnkiConfig | null>(null);
+  // 离线词典可用性：词库文件能不能读要探一下（不像 vault/deck 那样写在设置里），
+  // 只随全量刷新——换词库文件必然经保存广播回来，成本是毫秒级计数查询
+  const [dictReady, setDictReady] = useState(false);
 
   const loadSettings = () => {
     invoke<Settings>("get_settings")
@@ -78,6 +82,10 @@ export function useFloatingSettings() {
         setAnkiCfg(s.anki ?? null);
       })
       .catch(() => undefined);
+    // 词典可用性独立于设置内容（取决于本机文件是否存在/可读），失败一律按不可用
+    invoke<DictStatus>("dict_status")
+      .then((d) => setDictReady(d.state === "ready"))
+      .catch(() => setDictReady(false));
   };
 
   // 设置进入路径 2/3：全量广播重拉 + 实时推送增量落。监听随组件卸载解绑
@@ -137,6 +145,7 @@ export function useFloatingSettings() {
     setDefaultSearch,
     obsidianCfg,
     ankiCfg,
+    dictReady,
     loadSettings,
   };
 }
