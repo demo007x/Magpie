@@ -6,6 +6,3 @@ contact_links:
   - name: 查阅文档
     url: https://demo007x.github.io/Magpie/
     about: 产品介绍、划词翻译指南、Anki 配置说明
-  - name: 安全问题
-    url: https://github.com/demo007x/Magpie/security/advisories/new
-    about: 漏洞请私密报告，不要公开提交 issue
