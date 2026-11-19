@@ -11,6 +11,26 @@ body:
 
         **安全漏洞请不要在这里提交**，请按 [SECURITY.md](../blob/main/SECURITY.md) 私密报告。
 
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本 / App version
+      description: 「设置 › 关于」页可见，如 0.2.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 平台 / Platform
+      options:
+        - macOS
+        - Windows
+        - 两个平台都遇到
+        - 不确定
+    validations:
+      required: true
+
   - type: textarea
     id: what-happened
     attributes:
@@ -21,3 +41,23 @@ body:
         期望行为 / Expected:
     validations:
       required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      description: 从头到尾怎么触发？偶发问题也请写下当时场景
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 运行日志 / Logs
+      description: 「设置 › 关于 › 复制日志」取全文粘贴到此处；含个人内容的行请自行剔除
+    validations:
+      required: false
