@@ -1,5 +1,5 @@
-name: 功能建议
-description: 新功能、现有功能改进
+name: 功能建议 / Feature Request
+description: 新功能、现有功能改进 / New features, improvements to existing ones
 title: "[Feature]: "
 labels: ["enhancement", "needs-triage"]
 body:
@@ -12,16 +12,16 @@ body:
   - type: checkboxes
     id: preflight
     attributes:
-      label: 提交前确认
+      label: 提交前确认 / Before you submit
       options:
-        - label: 我已搜索过现有 issue 和 ROADMAP，确认不是重复建议
+        - label: 我已搜索过现有 issue 和 ROADMAP，确认不是重复建议 / I've searched existing issues and the ROADMAP; this is not a duplicate
           required: true
 
   - type: textarea
     id: scenario
     attributes:
-      label: 使用场景
-      description: 你现在遇到的具体问题是什么？在什么情况下会用到这个功能？
+      label: 使用场景 / Use case
+      description: 你现在遇到的具体问题是什么？在什么情况下会用到这个功能？ / What problem are you facing? When would you use this?
       placeholder: |
         例：我在读 PDF 时选中一段英文，想直接存到 Obsidian 的指定笔记里，
         但目前只能存到日记，每次都要手动移动。
@@ -31,35 +31,35 @@ body:
   - type: textarea
     id: proposal
     attributes:
-      label: 期望的行为
-      description: 你希望它怎么工作？如果涉及界面，描述大致交互即可
+      label: 期望的行为 / Desired behavior
+      description: 你希望它怎么工作？如果涉及界面，描述大致交互即可 / How should it work? A rough description is fine for UI changes
     validations:
       required: true
 
   - type: textarea
     id: alternatives
     attributes:
-      label: 你目前是怎么绕过的
-      description: 现有功能、其他工具或手动流程都可以写
+      label: 你目前是怎么绕过的 / Current workaround
+      description: 现有功能、其他工具或手动流程都可以写 / Existing features, other tools or manual steps
     validations:
       required: false
 
   - type: dropdown
     id: scope
     attributes:
-      label: 影响范围
-      description: 你判断这个改动会影响哪些部分
+      label: 影响范围 / Impact
+      description: 你判断这个改动会影响哪些部分 / Which parts do you think this change would affect
       options:
-        - 仅新增可选功能，不影响现有行为
-        - 需要修改现有行为 / 默认值
-        - 不确定
+        - 仅新增可选功能，不影响现有行为 / Additive only, no behavior change
+        - 需要修改现有行为 / 默认值 / Changes existing behavior or defaults
+        - 不确定 / Not sure
     validations:
       required: true
 
   - type: checkboxes
     id: contribute
     attributes:
-      label: 参与意愿
+      label: 参与意愿 / Willing to contribute
       options:
-        - label: 我愿意提交 PR 实现这个功能（请先在此 issue 下沟通方案）
-        - label: 我可以协助测试
+        - label: 我愿意提交 PR 实现这个功能（请先在此 issue 下沟通方案） / I'm willing to submit a PR (please discuss the approach in this issue first)
+        - label: 我可以协助测试 / I can help test
