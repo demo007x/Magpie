@@ -86,6 +86,16 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "capture.generating": "Generating…",
   "capture.tryRun": "Test run",
 
+  // Compatibility lookup allowlist (Windows only, capture page): per-app opt-in
+  "capture.compatTitle": "Apps that hide their text",
+  "capture.compatSub":
+    "Add an app here and, when you select text in it, we’ll press the copy key once to grab that text and then put your clipboard back exactly as it was. This only happens in apps that don’t report their selection; every other app is untouched. With an empty list we never press a key for you.",
+  "capture.compatRisk":
+    "Heads-up: if that copy key does nothing in the app, we’ll try Ctrl+C once — and Ctrl+C interrupts a command that’s still running (an embedded terminal, for example). Only add apps you really need.",
+  "capture.compatEmpty": "The list is empty.",
+  "capture.compatPick": "Choose app…",
+  "capture.compatRemove": "Remove from the list",
+
   // Shortcuts page
   "sc.hint":
     "Click a box and press the new key combination. It must include ⌘ / Ctrl / Alt / Shift; press Esc to cancel. Combinations already used by other apps won't take effect. Save to apply.",

@@ -400,6 +400,11 @@ pub struct Settings {
     #[serde(default = "default_file_ocr_shortcut")]
     pub file_ocr_shortcut: String,
     pub app_blacklist: Vec<String>,
+    /// 兼容取词允许清单（仅 Windows，ADR-05 对位）：用户逐应用授权的「读不到选区时
+    /// 借用一次复制」名单。空 = 兼容模式绝不发按键。条目与应用标识同一套语义
+    /// （Windows = exe 文件名，按进程路径小写子串匹配）
+    #[serde(default)]
+    pub compat_apps: Vec<String>,
     pub debounce_ms: u64,
     /// Obsidian 接入（docs/07）：vault 直写配置
     #[serde(default)]
@@ -493,6 +498,7 @@ impl Default for Settings {
             ocr_summarize_shortcut: default_ocr_summarize_shortcut(),
             file_ocr_shortcut: default_file_ocr_shortcut(),
             app_blacklist: Vec::new(),
+            compat_apps: Vec::new(),
             debounce_ms: 200,
             obsidian: ObsidianConfig::default(),
             anki: AnkiConfig::default(),
@@ -577,6 +583,18 @@ pub fn is_blacklisted(app: &AppHandle, proc_path: &str, bundle_id: Option<&str>)
             }
         }
         p.contains(&b)
+    })
+}
+
+/// 兼容取词允许清单命中判定。匹配语义与黑名单一致（小写、子串）：Windows 侧应用
+/// 标识就是 exe 文件名，应用移动或重装后仍能命中。
+/// 刻意做成不读 AppHandle 的纯函数——它是「是否向别人的应用发按键借用复制」的判据，
+/// 杀伤性动作的闸门必须能单测
+pub fn compat_allows(settings: &Settings, proc_path: &str) -> bool {
+    let p = proc_path.to_lowercase();
+    settings.compat_apps.iter().any(|a| {
+        let a = a.trim().to_lowercase();
+        !a.is_empty() && p.contains(&a)
     })
 }
 
@@ -676,4 +694,30 @@ pub fn set_ui_locale(app: AppHandle, locale: String) {
     let _ = app.emit("locale://changed", locale);
     // 托盘菜单文案随语言重建（与快捷键变更后重建同一先例）
     let _ = crate::rebuild_tray_menu(&app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compat_list_matches_exe_name_case_insensitively() {
+        let s = Settings {
+            compat_apps: vec!["Zed.exe".into()],
+            ..Default::default()
+        };
+        assert!(compat_allows(&s, r"E:\Tool\Zed\zed.exe"));
+        assert!(!compat_allows(&s, r"C:\Windows\System32\notepad.exe"));
+    }
+
+    /// 空名单 = 兼容模式绝不发按键；空白条目不算命中（输入框清空不该放行杀伤动作）
+    #[test]
+    fn compat_list_never_matches_when_empty_or_blank() {
+        assert!(!compat_allows(&Settings::default(), r"E:\Tool\Zed\zed.exe"));
+        let blank = Settings {
+            compat_apps: vec!["  ".into(), "".into()],
+            ..Default::default()
+        };
+        assert!(!compat_allows(&blank, r"E:\Tool\Zed\zed.exe"));
+    }
 }

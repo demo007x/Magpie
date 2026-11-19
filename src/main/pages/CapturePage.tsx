@@ -2,7 +2,8 @@
 // + 智能提取模式行与提取信息开关组。动作顺序唯一真相 = settings.actionOrder。
 import { Fragment, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { GripVertical, Plus, Sparkles } from "lucide-react";
+import { GripVertical, Plus, Sparkles, Trash2 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { Modal } from "../../shared/Modal";
 import { toast } from "../../shared/toast";
 import { aiChat } from "../../shared/ai";
@@ -541,6 +542,64 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
                 </Modal>
               );
             })()}
+
+      {/* 兼容取词允许清单（仅 Windows）：macOS 的兼容模式常开，Windows 上改成
+          逐应用授权——自绘应用无法探测其内部状态，主键 Ctrl+Insert 虽在终端里不是
+          中断信号，但主键不认的应用会退到 Ctrl+C（那会中断正在运行的命令）。
+          空名单 = 绝不代按键。机制见 docs/03 §A.7 */}
+      {!IS_MAC && (
+        <div className="card">
+          <div className="row-between tight">
+            <div>
+              <div className="row-title">{t("capture.compatTitle")}</div>
+              <div className="row-sub">{t("capture.compatSub")}</div>
+            </div>
+          </div>
+          {settings.compatApps.length === 0 ? (
+            <div className="row-between tight">
+              <div className="row-sub">{t("capture.compatEmpty")}</div>
+            </div>
+          ) : (
+            settings.compatApps.map((name, i) => (
+              <div className="row-between tight" key={`${name}-${i}`}>
+                <div className="row-title">{name}</div>
+                <button
+                  className="row-del"
+                  title={t("capture.compatRemove")}
+                  aria-label={t("capture.compatRemove")}
+                  onClick={() => {
+                    patch({
+                      compatApps: settings.compatApps.filter((_, idx) => idx !== i),
+                    });
+                    // 摘除要立刻生效：用户说「别再按了」不该等到保存
+                    saveNow?.();
+                  }}
+                >
+                  <Trash2 size={13} strokeWidth={1.75} />
+                </button>
+              </div>
+            ))
+          )}
+          <p className="row-sub bad">{t("capture.compatRisk")}</p>
+          <div className="card-foot">
+            <button
+              className="btn primary"
+              onClick={() => {
+                invoke<string | null>("pick_app_bundle")
+                  .then((app) => {
+                    if (app && !settings.compatApps.includes(app)) {
+                      patch({ compatApps: [...settings.compatApps, app] });
+                      saveNow?.();
+                    }
+                  })
+                  .catch(() => undefined);
+              }}
+            >
+              {t("capture.compatPick")}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 禁用应用已拆为划词组独立子菜单（2026-11-17） */}
     </>

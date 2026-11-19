@@ -174,6 +174,9 @@ export interface Settings {
   /** 访达选图取字全局快捷键（选图片文件→识别；空串 = 禁用） */
   fileOcrShortcut: string;
   appBlacklist: string[];
+  /** 兼容取词允许清单（仅 Windows）：逐应用授权「读不到选区时借用一次复制」。
+   *  空 = 拾趣绝不代按任何键。条目与 appBlacklist 同一套标识（exe 文件名） */
+  compatApps: string[];
   debounceMs: number;
   /** 结果窗口位置记忆（逻辑坐标） */
   resultWindowPos?: [number, number] | null;
