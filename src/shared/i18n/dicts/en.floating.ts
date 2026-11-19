@@ -48,6 +48,7 @@ export const enFloating: Record<keyof typeof zhFloating, string> = {
   "floating.actMail": "Email",
   "floating.actCalendar": "Calendar",
   "floating.actMap": "Map",
+  "floating.actPath": "Open location",
   "floating.extractLoading": "Making sense of the selection…",
   "floating.group.tel": "Phone",
   "floating.group.email": "Email",
@@ -55,6 +56,15 @@ export const enFloating: Record<keyof typeof zhFloating, string> = {
   "floating.group.code": "Code",
   "floating.group.date": "Date",
   "floating.group.addr": "Place",
+  "floating.group.path": "Location",
+
+  // 与 zh.floating 的 path.* 同键集（六档回包，见 Rust paths.rs）
+  "path.openedDir": "Opened that folder",
+  "path.openedReveal": "Selected it in File Explorer",
+  "path.openedApp": "Opened that file",
+  "path.missing": "That location is gone, moved or deleted",
+  "path.failed": "This location can't be opened",
+  "path.unsupported": "Opening file locations isn't available on this computer",
 
   "floating.ocrTextTitle": "Capture Text",
   "floating.ocrResultFallback": "Result",

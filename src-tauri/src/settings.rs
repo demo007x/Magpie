@@ -66,6 +66,8 @@ pub struct Actions {
     pub date: bool,
     /// 上下文动作：选中文本含地点时「打开地图」（启发式）
     pub addr: bool,
+    /// 上下文动作：整段选区就是一个本机路径时「打开位置」（仅 Windows，见 paths.rs）
+    pub path: bool,
     /// 接入动作：已配置 vault 时「存入笔记」（Obsidian 文件直写）
     pub obsidian: bool,
     /// 接入动作：已连接 AnkiConnect（deck 非空）时「Anki」划词建卡
@@ -89,6 +91,7 @@ impl Default for Actions {
             tel: true,
             date: true,
             addr: true,
+            path: true,
             obsidian: true,
             anki: true,
             dict: true,

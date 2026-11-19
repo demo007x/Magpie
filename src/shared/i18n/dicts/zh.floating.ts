@@ -52,6 +52,7 @@ export const zhFloating = {
   "floating.actMail": "邮件",
   "floating.actCalendar": "日历",
   "floating.actMap": "地图",
+  "floating.actPath": "打开位置",
   "floating.extractLoading": "正在理解所选内容…",
   "floating.group.tel": "电话",
   "floating.group.email": "邮箱",
@@ -59,6 +60,16 @@ export const zhFloating = {
   "floating.group.code": "验证码",
   "floating.group.date": "日期",
   "floating.group.addr": "地点",
+  "floating.group.path": "位置",
+
+  // 「打开位置」的结果反馈（Rust open_local_path 六档，仅 Windows 会走到前两档以外）：
+  // 成功说清「做了什么」，失败是陈述不是报错——选区里的路径早就失效是常态
+  "path.openedDir": "已打开这个文件夹",
+  "path.openedReveal": "已在文件管理器里选中它",
+  "path.openedApp": "已打开这个文件",
+  "path.missing": "这个位置不存在，可能被移动或删除了",
+  "path.failed": "这个位置打不开",
+  "path.unsupported": "这台电脑还不会打开文件位置",
 
   // 结果窗（OCR 面板）
   "floating.ocrTextTitle": "识图取字",

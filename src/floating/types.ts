@@ -10,6 +10,8 @@ export type ExtractGroups = {
   tel: string[];
   email: string[];
   link: string[];
+  /** 本机路径（Windows）：整段选区就是一个路径时独占这一组（见 textContext.extractPath） */
+  path: string[];
   code: string[];
   date: string[];
   addr: string[];
@@ -21,6 +23,7 @@ export const EXTRACT_GROUPS: Array<{ id: keyof ExtractGroups; label: string }> =
   { id: "tel", label: "floating.group.tel" },
   { id: "email", label: "floating.group.email" },
   { id: "link", label: "floating.group.link" },
+  { id: "path", label: "floating.group.path" },
   { id: "code", label: "floating.group.code" },
   { id: "date", label: "floating.group.date" },
   { id: "addr", label: "floating.group.addr" },

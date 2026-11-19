@@ -110,14 +110,15 @@ import {
   extractAll,
   extractCode,
   extractEmail,
+  extractPath,
   extractTel,
   extractUrl,
 } from "../shared/textContext";
-import type { DictEntry, SearchEngine, Settings } from "../shared/types";
+import type { DictEntry, PathOutcome, SearchEngine, Settings } from "../shared/types";
 import { formatDictEntry } from "../shared/dict";
 
 // 窗口身份与平台常量拆至 ./env.ts（App.tsx 拆分导航见本文件头部注释）
-import { IS_OCR, IS_PIN, POPS_EXTERNAL } from "./env";
+import { IS_OCR, IS_PIN, IS_WINDOWS, POPS_EXTERNAL } from "./env";
 import type { HoverMenuId, ScreenRect, WindowPos } from "./env";
 import type { PendingView, Phase } from "./types";
 import { EXTRACT_GROUPS, type ExtractGroups } from "./types";
@@ -139,6 +140,17 @@ function dominantGroup(groups: ExtractGroups): string {
   }
   return best;
 }
+
+/** Rust open_local_path 的六档回包 → 提示文案键。键型用 PathOutcome 而不是 string：
+ *  Rust 侧新增一档时这里编译期就报错，不会把 unknown 当成功提示发出去 */
+const PATH_OUTCOME_KEYS: Record<PathOutcome, string> = {
+  "opened-dir": "path.openedDir",
+  "opened-reveal": "path.openedReveal",
+  "opened-app": "path.openedApp",
+  missing: "path.missing",
+  failed: "path.failed",
+  unsupported: "path.unsupported",
+};
 
 /** URL 展示：域名正文字色、路径弱化灰，并列多条时一眼分辨站点。
  * 超长 URL（如贴图床/markdown 图片链接）中段省略：保目录头 + 尾段（文件名），
@@ -623,6 +635,7 @@ export default function App() {
         tel: all.tels,
         email: all.emails,
         link: all.urls,
+        path: IS_WINDOWS ? all.paths : [],
         code: all.codes,
         date: [],
         addr: [],
@@ -693,18 +706,25 @@ export default function App() {
 
   const extracted = useMemo(() => {
     const all = extractAll(text);
+    // 整段就是一个本机路径 = 位置本身是答案。extractAll 已经在这种输入下清空
+    // URL/邮箱/电话/验证码四组，但日期与地点走的是各自独立的识别（不在 extractAll
+    // 里），不一起让位的话 E:\2026\1031\x.md 会同时冒出「加入日历」
+    const wholePath = IS_WINDOWS && all.paths.length > 0 && actions.path !== false;
     const groups: ExtractGroups = {
       tel: actions.tel !== false ? all.tels : [],
       email: actions.email !== false ? all.emails : [],
       link: actions.link !== false ? all.urls : [],
+      // 盘符是 Windows 的写法：macOS 上选到文档里引用的 E:\a\b 不该给这条动作
+      path: wholePath ? all.paths : [],
       code: actions.code !== false ? all.codes : [],
-      date: actions.date !== false ? dateHits.map(formatDateLabel) : [],
-      addr: actions.addr !== false ? placeHits : [],
+      date: wholePath || actions.date === false ? [] : dateHits.map(formatDateLabel),
+      addr: wholePath || actions.addr === false ? [] : placeHits,
     };
     const total =
       groups.tel.length +
       groups.email.length +
       groups.link.length +
+      groups.path.length +
       groups.code.length +
       groups.date.length +
       groups.addr.length;
@@ -794,17 +814,19 @@ export default function App() {
     if (extracted.total === 1) {
       const g = extracted.groups;
       const single =
-        g.link.length === 1
-          ? { id: "link", label: t("action.link") }
-          : g.email.length === 1
-            ? { id: "email", label: t("action.email") }
-            : g.date.length === 1
-              ? { id: "date", label: t("action.date") }
-              : g.addr.length === 1
-                ? { id: "addr", label: t("action.addr") }
-                : g.tel.length === 1
-                  ? { id: "tel", label: t("action.tel") }
-                  : { id: "code", label: t("action.code") };
+        g.path.length === 1
+          ? { id: "path", label: t("action.path") }
+          : g.link.length === 1
+            ? { id: "link", label: t("action.link") }
+            : g.email.length === 1
+              ? { id: "email", label: t("action.email") }
+              : g.date.length === 1
+                ? { id: "date", label: t("action.date") }
+                : g.addr.length === 1
+                  ? { id: "addr", label: t("action.addr") }
+                  : g.tel.length === 1
+                    ? { id: "tel", label: t("action.tel") }
+                    : { id: "code", label: t("action.code") };
       return {
         id: single.id,
         label: single.label,
@@ -1585,6 +1607,17 @@ export default function App() {
             streamingRef.current = false;
             flash(id, t("floating.dictFailed"));
           });
+        return;
+      }
+
+      if (id === "path") {
+        // 再走一次判据（而不是直接发 trimmed）：动作行可能来自钉图/结果窗里被编辑过
+        // 的文本，交给 Rust 的必须是规范化过的路径形态，且非路径输入不该发起执行
+        const p = extractPath(trimmed);
+        if (!p) return;
+        invoke<PathOutcome>("open_local_path", { path: p })
+          .then((r) => flash(id, t(PATH_OUTCOME_KEYS[r])))
+          .catch(() => flash(id, t("path.failed")));
         return;
       }
 
@@ -2713,6 +2746,17 @@ export default function App() {
                           )}
                         >
                           {t("floating.actMap")}
+                        </button>
+                      )}
+                      {g.id === "path" && (
+                        <button
+                          onClick={guarded(() =>
+                            invoke<PathOutcome>("open_local_path", { path: item })
+                              .then((r) => flash("path", t(PATH_OUTCOME_KEYS[r])))
+                              .catch(() => flash("path", t("path.failed"))),
+                          )}
+                        >
+                          {t("floating.actPath")}
                         </button>
                       )}
                       <button
