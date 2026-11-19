@@ -107,19 +107,40 @@ pub(super) fn bid_in_editor_family(bid: &str) -> bool {
     )
 }
 
+/// 输入转发客户端家族（远控与虚拟机：向日葵/ToDesk/TeamViewer/微软远程桌面/
+/// VMware/Parallels/VirtualBox 等）bundle id 子串：在这类窗口里划选，用户操作
+/// 的是**另一台机器**——本机模拟的 ⌘C 会被客户端转发成那台机器的按键（合成
+/// 事件的修饰键在转发链路常被丢弃，远端/客机录入框收到的是裸字符），且 AX
+/// 链路本来就取不到对面机器的选区，兼容模式在这里只有转发污染、没有捕获
+/// 价值。厂商 id 前缀各异、全名单收集不全，按子串匹配家族（各 token 均取自
+/// 厂商/产品专名，不会误中普通应用）
+pub(super) fn bid_in_forwarding_family(bid: &str) -> bool {
+    let b = bid.to_ascii_lowercase();
+    ["oray", "sunlogin", "todesk", "teamviewer", "rustdesk", "parsec",
+     "anydesk", "nomachine", "rdc.macos", "jumpdesktop", "vmware",
+     "parallels", "virtualbox", "utmapp", "screensharing"]
+        .iter()
+        .any(|t| b.contains(t))
+}
+
 /// 兼容模式对 Electron 编辑器家族（VSCode/Cursor/Windsurf 等）跳过：
 /// 该家族任何 AX 落空的拖拽（滚动条、文件树、标签页等）经 ⌘C 都会把**光标所在行**
 /// 误捕成划词（VSCode 空选区 ⌘C = 复制当前行），而真文本选区在 Chromium 轻推
 /// （AXManualAccessibility）后由 AX 链路稳定取到，⌘C 兜底对它只有误报价值。
+/// 对输入转发客户端家族（远控/虚拟机）同理跳过（⌘C 会被转发成对面机器的按键）。
 /// 代价：用户手动关闭编辑器辅助功能支持（accessibilitySupport: "off"）时取词失效。
 pub(super) fn skip_compat_for_focused_app() -> bool {
     // 聚焦链失败时退回 NSWorkspace 前台应用（不依赖 AX 消息）：AX 桥半死状态下
     // focused_pid 会间歇不可读，这道闸一漏放，模拟 ⌘C 就打进编辑器家族——
     // 守护闸的判据必须比被守护的通道更耐活
     let pid = focused_pid().or_else(frontmost_pid);
-    let skip = pid.and_then(running_bundle_id).map_or(false, |bid| bid_in_editor_family(&bid));
+    let skip = pid.and_then(running_bundle_id).map_or(false, |bid| {
+        bid_in_editor_family(&bid) || bid_in_forwarding_family(&bid)
+    });
     if skip {
-        debug_log("兼容模式：Electron 编辑器家族（空选区 ⌘C 会复制当前行），跳过");
+        debug_log(
+            "兼容模式：编辑器家族（空选区 ⌘C 复制当前行）或输入转发客户端（远控/虚拟机，⌘C 会转发到对面机器），跳过",
+        );
     }
     skip
 }
