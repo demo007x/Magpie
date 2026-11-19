@@ -459,10 +459,25 @@ export default function App() {
       .catch(() => flash("search", t("floating.openFailed")));
   };
   const [phase, setPhase] = useState<Phase>({ kind: "bar" });
-  // 流式增量渲染后：贴底状态才跟随滚动（用户上翻阅读时不打扰）；新一轮结果从贴底开始跟随
+  // 流式增量渲染后：贴底状态才跟随滚动（用户上翻阅读时不打扰）；新一轮流式结果从贴底开始跟随
+  const ocrPrevOutRef = useRef("");
   useLayoutEffect(() => {
+    const out = phase.kind === "ocr" ? phase.output : "";
+    // 一次性动作（词典/机翻：整段结果与 streaming=false 同帧落地）从内容起始处读起——
+    // 「跟随尾巴」是给流式输出准备的，整段结果没有尾巴可跟。判据用「上一帧空 + 本帧非空 +
+    // 非流式」，流式首包（streaming=true）与流式收尾（上一帧非空）都不命中，不打扰阅读中的人
+    const landedAllAtOnce =
+      out !== "" && ocrPrevOutRef.current === "" && phase.kind === "ocr" && !phase.streaming;
+    ocrPrevOutRef.current = out;
     const ocrEl = ocrBodyRef.current;
-    if (ocrEl && ocrStickRef.current) ocrEl.scrollTop = ocrEl.scrollHeight;
+    if (!ocrEl) return;
+    if (landedAllAtOnce) {
+      ocrStickRef.current = false;
+      setOcrStick(false);
+      ocrEl.scrollTop = 0;
+      return;
+    }
+    if (ocrStickRef.current) ocrEl.scrollTop = ocrEl.scrollHeight;
   }, [phase]);
 
   useEffect(() => {
