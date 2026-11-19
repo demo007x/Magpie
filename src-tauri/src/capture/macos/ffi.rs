@@ -30,7 +30,8 @@ pub(super) type CGEventTapCallBack =
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     // 无障碍 API 函数（经 ApplicationServices 伞框架解析）。
-    // 注意：kAX* 属性常量不在 SDK tbd 导出表中，须运行时 dlsym（见 ax_consts）。
+    // 注意：kAX* 属性常量既不经链接器也不经 dlsym 取，一律 ax_consts() 现构造
+    // CFString（部分 macOS 版本这些数据符号不参与导出，dlsym 返回 NULL）。
     pub(super) fn AXUIElementCreateSystemWide() -> AXUIElementRef;
     pub(super) fn AXUIElementCreateApplication(pid: c_int) -> AXUIElementRef;
     pub(super) fn AXUIElementCopyAttributeValue(
