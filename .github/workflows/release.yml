@@ -3,6 +3,13 @@ name: Release
 # 推送 v* 标签 → 自动构建 macOS Universal 2 与 Windows x64 安装包并创建
 # 同一个 Release（两个任务并行跑，tauri-action 对已存在的 Release 直接追加
 # 产物）；也可在 Actions 页手动触发（产物在 Artifacts 下载）。
+#
+# 应用内更新（docs/04 ADR-11）依赖本工作流的三件事：
+# 1. 更新包 minisign 签名（TAURI_SIGNING_PRIVATE_KEY secrets）→ 产物旁多出 .sig；
+# 2. macOS 包用自签证书稳定签名身份（Magpie Dev）→ 用户更新后系统授权不重置；
+# 3. updater-manifest 任务把双平台产物组装成 latest.json 挂上 Release——
+#    应用按固定地址 releases/latest/download/latest.json 拉取清单，缺了它
+#    应用内更新检查静默失败（AGENTS.md 发版清单 ④ 有对应核验项）。
 on:
   push:
     tags:
@@ -39,6 +46,24 @@ jobs:
       - name: 安装前端依赖
         run: pnpm install --frozen-lockfile
 
+      # 稳定签名身份（自签证书，secrets 注入）：TCC 授权锚定证书哈希，所有发版
+      # 用同一张证书，用户应用内更新后辅助功能/输入监控/屏幕录制不再重置。
+      # 临时 keychain 用后即弃，runner 无状态
+      - name: 导入签名证书
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_P12_PASSWORD }}
+        run: |
+          echo "$MACOS_CERTIFICATE" | base64 --decode > /tmp/magpie-dev.p12
+          KC_PWD=$(openssl rand -hex 16)
+          security create-keychain -p "$KC_PWD" build.keychain
+          security import /tmp/magpie-dev.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PWD" build.keychain
+          # 追加而非替换搜索列表：保留 runner 默认 keychain，避免影响后续工具
+          ORIG_KCS=$(security list-keychain -d user | tr -d '"')
+          security list-keychain -d user -s build.keychain $ORIG_KCS
+          rm /tmp/magpie-dev.p12
+
       # tauri-action 自动执行 pnpm build（beforeBuildCommand）并构建
       # tauri CLI 合并 Universal 包时只处理主程序，不会合并 src/bin 下的额外
       # 二进制（ocr_helper）；先 --no-bundle 预构建，手动 lipo 出通用 ocr_helper，
@@ -70,6 +95,11 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 更新包签名（updater 产 .app.tar.gz + .sig 并挂 Release）
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # 覆盖 conf 的 ad-hoc（"-"）：发版统一稳定身份，本地构建不受影响
+          APPLE_SIGNING_IDENTITY: Magpie Dev
         with:
           args: --target universal-apple-darwin
           # 标签推送时创建 Release 并挂载 dmg/app 产物
@@ -141,6 +171,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 更新包签名（updater 产 NSIS 安装包 + .sig 并挂 Release）
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           # 标签推送时挂载到 macOS 任务创建的同一个 Release
           #（未传 args = 构建当前宿主目标 x86_64-pc-windows-msvc）
@@ -159,3 +192,74 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: error
+
+  # 应用内更新清单：两个平台构建都完成后，从 Release 资产里挑出 updater
+  # 产物（macOS .app.tar.gz / Windows NSIS .exe）与各自 .sig，组装成双平台
+  # latest.json 覆盖上传。tauri-action 每个平台各自生成的单平台清单在这里
+  # 被合并替换；应用按 releases/latest/download/latest.json 固定地址拉取
+  updater-manifest:
+    permissions:
+      contents: write # 覆盖上传 latest.json 到 Release
+    needs: [release, release-windows]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 组装并上传 latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api "repos/$REPO/releases/tags/$TAG" > release.json
+          python3 - <<'PY'
+          import json, os, base64, urllib.request
+          from datetime import datetime, timezone
+
+          tag = os.environ["TAG"]
+          release = json.load(open("release.json"))
+          assets = {a["name"]: a["browser_download_url"] for a in release["assets"]}
+
+          def pick(suffix):
+              hits = [n for n in assets if n.endswith(suffix)]
+              assert len(hits) == 1, f"expect exactly one *{suffix}, got {hits}"
+              return hits[0]
+
+          mac = pick(".app.tar.gz")
+          win = pick(".exe")  # NSIS 安装包（.msi 不参与应用内更新）
+
+          # .sig 是 minisign 签名文件；tauri CLI 2.9+ 会在 minisign 原文外再包一层
+          # base64。插件要求 latest.json 的 signature = base64(minisign 原文)，
+          # 这里统一解到原文为止再编码（旧版 CLI 直出原文，解不动就原样用）
+          def sig_of(name):
+              raw = urllib.request.urlopen(assets[name + ".sig"]).read()
+              try:
+                  text = base64.b64decode(raw, validate=True)
+                  if text.lstrip().startswith(b"untrusted comment"):
+                      raw = text
+              except Exception:
+                  pass
+              return base64.b64encode(raw).decode()
+
+          def entry(name):
+              return {
+                  "signature": sig_of(name),
+                  "url": assets[name],
+              }
+
+          version = tag.lstrip("v")
+          manifest = {
+              "version": version,
+              # 更新说明 = Release body（CHANGELOG 同源），应用更新弹窗内嵌展示
+              "notes": (release.get("body") or "").strip(),
+              "pubDate": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "platforms": {
+                  # Universal 2 包同时服务两种架构，两个 key 指向同一产物
+                  "darwin-aarch64": entry(mac),
+                  "darwin-x86_64": entry(mac),
+                  "windows-x86_64": entry(win),
+              },
+          }
+          json.dump(manifest, open("latest.json", "w"), indent=2)
+          print(json.dumps(manifest, indent=2)[:400])
+          PY
+          gh release upload "$TAG" latest.json --clobber

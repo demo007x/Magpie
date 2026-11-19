@@ -178,6 +178,9 @@ export interface Settings {
   /** 智能提取：「提取信息」面板中日期/地点等语义信息优先由 AI 理解（需已配置
    *  默认模型服务）；关闭或未配置时走系统识别。默认开 */
   smartExtract: boolean;
+  /** 启动时后台自动检查新版本（默认开）；关闭后仅关于页手动检查。
+   *  更新从不静默安装：发现新版弹窗确认后才下载替换 */
+  autoUpdateCheck: boolean;
   /** 本地朗读：默认中英文音色（音色包安装状态由 Rust 侧判定） */
   tts: TtsConfig;
 }

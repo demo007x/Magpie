@@ -1,4 +1,4 @@
-// 通用页：主题（跟随系统/亮/暗）、界面语言（跟随系统/中/英）、登录自启、程序坞图标（macOS）、结果窗默认尺寸。
+// 通用页：主题（跟随系统/亮/暗）、界面语言（跟随系统/中/英）、登录自启、自动检查更新、程序坞图标（macOS）、结果窗默认尺寸。
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "../../shared/toast";
 import { t, useLocale } from "../../shared/i18n";
@@ -107,6 +107,30 @@ export default function GeneralPage({ settings, patch, saveNow, appearance, setA
                         .catch((err) =>
                           toast(t("general.setFailed", { error: String(err) }), "err"),
                         );
+                    }}
+                  />
+                  <span className="knob" />
+                </label>
+              </div>
+            </div>
+
+            {/* 更新从不静默安装：本开关只控制启动时的后台检查，
+                发现新版仍弹窗确认，关于页手动检查不受影响 */}
+            <div className="card">
+              <div className="row-between">
+                <div>
+                  <div className="row-title">{t("general.autoUpdateCheck")}</div>
+                  <div className="row-sub">
+                    {t("general.autoUpdateCheckSub")}
+                  </div>
+                </div>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={settings.autoUpdateCheck}
+                    onChange={(e) => {
+                      patch({ autoUpdateCheck: e.target.checked });
+                      saveNow?.();
                     }}
                   />
                   <span className="knob" />

@@ -103,6 +103,12 @@
           "magpie"
         ]
       }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY2OTI5RjIzNjkwQTU3NUUKUldSZVZ3cHBJNStTOW84aDRJZmh2MGlabWVLUU04N0NzOGxxTkJLTzJEdGNHUWdiVm5DVlM3L3kK",
+      "endpoints": [
+        "https://github.com/demo007x/Magpie/releases/latest/download/latest.json"
+      ]
     }
   }
 }

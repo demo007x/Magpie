@@ -13,6 +13,7 @@ export const zhMain = {
   "nav.shortcuts": "快捷键",
   "nav.model": "模型",
   "nav.prompts": "提示词",
+  "nav.vision": "识图配置",
   "nav.translate": "翻译",
   "nav.speech": "朗读",
   "nav.search": "搜索",
@@ -46,7 +47,7 @@ export const zhMain = {
   "capture.showCount": "显示动作数",
   "capture.showCountHint": "默认 4（可设 2–8）",
   "capture.allOff":
-    "所有动作均已关闭：划词后浮动条将不再出现。主窗口仍可从菜单栏图标进入，打开任一开关即可恢复。",
+    "所有动作均已关闭，划词后不再弹出浮动条。打开任一开关即可恢复。",
   "capture.iconAlt": "动作图标",
   "capture.tagMine": "我的",
   "capture.editActionTitle": "编辑动作（名称、图标、提示词、试跑）",
@@ -81,7 +82,7 @@ export const zhMain = {
 
   // 快捷键页
   "sc.hint":
-    "点击输入框按下新组合键，需含 ⌘ / Ctrl / Alt / Shift 之一，Esc 取消；被其他应用占用的组合键不生效。点「保存更改」永久生效。",
+    "点击输入框按下新组合键，需含 ⌘ / Ctrl / Alt / Shift 之一，Esc 取消；被其他应用占用的组合键不生效。需保存生效。",
   "sc.ocr.label": "识图取字",
   "sc.ocr.desc": "框选屏幕任意区域，选动作后识别。",
   "sc.ocrTranslate.label": "识图翻译",
@@ -100,7 +101,7 @@ export const zhMain = {
 
   // 模型服务页
   "model.hint":
-    "添加服务选预设，只填密钥和模型名；设为默认的一项供所有动作使用。密钥仅保存在本机。点「保存更改」永久生效。",
+    "添加服务选预设，只填密钥和模型名；设为默认的一项供所有动作使用。密钥仅保存在本机。需保存生效。",
   "model.unnamedSvc": "未命名服务",
   "model.noModel": "未配置模型",
   "model.fName": "名称",
@@ -111,6 +112,12 @@ export const zhMain = {
   "model.formChat": "Chat · 通用",
   "model.thinking": "思考模式",
   "model.thinkingSub": "开启后回答更准但更慢，关闭更快。",
+  "vision.hint":
+    "开启后对应动作由模型直接看图处理，未配置模型服务时不生效；请求失败时自动改用本机识别。",
+  "vision.ocr": "识别文字",
+  "vision.translate": "翻译",
+  "vision.explain": "解释",
+  "vision.summarize": "总结",
   "model.setAsDefault": "设为默认",
   "model.delSvcTitle": "删除该服务",
   "model.delConfirmTitle": "删除服务",
@@ -120,7 +127,7 @@ export const zhMain = {
 
   // 翻译页
   "translate.hint":
-    "默认项即划词「翻译」的单击直达项，拖动调整列表顺序；译文方向自动识别。更改需点「保存更改」生效。",
+    "默认项即划词「翻译」的单击直达项，拖动调整列表顺序；译文方向自动识别。需保存生效。",
   "translate.setDefaultTitle": "设为默认翻译服务",
   "translate.enableHint": "启用后进入「翻译」展开列表",
   "translate.removeSvcTitle": "移除该服务",
@@ -134,14 +141,14 @@ export const zhMain = {
 
   // 搜索引擎页
   "search.hint":
-    "拖动调整顺序，「默认」为单击直达项；链接中的 {qq} 代入选中文字。点「保存更改」永久生效。",
+    "拖动调整顺序，「默认」为单击直达项；链接中的 {qq} 代入选中文字。需保存生效。",
   "search.setDefaultTitle": "设为默认引擎",
   "search.delEngineTitle": "删除该引擎",
   "search.keepOne": "至少保留一个启用的搜索引擎",
 
   // Obsidian 页
   "obsidian.hint":
-    "把划词与识图结果按模板写入 vault 的 markdown 文件，无需安装 Obsidian 插件。配置后，胶囊与结果窗会出现「Obsidian」。更改需保存后生效。",
+    "把划词与识图结果按模板写入 vault 的 markdown 文件，无需安装 Obsidian 插件。配置后，胶囊与结果窗会出现「Obsidian」。需保存生效。",
   "obsidian.vaultTitle": "Vault 目录",
   "obsidian.vaultSet": "已接入，写入仅限该目录内。",
   "obsidian.vaultUnset": "选 .obsidian 所在的那一层目录。",
@@ -166,7 +173,7 @@ export const zhMain = {
 
   // Anki 页
   "anki.hint":
-    "划中的词句一键存入 Anki：正面是原文，背面是你刚拿到的翻译、解释或总结。需要本机运行 Anki 并安装 AnkiConnect 插件，本页会自动连接。更改需保存后生效。",
+    "划中的词句一键存入 Anki：正面是原文，背面是你刚拿到的翻译、解释或总结。需要本机运行 Anki 并安装 AnkiConnect 插件。需保存生效。",
   "anki.connectUrl": "AnkiConnect 地址（默认本机 8765）",
   "anki.test": "重新检测",
   "anki.testing": "检测中…",
@@ -186,7 +193,7 @@ export const zhMain = {
   "anki.defaultCardContent": "内容卡",
 
   // 提示词页
-  "prompts.hint": "编辑各动作发给模型的指令；{lang} 按界面语言解析为简体中文或 English，{date} 解析为当天日期，所选文字随后附带。更改需保存后生效。",
+  "prompts.hint": "编辑各动作发给模型的指令；{lang} 按界面语言解析为简体中文或 English，{date} 解析为当天日期，所选文字随后附带。需保存生效。",
   "prompts.customized": "已自定义",
   "prompts.usingDefault": "使用系统默认",
   "prompts.viewDefault": "查看系统默认",
@@ -194,9 +201,8 @@ export const zhMain = {
 
   // 黑名单页
   "blocklist.title": "禁用应用",
-  "blocklist.hint": "列表内的应用在划词时不显示浮动条。「选择应用…」添加，条目右侧图标移除。更改需保存后生效。",
+  "blocklist.hint": "列表内的应用在划词时不显示浮动条。「选择应用…」添加，条目右侧图标移除。需保存生效。",
   "blocklist.emptyTitle": "暂无禁用应用",
-  "blocklist.emptySub": "列表为空，所有应用划词时均显示浮动条。",
   "blocklist.removeTitle": "移出禁用列表",
   "blocklist.pickApp": "选择应用…",
 
@@ -212,7 +218,7 @@ export const zhMain = {
   "perms.screenDesc": "识图取字的前提，识别全程在本机完成，画面不上传。",
   "perms.selfCheck": "取词健康自检",
   "perms.selfCheckSub":
-    "划词失灵时的诊断。权限均已授权却无浮动条，请在系统设置里关掉再打开拾趣的「辅助功能」，重启应用恢复。",
+    "划词失灵时的诊断：权限已授权却无浮动条时，到系统设置关掉再打开拾趣的「辅助功能」，再重启应用。",
   "perms.checking": "检测中",
   "perms.granted": "已授权",
   "perms.notGranted": "未授权",
@@ -233,6 +239,8 @@ export const zhMain = {
   "general.uiLocaleAuto": "跟随系统",
   "general.launchAtLogin": "登录时自动启动",
   "general.launchAtLoginSub": "启动后在菜单栏后台运行。",
+  "general.autoUpdateCheck": "自动检查更新",
+  "general.autoUpdateCheckSub": "定期检查，有新版本就提醒你。",
   "general.setFailed": "设置失败：{error}",
   "general.dockIcon": "在程序坞中显示图标",
   "general.dockIconSub": "关闭后仅保留菜单栏运行，从菜单栏右键退出。",
@@ -285,11 +293,11 @@ export const zhMain = {
   "about.checkTitle": "检查新版本",
   "about.checking": "检查中…",
   "about.checkNow": "检查更新",
-  "about.download": "下载 v{version}",
-  "about.updateAvailable": "发现新版本 v{latest}（当前 v{current}），点「下载」前往发布页获取安装包。",
-  "about.updateCurrent": "已是最新版本（v{current}），检查于 {time}。拾趣每天自动检查一次，也可随时手动检查。",
-  "about.updateFailed": "这次没检查成（网络不通或 GitHub 暂时访问不了），下次启动会自动重试。",
-  "about.updateIdle": "有新版本时提醒你，不会自动安装。",
+  "about.updateTo": "更新到 v{version}",
+  "about.updateAvailable": "发现新版本 v{latest}（当前 v{current}），点「更新」一键完成。",
+  "about.updateCurrent": "已是最新版本（v{current}），检查于 {time}。",
+  "about.updateFailed": "GitHub 暂时不能访问。",
+  "about.updateIdle": "有新版本时提醒你，确认后更新。",
   "about.feedbackSub": "遇到问题或有想法，欢迎告诉我们",
   "about.feedbackFeishu": "飞书反馈",
   "about.starLead": "如果拾趣给你带来了实实在在的方便，欢迎去 GitHub ",
@@ -302,4 +310,14 @@ export const zhMain = {
   "about.copyLog": "复制日志",
   "about.logCopied": "已复制运行日志（{count} 字），可随反馈一并粘贴",
   "about.logCopyFailed": "复制日志失败：{error}",
+
+  // 应用内更新（update modal）
+  "update.title": "发现新版本",
+  "update.body": "拾趣 v{latest} 已就绪。更新会关闭并重新打开应用。",
+  "update.whatsNew": "查看更新内容",
+  "update.later": "稍后",
+  "update.installNow": "立即更新",
+  "update.preparing": "准备下载…",
+  "update.downloading": "下载中 {pct}%",
+  "update.installFailed": "更新没装上，请稍后再试。",
 };

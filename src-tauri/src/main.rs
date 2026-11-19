@@ -96,6 +96,7 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let su_item = MenuItem::with_id(app, "ocr_summarize", &label(i18n::t("tray.ocrSummarize"), &s.ocr_summarize_shortcut), true, None::<&str>)?;
     let file_ocr_item = MenuItem::with_id(app, "file_ocr", &label(i18n::t("tray.fileOcr"), &s.file_ocr_shortcut), true, None::<&str>)?;
     let home_item = MenuItem::with_id(app, "home", i18n::t("tray.home"), true, None::<&str>)?;
+    let check_update_item = MenuItem::with_id(app, "check_update", i18n::t("tray.checkUpdate"), true, None::<&str>)?;
     let github_item = MenuItem::with_id(app, "github", i18n::t("tray.github"), true, None::<&str>)?;
     let feedback_item = MenuItem::with_id(app, "feedback", i18n::t("tray.feedback"), true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", i18n::t("tray.quit"), true, None::<&str>)?;
@@ -109,6 +110,7 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         &file_ocr_item,
         &sep1,
         &home_item,
+        &check_update_item,
         &github_item,
         &feedback_item,
         &sep2,
@@ -319,6 +321,30 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+/// 托盘「检查更新」：用户明确触发，三种结果都必须给反馈（启动巡检的静默纪律
+/// 不适用于显式动作）。有新版：广播事件（主窗口弹确认弹窗，notes 内嵌说明）
+/// 并打开关于页让弹窗直接可见，不再叠加 toast（弹窗本身就是更完整的反馈）；
+/// 无新版/失败：toast 一句话说明
+fn check_update_from_tray(app: &tauri::AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let info = tauri::async_runtime::block_on(update::check_update(app.clone(), true));
+        match info.status.as_str() {
+            "available" => {
+                let _ = app.emit("update://available", &info);
+                show_main_window(&app);
+                let _ = app.emit_to("main", "nav://page", "about");
+            }
+            "upToDate" => crate::toast::show_toast(
+                &app,
+                &format!("{}v{}", i18n::t("toast.updateUpToDate"), info.current),
+                "info",
+            ),
+            _ => crate::toast::show_toast(&app, i18n::t("toast.updateCheckFailed"), "err"),
+        }
+    });
+}
+
 /// dev 模式（裸二进制）托盘在 macOS 26+ 不显示（tray-icon#273：非 bundle
 /// 二进制的状态项被系统隐藏）——而应用是菜单栏常驻形态，主窗口启动即隐藏，
 /// 没有托盘就没有任何入口能再打开它。debug 构建启动即显示主窗口保底，
@@ -449,6 +475,9 @@ fn main() {
         // 窗口一就绪就会 invoke 命令（实测早于 setup 尾部的 manage → panic）
         .manage(floating::FloatingState::default())
         .plugin(tauri_plugin_deep_link::init())
+        // 应用内更新（ADR-11）：清单检测 + minisign 验签下载安装，全部 Rust 侧驱动，
+        // 不经 webview（CSP connect-src 不放行外部主机正是为此）
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -654,6 +683,7 @@ fn main() {
                     // 「打开拾趣」只亮窗不指定页：落到启动默认逻辑（未配模型 → 模型页，
                     // 已配 → 划词页）；此前「功能设置」硬跳 model 页，智能默认后过时
                     "home" => show_main_window(app),
+                    "check_update" => check_update_from_tray(app),
                     "ocr" => start_ocr_flow(app.clone(), None),
                     "ocr_translate" => start_ocr_flow(app.clone(), Some("translate")),
                     "ocr_explain" => start_ocr_flow(app.clone(), Some("explain")),
@@ -684,15 +714,30 @@ fn main() {
                 })
                 .build(app)?;
 
-            // 启动后台版本检查：错峰 20s 让窗口先建好；同版本只提示一次，
-            // 24h 内不重复请求（GitHub 匿名 API 限 60 次/小时/IP）
+            // 已检测待安装的更新对象（check_update 存入 / update_install 取用）
+            app.manage(update::PendingUpdate(std::sync::Mutex::new(None)));
+
+            // 常驻低频巡检：后台应用长期不关，只在启动查一次会错过新版本。
+            // 每小时 tick 一次，真正的网络检查仍受 update.json 24h 节流约束；
+            // 开关每次 tick 现读，通用页改设置即时生效（关于页手动检查不受影响）
             {
                 let app_handle = handle.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_secs(20));
-                    let info =
-                        tauri::async_runtime::block_on(update::check_update(app_handle.clone(), false));
-                    update::announce(&app_handle, &info);
+                    loop {
+                        if settings::current(&app_handle).auto_update_check {
+                            let info = tauri::async_runtime::block_on(update::check_update(
+                                app_handle.clone(),
+                                false,
+                            ));
+                            update::announce(&app_handle, &info);
+                            #[cfg(debug_assertions)]
+                            update::dev_autoinstall_if_enabled(&app_handle, &info);
+                        }
+                        std::thread::sleep(std::time::Duration::from_secs(
+                            update::CHECK_TICK_SECS,
+                        ));
+                    }
                 });
             }
             Ok(())
@@ -758,6 +803,7 @@ fn main() {
             capture::request_screen_capture_access,
             floating::ocr::set_ocr_pinned,
             update::check_update,
+            update::update_install,
             floating::ocr::ocr_window_mode,
             floating::ocr::ocr_window_pos,
             floating::ocr::ocr_take_pending,

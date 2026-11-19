@@ -1,4 +1,4 @@
-// 关于页：版本信息、更新检测（查 GitHub Releases，无自建服务器；24h 节流在 Rust 侧）。
+// 关于页：版本信息、更新检测（检测在 Rust 侧：24h 节流；发现新版走应用内更新）。
 import { invoke } from "@tauri-apps/api/core";
 import markIcon from "../assets/mark.svg";
 import { toast } from "../../shared/toast";
@@ -10,10 +10,13 @@ const REPO_URL = "https://github.com/demo007x/Magpie";
 const ISSUE_URL = "https://github.com/demo007x/Magpie/issues/new";
 
 export type UpdateInfo = {
-  status: "current" | "available" | "failed" | null;
+  /** 与 Rust update::UpdateInfo.status 对齐：cooldown = 24h 内已查过且无新版 */
+  status: "upToDate" | "available" | "cooldown" | "failed" | null;
   current: string;
   latest?: string;
   url?: string;
+  /** 更新说明 markdown（发版 Release body；空 = 弹窗回退为跳发布页链接） */
+  notes?: string;
   checkedAt?: number;
 };
 
@@ -31,7 +34,8 @@ function updateHint(upd: UpdateInfo | null): string {
   switch (upd?.status) {
     case "available":
       return t("about.updateAvailable", { latest: upd.latest!, current: upd.current });
-    case "current":
+    case "upToDate":
+    case "cooldown":
       return t("about.updateCurrent", {
         current: upd.current,
         time: fmtChecked(upd.checkedAt!),
@@ -48,9 +52,11 @@ interface AboutProps {
   upd: UpdateInfo | null;
   checking: boolean;
   runUpdateCheck: (force: boolean) => void;
+  /** 打开应用内更新弹窗（App.tsx 持有弹窗状态，与 update://available 弹窗共用） */
+  openUpdate: () => void;
 }
 
-export default function AboutPage({ appVersion, upd, checking, runUpdateCheck }: AboutProps) {
+export default function AboutPage({ appVersion, upd, checking, runUpdateCheck, openUpdate }: AboutProps) {
   useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
   return (
     <>
@@ -73,11 +79,8 @@ export default function AboutPage({ appVersion, upd, checking, runUpdateCheck }:
           </div>
           <div className="row-ctl">
             {upd?.status === "available" && upd.url && (
-              <button
-                className="btn sm primary"
-                onClick={() => invoke("open_url", { url: upd.url }).catch(() => undefined)}
-              >
-                {t("about.download", { version: upd.latest! })}
+              <button className="btn sm primary" onClick={openUpdate}>
+                {t("about.updateTo", { version: upd.latest! })}
               </button>
             )}
             <button className="btn sm" disabled={checking} onClick={() => runUpdateCheck(true)}>

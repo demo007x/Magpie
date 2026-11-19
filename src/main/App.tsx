@@ -36,6 +36,7 @@ import ModelPage from "./pages/ModelPage";
 import CapturePage from "./pages/CapturePage";
 import GeneralPage from "./pages/GeneralPage";
 import AboutPage, { type UpdateInfo } from "./pages/AboutPage";
+import UpdateModal from "./UpdateModal";
 import ShortcutsPage from "./pages/ShortcutsPage";
 
 type Page =
@@ -154,9 +155,12 @@ export default function App() {
       .catch(() => undefined);
   }, []);
 
-  // 版本更新检测：查 GitHub Releases（无自建服务器）
+  // 版本更新：检测在 Rust（24h 节流）；这里消费结果 + 弹确认弹窗。
+  // 更新从不静默安装，「稍后」仅本次会话不再弹，下个版本重新提醒
   const [upd, setUpd] = useState<UpdateInfo | null>(null);
   const [checking, setChecking] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const dismissedRef = useRef<string | null>(null);
   const runUpdateCheck = (force: boolean) => {
     setChecking(true);
     invoke<UpdateInfo>("check_update", { force })
@@ -168,6 +172,16 @@ export default function App() {
   useEffect(() => {
     if (page === "about") runUpdateCheck(false);
   }, [page]);
+  // 启动后台检查发现新版本（Rust announce 广播）：弹更新弹窗
+  useEffect(() => {
+    const un = listen<UpdateInfo>("update://available", (e) => {
+      setUpd(e.payload);
+      if (dismissedRef.current !== e.payload.latest) setShowUpdateModal(true);
+    });
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
 
   // 应用外观（auto=跟随系统 | light | dark）：主窗口自身也要应用
   const [appearance, setAppearance] = useState<string>("auto");
@@ -441,9 +455,17 @@ export default function App() {
             upd={upd}
             checking={checking}
             runUpdateCheck={runUpdateCheck}
+            openUpdate={() => setShowUpdateModal(true)}
           />
         )}
       </main>
+      <UpdateModal
+        upd={showUpdateModal ? upd : null}
+        onClose={() => {
+          dismissedRef.current = upd?.latest ?? null;
+          setShowUpdateModal(false);
+        }}
+      />
       </div>
     </div>
   );

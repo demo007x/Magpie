@@ -408,6 +408,9 @@ pub struct Settings {
     ///（需已配置默认模型服务）；关闭或未配置时走系统识别（NSDataDetector/NLTagger）
     #[serde(default = "default_true")]
     pub smart_extract: bool,
+    /// 启动时后台自动检查新版本（ADR-11）；关闭后仅关于页手动检查，不做静默安装
+    #[serde(default = "default_true")]
+    pub auto_update_check: bool,
     /// 本地朗读：默认中英文音色（模型是否安装由 speech.rs 判定，不进配置）
     #[serde(default)]
     pub tts: TtsConfig,
@@ -478,6 +481,7 @@ impl Default for Settings {
             appearance: default_appearance(),
             ui_locale: default_ui_locale(),
             smart_extract: true,
+            auto_update_check: true,
             tts: TtsConfig::default(),
         }
     }

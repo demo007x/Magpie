@@ -19,7 +19,6 @@ export default function BlocklistPage({ settings, patch, saveNow }: PageProps) {
               <div className="row-title" style={{ color: "var(--sec)" }}>
                 {t("blocklist.emptyTitle")}
               </div>
-              <div className="row-sub">{t("blocklist.emptySub")}</div>
             </div>
           </div>
         ) : (

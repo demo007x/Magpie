@@ -15,6 +15,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "nav.shortcuts": "Shortcuts",
   "nav.model": "Model",
   "nav.prompts": "Prompts",
+  "nav.vision": "Vision",
   "nav.translate": "Translate",
   "nav.speech": "Read aloud",
   "nav.search": "Search",
@@ -50,7 +51,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "capture.showCount": "Actions shown",
   "capture.showCountHint": "Default 4 (2–8)",
   "capture.allOff":
-    "Every action is off: the floating bar will no longer appear when you select text. You can still open this window from the menu bar icon. Turn any switch back on to restore it.",
+    "Every action is off, so the floating bar won't appear on selection. Turn any switch back on to restore it.",
   "capture.iconAlt": "Action icon",
   "capture.tagMine": "Mine",
   "capture.editActionTitle": "Edit the action (name, icon, prompt, test run)",
@@ -87,7 +88,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Shortcuts page
   "sc.hint":
-    "Click a box and press the new key combination. It must include ⌘ / Ctrl / Alt / Shift; press Esc to cancel. Combinations already used by other apps won't take effect. Click “Save changes” to make them permanent.",
+    "Click a box and press the new key combination. It must include ⌘ / Ctrl / Alt / Shift; press Esc to cancel. Combinations already used by other apps won't take effect. Save to apply.",
   "sc.ocr.label": "Capture text from screen",
   "sc.ocr.desc": "Frame any area of the screen, then pick an action to recognize it.",
   "sc.ocrTranslate.label": "Capture and translate",
@@ -106,7 +107,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Model services page
   "model.hint":
-    "Pick a preset to add a service. You only need the API key and model name; the default service is used by all actions. Keys are stored on this device only. Click “Save changes” to make them permanent.",
+    "Pick a preset to add a service. You only need the API key and model name; the default service is used by all actions. Keys are stored on this device only. Save to apply.",
   "model.unnamedSvc": "Unnamed service",
   "model.noModel": "No model set",
   "model.fName": "Name",
@@ -117,6 +118,12 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "model.formChat": "Chat · universal",
   "model.thinking": "Thinking mode",
   "model.thinkingSub": "On: answers are more accurate but slower. Off: faster.",
+  "vision.hint":
+    "When on, the model reads the image directly for the matching action. Needs a configured model service; local recognition is used if the request fails.",
+  "vision.ocr": "Recognize text",
+  "vision.translate": "Translate",
+  "vision.explain": "Explain",
+  "vision.summarize": "Summarize",
   "model.setAsDefault": "Set as default",
   "model.delSvcTitle": "Delete this service",
   "model.delConfirmTitle": "Delete service",
@@ -127,7 +134,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Translate page
   "translate.hint":
-    "The default service is the one-click option in Translate; drag to reorder the list. Translation direction is detected automatically. Click “Save changes” to apply changes.",
+    "The default service is the one-click option in Translate; drag to reorder the list. Translation direction is detected automatically. Save to apply.",
   "translate.setDefaultTitle": "Set as the default translate service",
   "translate.enableHint": "Turn on to show it in the Translate list",
   "translate.removeSvcTitle": "Remove this service",
@@ -142,14 +149,14 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Search engines page
   "search.hint":
-    "Drag to reorder; “Default” is the one-click option. {qq} in the link is replaced with the selected text. Click “Save changes” to make them permanent.",
+    "Drag to reorder; “Default” is the one-click option. {qq} in the link is replaced with the selected text. Save to apply.",
   "search.setDefaultTitle": "Set as the default engine",
   "search.delEngineTitle": "Delete this engine",
   "search.keepOne": "Keep at least one search engine enabled",
 
   // Obsidian page
   "obsidian.hint":
-    "Write captured text and screenshot results into markdown files in your vault using templates. No Obsidian plugin needed. Once configured, “Obsidian” appears in the capsules and result window. Changes take effect after saving.",
+    "Write captured text and screenshot results into markdown files in your vault using templates. No Obsidian plugin needed. Once configured, “Obsidian” appears in the capsules and result window. Save to apply.",
   "obsidian.vaultTitle": "Vault folder",
   "obsidian.vaultSet": "Connected. Writes stay inside this folder.",
   "obsidian.vaultUnset": "Pick the folder that contains .obsidian.",
@@ -176,7 +183,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Anki page
   "anki.hint":
-    "Turn a selection into an Anki card in one click: the original text on the front, the translation, explanation or summary you just got on the back. Requires Anki running locally with the AnkiConnect add-on; this page connects automatically. Changes take effect after saving.",
+    "Turn a selection into an Anki card in one click: the original text on the front, the translation, explanation or summary you just got on the back. Requires Anki running locally with the AnkiConnect add-on. Save to apply.",
   "anki.connectUrl": "AnkiConnect URL (default localhost:8765)",
   "anki.test": "Re-detect",
   "anki.testing": "Detecting…",
@@ -198,7 +205,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Prompts page
   "prompts.hint":
-    "Edit the instruction each action sends to the model. {lang} resolves to Simplified Chinese or English following the interface language, {date} to today's date, and the selected text is appended. Changes take effect after saving.",
+    "Edit the instruction each action sends to the model. {lang} resolves to Simplified Chinese or English following the interface language, {date} to today's date, and the selected text is appended. Save to apply.",
   "prompts.customized": "Customized",
   "prompts.usingDefault": "Using the default",
   "prompts.viewDefault": "View the default",
@@ -207,9 +214,8 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   // Blocklist page
   "blocklist.title": "Blocked apps",
   "blocklist.hint":
-    "Apps on this list won't show the floating bar when you select text. Use “Choose app…” to add and the icon on the right to remove. Changes take effect after saving.",
+    "Apps on this list won't show the floating bar when you select text. Use “Choose app…” to add and the icon on the right to remove. Save to apply.",
   "blocklist.emptyTitle": "No blocked apps yet",
-  "blocklist.emptySub": "The list is empty; every app shows the floating bar when you select text.",
   "blocklist.removeTitle": "Remove from the blocklist",
   "blocklist.pickApp": "Choose app…",
 
@@ -226,7 +232,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
     "The basis of text capture; recognition happens entirely on this device and the image never leaves it.",
   "perms.selfCheck": "Capture health check",
   "perms.selfCheckSub":
-    "A check for when text capture stops working. If everything is granted but no floating bar appears, turn Magpie's Accessibility permission off and back on in System Settings, then restart the app.",
+    "A check for when text capture stops working: if all permissions are granted but no floating bar appears, turn Magpie's Accessibility off and back on in System Settings, then restart the app.",
   "perms.checking": "Checking",
   "perms.granted": "Granted",
   "perms.notGranted": "Not granted",
@@ -247,6 +253,8 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "general.uiLocaleAuto": "Auto",
   "general.launchAtLogin": "Launch at login",
   "general.launchAtLoginSub": "Runs quietly in the menu bar after login.",
+  "general.autoUpdateCheck": "Check for updates automatically",
+  "general.autoUpdateCheckSub": "Checks periodically and lets you know when a new version is out.",
   "general.setFailed": "Couldn't update the setting: {error}",
   "general.dockIcon": "Show icon in the Dock",
   "general.dockIconSub": "When off, the app runs in the menu bar only; quit from its right-click menu.",
@@ -300,14 +308,12 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "about.checkTitle": "Check for new versions",
   "about.checking": "Checking…",
   "about.checkNow": "Check for updates",
-  "about.download": "Download v{version}",
+  "about.updateTo": "Update to v{version}",
   "about.updateAvailable":
-    "New version v{latest} found (you have v{current}). Click “Download” to get the installer from the release page.",
-  "about.updateCurrent":
-    "You're up to date (v{current}), last checked {time}. Magpie checks once a day automatically, and you can check anytime.",
-  "about.updateFailed":
-    "The check didn't go through this time (no network, or GitHub is temporarily unreachable). It will retry automatically next launch.",
-  "about.updateIdle": "You'll be told when a new version is out. Nothing installs automatically.",
+    "New version v{latest} found (you have v{current}). Click “Update” to install in one step.",
+  "about.updateCurrent": "You're up to date (v{current}), last checked {time}.",
+  "about.updateFailed": "GitHub is temporarily unreachable.",
+  "about.updateIdle": "You'll be told when a new version is out. Updating always asks first.",
   "about.feedbackSub": "Found a problem or have an idea? We'd love to hear it",
   "about.feedbackFeishu": "Feishu form",
   "about.starLead": "If Magpie has genuinely made things easier for you, ",
@@ -320,4 +326,14 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "about.copyLog": "Copy logs",
   "about.logCopied": "Logs copied ({count} characters). You can paste them along with your feedback",
   "about.logCopyFailed": "Couldn't copy logs: {error}",
+
+  // In-app update (update modal)
+  "update.title": "Update available",
+  "update.body": "Magpie v{latest} is ready. Updating closes and reopens the app.",
+  "update.whatsNew": "See what's new",
+  "update.later": "Later",
+  "update.installNow": "Update now",
+  "update.preparing": "Preparing download…",
+  "update.downloading": "Downloading {pct}%",
+  "update.installFailed": "The update didn't complete. Please try again later.",
 };
