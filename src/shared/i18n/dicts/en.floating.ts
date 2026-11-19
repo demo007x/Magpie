@@ -41,6 +41,7 @@ export const enFloating: Record<keyof typeof zhFloating, string> = {
   "floating.ariaPinPanel": "Pin panel",
   "floating.ariaCopyImage": "Copy image",
   "floating.ariaToggleSource": "Expand or collapse source",
+  "floating.visionRunning": "Recognizing text in image…",
   "floating.ariaJumpDown": "Back to bottom",
 
   "floating.actOpen": "Open",

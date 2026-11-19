@@ -9,6 +9,7 @@ use std::process::Command;
 use tauri::Emitter;
 
 use crate::i18n::t;
+use crate::settings;
 // Windows 识图流程（下方 cfg(windows) 函数）使用裸 AppHandle；
 // macOS 编译路径无此使用，按平台门控导入避免 unused 警告
 #[cfg(target_os = "windows")]
@@ -116,6 +117,7 @@ pub fn retry_region_capture() -> Option<(String, PathBuf)> {
 /// 识别完成，一次性推送结果（文本 + 原图 + 可选自动执行动作）：面板出现即有
 /// 完整内容，原图随 pending 保留供「钉图」。run = (动作 id, 服务)，
 /// 传 (id, None) 时由前端按该动作既有的默认服务逻辑选择。
+/// vision = 视觉分流标志（true = 文本未识别，前端直接看图驱动模型）。
 /// 事件用全局广播而不是 emit_to：JS listen() 注册的是 Any 目标，
 /// emit_to 的按窗口过滤不匹配 Any 监听器（此前识别面板因此永不出现）。
 /// 其他窗口收到后按 app=="ocr" 忽略。
@@ -124,12 +126,55 @@ pub fn push_ocr_result(
     text: String,
     image: PathBuf,
     run: Option<(String, Option<String>)>,
+    vision: bool,
 ) {
-    super::floating::ocr_set_pending(text, Some(image), run, String::new());
+    super::floating::ocr_set_pending(text, Some(image), run, String::new(), vision);
     let _ = app.emit(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
     );
+}
+
+/// 识图视觉分流判定：对应能力开关开 + 默认模型服务已配置密钥。不要求服务
+/// 声明支持图片：现代模型基本都能读图，误判由流前回退兜底（请求失败自动
+/// 转本地识别），用户无感知。
+/// action None = 识图取字（含访达选图，映射 vision.ocr 开关）；自定义动作无
+/// 识图入口，恒本地。判定放 Rust：分流必须发生在本地识别与「正在识别」
+/// toast 之前，而 settings/provider 契约源在本侧；前端的复判只承担请求期回退
+fn vision_ready(s: &settings::Settings, action: Option<&str>) -> bool {
+    let on = match action {
+        None => s.vision.ocr,
+        Some("translate") => s.vision.translate,
+        Some("explain") => s.vision.explain,
+        Some("summarize") => s.vision.summarize,
+        Some(_) => false,
+    };
+    if !on {
+        return false;
+    }
+    crate::ai::pick_provider(s, None)
+        .map(|p| !p.api_key.trim().is_empty())
+        .unwrap_or(false)
+}
+
+/// 视觉分流推送：就绪则以空文本 + vision 标志推送 pending（前端直接看图驱动
+/// 模型，请求流前失败由前端回退本地识别命令），返回 true；未就绪返回 false，
+/// 调用方继续本地识别管线。截图（recognize_and_push）与访达选图共用
+pub fn try_push_vision_pending(
+    app: &tauri::AppHandle,
+    image: PathBuf,
+    action: Option<String>,
+    service: Option<String>,
+) -> bool {
+    let s = settings::current(app);
+    if !vision_ready(&s, action.as_deref()) {
+        return false;
+    }
+    eprintln!("[magpie:ocr] 视觉分流：识图交由模型直接处理");
+    crate::user_log("[ocr] 视觉分流：识图交由模型直接处理");
+    let run = action.map(|a| (a, service));
+    push_ocr_result(app, String::new(), image, run, true);
+    true
 }
 
 /// 识别并一次性推送结果：识图快捷键流程后半段与截图胶囊动作执行（snip_execute）
@@ -147,6 +192,11 @@ pub async fn recognize_and_push(
     action: Option<String>,
     service: Option<String>,
 ) {
+    // 视觉分流：对应能力开关开启且默认模型服务已配置 → 跳过本地识别与
+    // 「正在识别」toast，前端直接看图驱动模型（流前失败由前端回退本地）
+    if try_push_vision_pending(app, image.clone(), action.clone(), service.clone()) {
+        return;
+    }
     eprintln!("[magpie:ocr] 截图完成，开始识别");
     crate::toast::show_toast_sticky(app, t("toast.recognizing"), "progress");
     let run = action.map(|a| (a, service.clone()));
@@ -155,7 +205,7 @@ pub async fn recognize_and_push(
         Ok(Ok(text)) => {
             eprintln!("[magpie:ocr] 成功：len={}", text.len());
             crate::toast::hide_toast(app);
-            push_ocr_result(app, text, image, run);
+            push_ocr_result(app, text, image, run, false);
         }
         Ok(Err(e)) => {
             eprintln!("[magpie:ocr] 失败：{e}");
@@ -165,7 +215,7 @@ pub async fn recognize_and_push(
             if e == t("ocr.noText") {
                 if let Some((text, retry_image)) = retry_region_capture() {
                     crate::toast::hide_toast(app);
-                    push_ocr_result(app, text, retry_image, run);
+                    push_ocr_result(app, text, retry_image, run, false);
                     let _ = std::fs::remove_file(&image); // 原糊图已无价值
                     return;
                 }
@@ -235,11 +285,93 @@ pub fn warmup() {
 /// emit_to 的按窗口过滤不匹配 Any 监听器（此前识别面板因此永不出现）。
 /// 其他窗口收到后按 app=="ocr" 忽略。
 pub fn push_text_to_ocr_window(app: &tauri::AppHandle, text: String, image: Option<PathBuf>) {
-    super::floating::ocr_set_pending(text, image, None, String::new());
+    super::floating::ocr_set_pending(text, image, None, String::new(), false);
     let _ = app.emit(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
     );
+}
+
+/// 本地识别结果（ocr_recognize_local 命令返回，视觉流前失败的前端回退用）
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrLocalResult {
+    pub text: String,
+    /// 自愈重截成功时的新截图路径（原糊图已删）：前端应把面板预览/后续引用
+    /// 切到此图，Rust 侧 OCR_IMAGE 已同步替换（钉图取走的是新图）
+    pub image: Option<String>,
+}
+
+/// 本地识别（视觉回退命令）：spawn_blocking 包 recognize_file，含 macOS
+/// 「未识别到文字」的自愈重截（平移 recognize_and_push 的分支，不含 toast
+/// ——回退时结果面板已在屏，失败话术由前端按结果写入面板）。
+/// 「未识别到文字」保留截图供事后复核；其他错误删除截图（与主管线一致）
+#[tauri::command]
+pub async fn ocr_recognize_local(path: String) -> Result<OcrLocalResult, String> {
+    let p = std::path::PathBuf::from(&path);
+    tauri::async_runtime::spawn_blocking(move || {
+        eprintln!("[ocr] 视觉回退：本地识别 {}", p.display());
+        match recognize_file(&p) {
+            Ok(text) => Ok(OcrLocalResult { text, image: None }),
+            Err(e) => {
+                // 「未识别到文字」先走自愈重截（仅 macOS；Windows 无过渡帧问题）
+                #[cfg(target_os = "macos")]
+                if e == t("ocr.noText") {
+                    if let Some((text, retry)) = retry_region_capture() {
+                        let _ = std::fs::remove_file(&p);
+                        super::floating::ocr::replace_ocr_image(Some(retry.clone()));
+                        return Ok(OcrLocalResult {
+                            text,
+                            image: Some(retry.to_string_lossy().into_owned()),
+                        });
+                    }
+                }
+                let dims = image::image_dimensions(&p)
+                    .map(|(w, h)| format!("{w}x{h}"))
+                    .unwrap_or_else(|_| "?".into());
+                crate::user_log(&format!(
+                    "[ocr] 视觉回退本地识别失败：{e}；截图 {dims} {}",
+                    p.display()
+                ));
+                if e != t("ocr.noText") {
+                    let _ = std::fs::remove_file(&p);
+                }
+                Err(e)
+            }
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 截图转 data URL（视觉 LLM 请求体用）：长边超限等比缩小、JPEG 压缩、
+/// base64 封装。缩小与压缩把动辄数 MB 的截图 base64 压到百 KB 级，控制
+/// 请求体积与首字延迟；1568 是主流视觉模型的最优分辨率档
+#[tauri::command]
+pub async fn ocr_image_data_url(path: String) -> Result<String, String> {
+    let p = std::path::PathBuf::from(&path);
+    tauri::async_runtime::spawn_blocking(move || {
+        let img = image::open(&p).map_err(|e| format!("图片读取失败: {e}"))?;
+        let (w, h) = (img.width(), img.height());
+        const MAX_EDGE: u32 = 1568;
+        let img = if w.max(h) > MAX_EDGE {
+            img.resize(MAX_EDGE, MAX_EDGE, image::imageops::FilterType::Lanczos3)
+        } else {
+            img
+        };
+        let mut buf = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut buf, image::ImageFormat::Jpeg)
+            .map_err(|e| format!("图片编码失败: {e}"))?;
+        use base64::Engine as _;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(buf.get_ref());
+        eprintln!(
+            "[ocr] 图片转 data URL：{w}x{h} → {}KB",
+            buf.get_ref().len() / 1024
+        );
+        Ok(format!("data:image/jpeg;base64,{b64}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn helper_path() -> Result<std::path::PathBuf, String> {

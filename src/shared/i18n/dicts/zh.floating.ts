@@ -44,6 +44,7 @@ export const zhFloating = {
   "floating.ariaPinPanel": "钉住面板",
   "floating.ariaCopyImage": "复制图片",
   "floating.ariaToggleSource": "展开或收起原文",
+  "floating.visionRunning": "正在识别图片文字…",
   "floating.ariaJumpDown": "回到底部",
 
   // 提取面板行内小动作钮与组头

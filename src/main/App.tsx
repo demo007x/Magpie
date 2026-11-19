@@ -8,6 +8,7 @@ import {
   Ban,
   Cpu,
   Info,
+  Image as ImageIcon,
   Keyboard,
   Layers,
   NotebookPen,
@@ -28,6 +29,7 @@ import PromptsPage from "./pages/PromptsPage";
 import SearchPage from "./pages/SearchPage";
 import PermsPage from "./pages/PermsPage";
 import BlocklistPage from "./pages/BlocklistPage";
+import VisionPage from "./pages/VisionPage";
 import TranslatePage from "./pages/TranslatePage";
 import SpeechPage from "./pages/SpeechPage";
 import ObsidianPage from "./pages/ObsidianPage";
@@ -42,6 +44,7 @@ import ShortcutsPage from "./pages/ShortcutsPage";
 type Page =
   | "model"
   | "prompts"
+  | "vision"
   | "capture"
   | "shortcuts"
   | "blocklist"
@@ -57,6 +60,7 @@ type Page =
 const NAV_ICONS: Record<Page, React.ReactNode> = {
   model: <Cpu size={15} strokeWidth={1.75} />,
   prompts: <Sparkles size={15} strokeWidth={1.75} />,
+  vision: <ImageIcon size={15} strokeWidth={1.75} />,
   capture: <TextCursorInput size={15} strokeWidth={1.75} />,
   shortcuts: <Keyboard size={15} strokeWidth={1.75} />,
   blocklist: <Ban size={15} strokeWidth={1.75} />,
@@ -110,6 +114,10 @@ export default function App() {
       items: [
         ["capture", "nav.capture", captureReady],
         ["shortcuts", "nav.shortcuts", true],
+        // 翻译/搜索引擎列表只在划词、识图动作里被消费：跟随动作配置归入
+        // 划词组（2026-11-19 自 AI 服务组迁入，组件零改动）
+        ["translate", "nav.translate", true],
+        ["search", "nav.search", true],
         // 禁用应用只影响划词行为，随划词能力显隐
         ["blocklist", "nav.blocklist", captureReady],
       ],
@@ -119,9 +127,9 @@ export default function App() {
       items: [
         ["model", "nav.model", true],
         ["prompts", "nav.prompts", true],
-        ["translate", "nav.translate", true],
+        // 识图配置：识图动作是否由模型直接看图，依赖模型页的服务配置
+        ["vision", "nav.vision", true],
         ["speech", "nav.speech", speechReady],
-        ["search", "nav.search", true],
       ],
     },
     {
@@ -134,9 +142,10 @@ export default function App() {
     {
       label: "nav.group.app",
       items: [
-        // 授权仅在 macOS 有意义（辅助功能/输入监控/屏幕录制），Windows 无此项
-        ["perms", "nav.perms", IS_MAC],
+        // 通用偏好是设置组的高频页，排前；权限是配置一次基本不再动的授权
+        // 卡点（仅 macOS 有意义，Windows 无此项），排后
         ["general", "nav.general", true],
+        ["perms", "nav.perms", IS_MAC],
         ["about", "nav.about", true],
       ],
     },
@@ -410,6 +419,10 @@ export default function App() {
 
         {page === "speech" && (
           <SpeechPage settings={settings} patch={patch} saveNow={saveNow} />
+        )}
+
+        {page === "vision" && (
+          <VisionPage settings={settings} patch={patch} saveNow={saveNow} />
         )}
 
         {page === "model" && <ModelPage settings={settings} patch={patch} save={save} saved={saved} />}

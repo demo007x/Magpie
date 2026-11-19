@@ -113,7 +113,7 @@ export const zhMain = {
   "model.thinking": "思考模式",
   "model.thinkingSub": "开启后回答更准但更慢，关闭更快。",
   "vision.hint":
-    "开启后对应动作由模型直接看图处理，未配置模型服务时不生效；请求失败时自动改用本机识别。",
+    "开启后对应动作由模型直接看图处理（截图会发送给你配置的模型服务）；未配置模型服务时不生效，请求失败自动改用本机识别。识图翻译固定由模型完成，不走机器翻译服务。",
   "vision.ocr": "识别文字",
   "vision.translate": "翻译",
   "vision.explain": "解释",
@@ -215,7 +215,7 @@ export const zhMain = {
   "perms.inputDesc": "监听划选动作，选定即弹出浮动条。",
   "perms.screen": "屏幕录制",
   "perms.screenMissing": "识图取字必需，授权后即可框选屏幕文字识别。",
-  "perms.screenDesc": "识图取字的前提，识别全程在本机完成，画面不上传。",
+  "perms.screenDesc": "识图取字的前提；默认识别在本机完成，开启识图用模型后截图会发送给模型服务。",
   "perms.selfCheck": "取词健康自检",
   "perms.selfCheckSub":
     "划词失灵时的诊断：权限已授权却无浮动条时，到系统设置关掉再打开拾趣的「辅助功能」，再重启应用。",

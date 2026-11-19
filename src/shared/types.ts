@@ -138,6 +138,10 @@ export interface Settings {
   providers: Provider[];
   defaultProviderId: string;
   actions: ActionFlags;
+  /** 识图用模型处理：四个能力分别开关（识别文字/翻译/解释/总结直接看图）。
+   *  默认全关 = 恒走本地识别；开启且默认模型服务已配置密钥即生效，请求失败
+   *  自动回退本地识别 */
+  vision: { ocr: boolean; translate: boolean; explain: boolean; summarize: boolean };
   /** Obsidian 接入配置（vault 直写；vaultPath 空 = 未接入） */
   obsidian: ObsidianConfig;
   /** Anki 接入配置（AnkiConnect 建卡；deck 空 = 未接入） */
@@ -185,9 +189,15 @@ export interface Settings {
   tts: TtsConfig;
 }
 
+/** 多模态消息的内容分片：文本或图片（base64 data URL）。chat 形态原样透传，
+ *  responses 形态由 Rust 管道转 input_image */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ContentPart[];
 }
 
 // ai_chat Channel 流消息（对应 src-tauri/src/ai.rs AiEvent）

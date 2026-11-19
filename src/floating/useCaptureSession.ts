@@ -47,6 +47,10 @@ export function useCaptureSession(opts: {
   setUsedTranslate: (v: string | null) => void;
   setUsedEngine: (v: string | null) => void;
   runAction: (id: string, service?: string, source?: string) => void;
+  /** 视觉分流执行（识图 pending vision 标志）：直接看图驱动模型；流前失败
+      自动回退本地识别。imagePath 为 null/undefined 时回落读 phase（按钮
+      触发路径）；actionId null = 识图取字（流式写识别原文区） */
+  runVision: (imagePath: string | null | undefined, actionId?: string | null, service?: string) => void;
   showExtractPanel: (rawText: string, sourcePid?: number) => void;
   resetGhostStates: () => void;
   /** 截图胶囊会话（snip://captured）挂起标记：dismiss/新划词时据此先调
@@ -112,8 +116,17 @@ export function useCaptureSession(opts: {
                 streaming: false,
                 error: null,
                 expanded: false,
+                vision: p.vision,
+                imagePath: p.image,
               });
-              if (p.run) o.runAction(p.run.id, p.run.service ?? undefined, p.text);
+              // 视觉分流（p.vision）：文本未识别，看图驱动模型——显式传 imagePath
+              // 与 run，避开监听闭包持有首帧 runAction 读不到新 phase 的问题；
+              // run 为 None 的识图取字 = 自动视觉提取（流式写识别原文区）
+              if (p.vision) {
+                o.runVision(p.image, p.run?.id ?? null, p.run?.service ?? undefined);
+              } else if (p.run) {
+                o.runAction(p.run.id, p.run.service ?? undefined, p.text);
+              }
             }
           })
           .catch(() => undefined);

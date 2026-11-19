@@ -119,7 +119,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "model.thinking": "Thinking mode",
   "model.thinkingSub": "On: answers are more accurate but slower. Off: faster.",
   "vision.hint":
-    "When on, the model reads the image directly for the matching action. Needs a configured model service; local recognition is used if the request fails.",
+    "When on, the model reads the image directly for the matching action (the screenshot is sent to your configured model service); needs a configured model service, and local recognition is used if the request fails. Vision translate always uses the model, not machine-translation services.",
   "vision.ocr": "Recognize text",
   "vision.translate": "Translate",
   "vision.explain": "Explain",
@@ -229,7 +229,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "perms.screen": "Screen Recording",
   "perms.screenMissing": "Required for capturing text. Grant it to recognize text on screen.",
   "perms.screenDesc":
-    "The basis of text capture; recognition happens entirely on this device and the image never leaves it.",
+    "The basis of text capture; recognition runs on this device by default, and screenshots are sent to your model service only when vision processing is turned on.",
   "perms.selfCheck": "Capture health check",
   "perms.selfCheckSub":
     "A check for when text capture stops working: if all permissions are granted but no floating bar appears, turn Magpie's Accessibility off and back on in System Settings, then restart the app.",

@@ -99,6 +99,8 @@ import {
   type AiExtractResult,
 } from "../shared/aiExtract";
 import { TRANSLATE_SERVICES, translateMissingReason, translateService } from "../shared/translate";
+import { visionOcrPrompt, visionSplit, visionUserText } from "../shared/aiVision";
+import type { OcrLocalResult } from "./types";
 import {
   extractAll,
   extractCode,
@@ -928,8 +930,16 @@ export default function App() {
               streaming: false,
               error: null,
               expanded: false,
+              vision: p.vision,
+              imagePath: p.image,
             });
-            if (p.run) runAction(p.run.id, p.run.service ?? undefined, p.text);
+            // 挂载兜底路径同样走视觉分流（推送早于监听就位时事件路径收不到
+            // 广播，只能从这里拉 pending）：vision 优先看图，否则按文本动作
+            if (p.vision) {
+              runVision(p.image, p.run?.id ?? null, p.run?.service ?? undefined);
+            } else if (p.run) {
+              runAction(p.run.id, p.run.service ?? undefined, p.text);
+            }
           }
         })
         .catch(() => undefined);
@@ -1460,6 +1470,19 @@ export default function App() {
     if (!action) return;
     // 动作文本源：显式指定（划词结果导流时由 pending 带入）> OCR 面板用识别文本 > 普通划词用选中文本
     const source = sourceOverride ?? (phase.kind === "ocr" ? phase.text : text);
+    // 视觉分流：识图 pending 未带识别文本（vision 标志），识图的翻译/解释/
+    // 总结直接看图驱动模型（按钮触发路径，phase 为当前渲染值）。机器翻译
+    // 服务收不了图：runVision 内统一分流（按钮/自动两条路径共用）
+    if (
+      phase.kind === "ocr" &&
+      phase.vision &&
+      !source.trim() &&
+      phase.imagePath &&
+      (action.kind === "ai" || id === "translate")
+    ) {
+      runVision(phase.imagePath, id, serviceOverride);
+      return;
+    }
     if (!source.trim()) return;
 
 
@@ -1978,6 +2001,214 @@ export default function App() {
     });
   };
 
+  // ---- 视觉分流执行（识图 pending vision 标志）：动作直接看图驱动模型 ----
+  // 由 useCaptureSession（监听闭包路径，显式传 imagePath/run）与 runAction
+  // 视觉分支（按钮路径，读当前 phase）调入；全程函数式 setPhase，无渲染期
+  // 闭包依赖。data URL 按 imagePath 缓存：同一张图重复执行（切换动作/重试）
+  // 免重编码；容量上限内超出即清（识图会话粒度即可）。
+  // 流前失败（取图失败 / HTTP 4xx/5xx / 模型拒收图片）回退本地识别命令
+  // （ocr_recognize_local 自带 macOS 自愈重截）；流中失败不回退（内容已部分
+  // 输出），与现有流中断同口径。actionId null = 识图取字：流式输出写识别
+  // 原文区 phase.text；有动作：写 phase.output（与文本动作同渲染路径）
+  const visionDataCacheRef = useRef<Map<string, string>>(new Map());
+
+  const ocrLocalThenRun = (
+    imagePath: string,
+    thenId?: string,
+    thenService?: string,
+  ) => {
+    const runId = ++runIdRef.current;
+    streamingRef.current = true;
+    setPhase((p) => (p.kind === "ocr" ? { ...p, streaming: true, error: null } : p));
+    invoke<OcrLocalResult>("ocr_recognize_local", { path: imagePath })
+      .then((r) => {
+        if (runIdRef.current !== runId) return;
+        streamingRef.current = false;
+        // 自愈重截成功：原图已删，data URL 缓存作废，预览/引用切到新图
+        if (r.image) visionDataCacheRef.current.delete(imagePath);
+        setPhase((p) =>
+          p.kind === "ocr"
+            ? {
+                ...p,
+                text: r.text,
+                vision: false,
+                imagePath: r.image ?? p.imagePath,
+                streaming: false,
+                actionId: null,
+                output: "",
+                error: null,
+              }
+            : p,
+        );
+        if (thenId) runAction(thenId, thenService, r.text);
+      })
+      .catch((e) => {
+        if (runIdRef.current !== runId) return;
+        streamingRef.current = false;
+        invoke("ui_debug_log", { msg: `[vision] 本地识别回退失败: ${String(e)}` }).catch(
+          () => undefined,
+        );
+        setPhase((p) =>
+          p.kind === "ocr" ? { ...p, streaming: false, error: String(e), vision: false } : p,
+        );
+      });
+  };
+
+  const runVision = (
+    imagePath: string | null | undefined,
+    actionId?: string | null,
+    serviceOverride?: string,
+  ) => {
+    // imagePath 显式传（监听闭包路径）否则回落读 phase（按钮触发路径）
+    const imgPath =
+      imagePath ?? (phase.kind === "ocr" ? phase.imagePath : null) ?? null;
+    if (!imgPath) return;
+    const id = actionId ?? null;
+    const isExtract = id === null;
+    const action = id ? liveRef.current.registry.find((a) => a.id === id) : undefined;
+    if (id && !action) return;
+    // 识图翻译开关开即一律模型看图翻译：与默认翻译服务无关（即便默认项是
+    // 百度/DeepL 这类机器翻译，识图入口也不再转本地识别，开关的语义就是
+    // 该能力由模型处理）。翻译服务配置只在纯文本翻译路径生效
+    // 提取提示词内置（识图取字与产品行为强绑定，无设置页条目）；翻译/解释/
+    // 总结走既有提示词覆盖机制（所见即所发），图片即用户消息
+    const system = action
+      ? actionPrompt(action, liveRef.current.prompts)
+      : visionOcrPrompt();
+    if (!system.trim()) return;
+    // 先递增 runId 失效可能在途的旧流，再查缓存（与 runAction 同口径：
+    // 缓存命中时旧流的 delta/done/error 全部被 runId 守卫拦住）
+    const runId = ++runIdRef.current;
+    streamingRef.current = false;
+    const cacheKey = `vision:${id ?? ""}:${serviceOverride ?? ""}:${imgPath}`;
+    const cached = cacheGet(cacheKey);
+    if (cached !== null) {
+      // 缓存存的是含标记的完整原文，命中后按流结束语义拆分回填
+      const sp = isExtract ? null : visionSplit(cached, true);
+      setPhase((p) =>
+        p.kind === "ocr"
+          ? isExtract
+            ? { ...p, text: cached, streaming: false, error: null }
+            : {
+                ...p,
+                text: sp!.source,
+                output: sp!.result,
+                streaming: false,
+                error: null,
+                plain: false,
+              }
+          : p,
+      );
+      return;
+    }
+    streamingRef.current = true;
+    setPhase((p) =>
+      p.kind === "ocr"
+        ? isExtract
+          ? { ...p, streaming: true, error: null }
+          : { ...p, actionId: id, output: "", streaming: true, error: null, plain: false }
+        : p,
+    );
+    invoke("ui_debug_log", {
+      msg: `[vision] 看图执行: action=${id ?? "ocr提取"}`,
+    }).catch(() => undefined);
+    let gotDelta = false;
+    let full = "";
+    let deltaTimer: number | undefined;
+    const fallback = () => ocrLocalThenRun(imgPath, id ?? undefined, serviceOverride);
+    const flushDelta = () => {
+      if (deltaTimer) {
+        window.clearTimeout(deltaTimer);
+        deltaTimer = undefined;
+      }
+      if (runIdRef.current !== runId) return;
+      setPhase((p) => {
+        if (p.kind !== "ocr") return p;
+        if (isExtract) return { ...p, text: full };
+        // 两段式输出：流中原文实时回填原文区（提取进度可见），结果标记
+        // 出现后结果区接力流式（拆分见 visionSplit）
+        const sp = visionSplit(full);
+        return { ...p, text: sp.source, output: sp.result };
+      });
+    };
+    invoke<string>("ocr_image_data_url", { path: imgPath })
+      .then((dataUrl) => {
+        if (runIdRef.current !== runId) return;
+        if (visionDataCacheRef.current.size > 8) visionDataCacheRef.current.clear();
+        visionDataCacheRef.current.set(imgPath, dataUrl);
+        aiChat(
+          [
+            { role: "system", content: system },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: visionUserText() },
+                { type: "image_url", image_url: { url: dataUrl } },
+              ],
+            },
+          ],
+          null,
+          {
+            onDelta: (chunk) => {
+              if (runIdRef.current !== runId) return;
+              gotDelta = true;
+              full += chunk;
+              // 流式渲染节流：与文本动作同口径（60ms 合帧批量刷新）
+              if (deltaTimer === undefined) {
+                deltaTimer = window.setTimeout(flushDelta, 60);
+              }
+            },
+            onDone: () => {
+              if (runIdRef.current !== runId) return;
+              if (deltaTimer) {
+                window.clearTimeout(deltaTimer);
+                deltaTimer = undefined;
+              }
+              streamingRef.current = false;
+              cachePut(cacheKey, full);
+              // 两段式拆分（done=true：无结果标记时全文按结果容错，见 visionSplit）
+              const sp = isExtract ? null : visionSplit(full, true);
+              setPhase((p) =>
+                p.kind === "ocr"
+                  ? isExtract
+                    ? { ...p, text: full, streaming: false }
+                    : {
+                        ...p,
+                        text: sp!.source,
+                        output: sp!.result,
+                        streaming: false,
+                      }
+                  : p,
+              );
+            },
+            onError: (message) => {
+              if (runIdRef.current !== runId) return;
+              if (deltaTimer) {
+                window.clearTimeout(deltaTimer);
+                deltaTimer = undefined;
+              }
+              if (!gotDelta) {
+                // 流前失败：模型不可用 / 拒收图片 → 回退本地识别管线
+                invoke("ui_debug_log", {
+                  msg: `[vision] 流前失败，回退本地识别: ${message}`,
+                }).catch(() => undefined);
+                fallback();
+                return;
+              }
+              streamingRef.current = false;
+              setPhase((p) =>
+                p.kind === "ocr" ? { ...p, streaming: false, error: message } : p,
+              );
+            },
+          },
+        );
+      })
+      .catch(() => {
+        if (runIdRef.current !== runId) return;
+        fallback();
+      });
+  };
+
   // ---- Windows 分离卡（一卡一窗）浮层数据同步：拆至 ./usePopsSync.ts ----
   // entryHasMenu 同时供 macOS 面板渲染（行 ⌄ 有无）复用；pickRef 由 hook 组装的
   // 处理器每次渲染刷新（监听只注册一次，经 ref 读最新渲染）
@@ -2036,6 +2267,7 @@ export default function App() {
     setUsedTranslate,
     setUsedEngine,
     runAction,
+    runVision,
     showExtractPanel,
     resetGhostStates,
     snipRef,
@@ -2588,6 +2820,10 @@ export default function App() {
                   setPhase((p) => (p.kind === "ocr" ? { ...p, text: t } : p))
                 }
               />
+              {/* 视觉提取中：识别原文区尚无文本，占位提示（流式输出开始即让位） */}
+              {phase.vision && phase.streaming && !phase.text && !phase.actionId && (
+                <div className="ocr-vision-hint">{t("floating.visionRunning")}</div>
+              )}
               {/* 仅结果模式显示折叠切换；原文模式本就是全量，无需切换 */}
               {phase.actionId && (sourceOverflow || phase.expanded) && (
                 <button

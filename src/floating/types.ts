@@ -63,17 +63,33 @@ export type Phase =
       expanded: boolean;
       /** 机器翻译结果按纯文本渲染（API 返回即纯文本，不进 markdown 解释） */
       plain?: boolean;
+      /** 视觉分流：文本未识别，动作直接看图（imagePath）驱动模型；流前失败
+       *  回退本地识别后置 false。划词导流/本地识别结果不带 */
+      vision?: boolean;
+      /** 识别截图路径（视觉分流的模型输入与预览源；回退重截成功时更新） */
+      imagePath?: string | null;
     };
 
 // Rust ocr_take_pending 回包：识别文本 + 自动执行指令 + 钉住偏好
 export interface PendingView {
   text: string;
   fromOcr: boolean;
+  /** 视觉分流：true = 文本未识别，前端直接看图驱动模型 */
+  vision: boolean;
   pinned: boolean;
   hasImage: boolean;
-  imagePath: string | null;
+  /** 截图路径（Rust PendingResult.image 字段名，勿写成 imagePath：
+   *  invoke 回包不做运行时校验，字段名拼错只会拿到 undefined） */
+  image: string | null;
   run: { id: string; service: string | null } | null;
   pid: number;
   /** 选区来源应用路径（划词导流携带；截屏 OCR 为空串） */
   app: string;
+}
+
+// Rust ocr_recognize_local 回包（视觉流前失败的前端回退）：本地识别文本 +
+// 可选的自愈重截替换图（原糊图已删，预览/引用需切到新图）
+export interface OcrLocalResult {
+  text: string;
+  image: string | null;
 }

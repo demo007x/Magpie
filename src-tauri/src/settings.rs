@@ -339,6 +339,21 @@ impl Default for AnkiConfig {
     }
 }
 
+/// 识图用模型处理的四个能力开关（识图配置页配置）。全 false = 识图恒走本地识别。
+/// 资格判定 = 对应开关开 + 默认模型服务已配置密钥（见 ocr.rs::vision_ready）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VisionFlags {
+    /// 识图取字（含访达选图）：模型直接提取图中文字
+    pub ocr: bool,
+    /// 识图翻译：模型看图直接输出译文
+    pub translate: bool,
+    /// 识图解释：模型看图直接解释
+    pub explain: bool,
+    /// 识图总结：模型看图直接输出要点
+    pub summarize: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -346,6 +361,11 @@ pub struct Settings {
     pub default_provider_id: String,
     pub actions: Actions,
     pub action_order: Vec<String>,
+    /// 识图用模型处理：四个能力分别开关（识别文字/翻译/解释/总结直接看图，
+    /// 不先本地取字）。默认全关 = 恒走本地识别；开启且默认模型服务已配置
+    /// 密钥即生效（见 ocr.rs::vision_ready）
+    #[serde(default)]
+    pub vision: VisionFlags,
     /// 用户自定义 AI 动作（id 混排在 action_order 中）
     #[serde(default)]
     pub custom_actions: Vec<CustomAction>,
@@ -459,6 +479,7 @@ impl Default for Settings {
                 "search".into(),
             ],
             custom_actions: Vec::new(),
+            vision: VisionFlags::default(),
             capsule_show_count: 4,
             search_engines: default_engines(),
             default_search: "百度".into(),

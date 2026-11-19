@@ -1,0 +1,23 @@
+name: Bug 报告 / Bug Report
+description: 功能异常、崩溃、界面错误 / Crashes, broken features, UI errors
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。提交前请先搜索现有 issue，避免重复。
+        English is fine — feel free to write in English or Chinese.
+
+        **安全漏洞请不要在这里提交**，请按 [SECURITY.md](../blob/main/SECURITY.md) 私密报告。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 问题描述 / What happened
+      description: 实际发生了什么？期望的行为是什么？
+      placeholder: |
+        实际行为 / Actual:
+        期望行为 / Expected:
+    validations:
+      required: true

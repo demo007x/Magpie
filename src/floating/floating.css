@@ -1040,6 +1040,26 @@ body,
   background: var(--edit-hint);
 }
 
+/* 视觉提取占位：模型看图识别中，原文区尚无文本时的提示行。
+   absolute 定位盖在原文区上，流式文本一到即被原文遮住 */
+.ocr-vision-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  padding: 6px 12px 2px 12px;
+  font-size: 12px;
+  color: var(--source);
+  opacity: 0.6;
+  pointer-events: none;
+  animation: vision-hint-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes vision-hint-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
 /* 可编辑原文（contentEditable）：去掉默认聚焦描边，保持与面板无缝 */
 .ocr-source:focus {
   outline: none;

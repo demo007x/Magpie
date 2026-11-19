@@ -1,0 +1,33 @@
+# ---- 语言统计（GitHub Linguist）----
+# 第三方 vendored 代码，不计入仓库语言占比
+vendor/** linguist-vendored
+
+# 构建产物、设计稿、文档不计入
+design/** linguist-documentation
+docs/** linguist-documentation
+
+# 锁文件与生成物折叠显示
+pnpm-lock.yaml linguist-generated
+*.lock linguist-generated
+
+# 若确实有脚本文件不希望计入语言占比，按需取消注释
+# scripts/**/*.py linguist-detectable=false
+
+# ---- 换行符 ----
+* text=auto eol=lf
+
+# 二进制文件，不做换行转换与 diff
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+
+# Windows 脚本保持 CRLF（有 .ps1 / .bat 时保留，没有可删）
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf

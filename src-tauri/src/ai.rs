@@ -19,7 +19,8 @@ pub enum AiEvent {
     Error { message: String },
 }
 
-fn pick_provider<'a>(
+/// 默认服务口径（ai_chat 与识图视觉分流共用）：指定 id → 默认 id → 首个
+pub(crate) fn pick_provider<'a>(
     s: &'a settings::Settings,
     id: Option<&str>,
 ) -> Option<&'a settings::Provider> {
@@ -151,21 +152,69 @@ fn responses_thinking_patch(base_url: &str, on: bool) -> Option<Value> {
     on.then(|| json!({ "reasoning": { "effort": "low" } }))
 }
 
+/// 多模态 content 统一压平：字符串 → (text, 无图)；数组 → text parts 归并
+/// （多片以换行连接）、image_url 提取地址（chat 的对象形态 {image_url:{url}}
+/// 与 Responses 的字符串形态都认）。system 等纯文本槽位只消费 text 部分
+fn flatten_content(content: Option<&Value>) -> (String, Vec<String>) {
+    let mut text = String::new();
+    let mut images = Vec::new();
+    match content {
+        Some(Value::String(s)) => text.push_str(s),
+        Some(Value::Array(parts)) => {
+            for p in parts {
+                match p.get("type").and_then(Value::as_str) {
+                    Some("text") => {
+                        if let Some(t) = p.get("text").and_then(Value::as_str) {
+                            if !text.is_empty() {
+                                text.push('\n');
+                            }
+                            text.push_str(t);
+                        }
+                    }
+                    Some("image_url") => {
+                        let url = p
+                            .pointer("/image_url/url")
+                            .and_then(Value::as_str)
+                            .or_else(|| p.get("image_url").and_then(Value::as_str));
+                        if let Some(u) = url {
+                            images.push(u.to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+    (text, images)
+}
+
 /// Chat Completions messages → Responses 请求体：system/developer 归入顶层
-/// `instructions`，其余按 role/content 平移进 `input`（本管道 content 恒为字符串）
+/// `instructions`（只归并文本 parts），其余按 role 平移进 `input`。带图消息
+/// 的 content 用数组形态（input_text + input_image），纯文本消息保持字符串
+/// content（与旧请求体逐字节兼容）
 fn responses_body(model: &str, messages: &[Value]) -> Value {
     let mut instructions = String::new();
     let mut input: Vec<Value> = Vec::new();
     for m in messages {
         let role = m.get("role").and_then(Value::as_str).unwrap_or("user");
-        let content = m.get("content").and_then(Value::as_str).unwrap_or("");
+        let (text, images) = flatten_content(m.get("content"));
         if role == "system" || role == "developer" {
             if !instructions.is_empty() {
                 instructions.push_str("\n\n");
             }
-            instructions.push_str(content);
+            instructions.push_str(&text);
+        } else if images.is_empty() {
+            input.push(json!({ "role": role, "content": text }));
         } else {
-            input.push(json!({ "role": role, "content": content }));
+            let mut parts = vec![];
+            if !text.is_empty() {
+                parts.push(json!({ "type": "input_text", "text": text }));
+            }
+            for url in images {
+                parts.push(json!({ "type": "input_image", "image_url": url }));
+            }
+            input.push(json!({ "role": role, "content": parts }));
         }
     }
     json!({ "model": model, "instructions": instructions, "input": input, "stream": true })
@@ -452,6 +501,40 @@ mod tests {
         // 未知/自建网关不传参：严格端点对未知参数报 400，宁可不注入
         assert!(thinking_patch("https://my-proxy.example.com", "any", true).is_none());
         assert!(thinking_patch("https://my-proxy.example.com", "any", false).is_none());
+    }
+
+    #[test]
+    fn responses_body_flattens_multimodal_content() {
+        // 纯文本消息保持字符串 content（与旧请求体兼容）；带图消息转
+        // input_text + input_image 数组；system 只归并文本 parts
+        let messages = vec![
+            json!({ "role": "system", "content": "你是译者" }),
+            json!({ "role": "user", "content": "翻译图中文字" }),
+            json!({ "role": "user", "content": [
+                { "type": "text", "text": "提取图中全部文字" },
+                { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,QUJD" } },
+            ] }),
+        ];
+        let body = responses_body("vl-model", &messages);
+        assert_eq!(body["instructions"], "你是译者");
+        assert_eq!(body["input"][0]["content"], "翻译图中文字");
+        assert_eq!(body["input"][1]["content"][0]["type"], "input_text");
+        assert_eq!(body["input"][1]["content"][0]["text"], "提取图中全部文字");
+        assert_eq!(body["input"][1]["content"][1]["type"], "input_image");
+        assert_eq!(
+            body["input"][1]["content"][1]["image_url"],
+            "data:image/jpeg;base64,QUJD"
+        );
+        // 无图消息与多片文本归并：image_url 字符串形态（Responses 风格）也认
+        let mixed = vec![json!({ "role": "user", "content": [
+            { "type": "image_url", "image_url": "https://example.com/a.png" },
+        ] })];
+        let body2 = responses_body("vl-model", &mixed);
+        assert_eq!(body2["input"][0]["content"][0]["type"], "input_image");
+        assert_eq!(
+            body2["input"][0]["content"][0]["image_url"],
+            "https://example.com/a.png"
+        );
     }
 
     #[test]

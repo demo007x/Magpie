@@ -92,6 +92,9 @@ static RESULT_BELOW_ANCHOR: AtomicBool = AtomicBool::new(false);
 struct OcrPending {
     text: String,
     from_ocr: bool,
+    /// 视觉分流标志：true = 文本尚未识别，前端直接把图送模型（请求在流式开始
+    /// 前失败时由前端回退本地识别命令）。划词导流/钉图取字恒 false
+    vision: bool,
     run: Option<(String, Option<String>)>,
     /// 选区来源进程 pid（划词导流时携带）：智能提取/日历路径反查页面 URL 用；
     /// 截屏 OCR 无来源进程，置 0
@@ -141,6 +144,9 @@ pub fn ocr_window_mode(window: WebviewWindow) -> bool {
 pub struct PendingResult {
     pub text: String,
     pub from_ocr: bool,
+    /// 视觉分流标志：true = 文本未识别，前端直接看图驱动模型（流前失败回退
+    /// 本地识别命令 ocr_recognize_local）
+    pub vision: bool,
     pub pinned: bool,
     /// 是否携带截图（文本识别流程：面板先以图片预览占位）
     pub has_image: bool,
@@ -183,6 +189,7 @@ pub fn ocr_take_pending() -> Option<PendingResult> {
         *guard = Some(OcrPending {
             text,
             from_ocr,
+            vision: p.vision,
             run: Some((r.id.clone(), r.service.clone())),
             pid: p.pid,
             app: p.app.clone(),
@@ -193,6 +200,7 @@ pub fn ocr_take_pending() -> Option<PendingResult> {
         image: image_path,
         text: p.text,
         from_ocr,
+        vision: p.vision,
         pinned: ocr_pinned(),
         run,
         pid: p.pid,
@@ -217,10 +225,11 @@ pub fn ocr_set_pending(
     image: Option<std::path::PathBuf>,
     run: Option<(String, Option<String>)>,
     app: String,
+    vision: bool,
 ) {
     replace_ocr_image(image);
     let mut pending = OCR_PENDING.lock().unwrap();
-    *pending = Some(OcrPending { text, from_ocr: true, run, pid: 0, app });
+    *pending = Some(OcrPending { text, from_ocr: true, vision, run, pid: 0, app });
 }
 
 /// 存入划词导流结果（面板弹出后自动执行 run）
@@ -237,6 +246,7 @@ pub fn set_selection_pending(
     *pending = Some(OcrPending {
         text,
         from_ocr: false,
+        vision: false,
         run: Some((action_id, service)),
         pid,
         app,
