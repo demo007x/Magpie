@@ -7,6 +7,7 @@ body:
     attributes:
       value: |
         提交前请先查看 [ROADMAP.md](../blob/main/ROADMAP.md)，M2/M3/M4 已规划的能力可能已在其中。
+        English is fine — feel free to write in English or Chinese.
 
   - type: checkboxes
     id: preflight
