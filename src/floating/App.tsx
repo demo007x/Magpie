@@ -474,8 +474,8 @@ export default function App() {
   const openEngine = (engine: SearchEngine, q = text.trim()) => {
     const tpl = engine.url.includes("{q}") ? engine.url : `${engine.url}{q}`;
     invoke("open_url", { url: tpl.replace("{q}", encodeURIComponent(q)) })
-      .then(() => flash("search", t("floating.opened")))
-      .catch(() => flash("search", t("floating.openFailed")));
+      .then(() => handoff("search", true, t("floating.opened")))
+      .catch(() => handoff("search", false, t("floating.openFailed")));
   };
   const [phase, setPhase] = useState<Phase>({ kind: "bar" });
   // 流式增量渲染后：贴底状态才跟随滚动（用户上翻阅读时不打扰）；新一轮流式结果从贴底开始跟随
@@ -1507,6 +1507,24 @@ export default function App() {
     flashTimerRef.current = window.setTimeout(() => setFlashId(null), 1200);
   };
 
+  /** 交接类动作的收场规则（搜索 / 链接 / 邮件 / 日历 / 地图 / 位置）。判据是「注意力有没有
+   *  交给别的 app」，不是逐个动作打点：成功 → 收起胶囊（用户已经在看新打开的窗口，胶囊留在
+   *  那儿只是盖住内容的残留浮层），回执改走全局 toast——胶囊一走，挂在按钮上的 flash 就没人
+   *  看得见了，与 obsidian 那条「面板收起后 flash 等于无提示」同一理由。失败 → 胶囊留在原地
+   *  给行内回执，因为下一步就是重试或换个动作，胶囊正好是那块操作面板。
+   *  结果窗与钉图不在规则内：阅读现场和钉住语义不该被一次外部打开牵连，保持现状。 */
+  const handoff = (id: string, ok: boolean, msg: string) => {
+    if (!ok || IS_OCR || IS_PIN) {
+      flash(id, msg);
+      return;
+    }
+    toast(msg);
+    invoke("hide_floating_bar").catch(() => undefined);
+    // 与 selection://dismiss 同一套收场：弹层窗口随 hide_floating_bar 隐藏，菜单状态同步复位
+    if (POPS_EXTERNAL) setMenu(null);
+    setPhase({ kind: "bar" });
+  };
+
     const runAction = (
       id: string,
       serviceOverride?: string,
@@ -1616,8 +1634,8 @@ export default function App() {
         const p = extractPath(trimmed);
         if (!p) return;
         invoke<PathOutcome>("open_local_path", { path: p })
-          .then((r) => flash(id, t(PATH_OUTCOME_KEYS[r])))
-          .catch(() => flash(id, t("path.failed")));
+          .then((r) => handoff(id, r.startsWith("opened"), t(PATH_OUTCOME_KEYS[r])))
+          .catch(() => handoff(id, false, t("path.failed")));
         return;
       }
 
@@ -1625,8 +1643,8 @@ export default function App() {
         const url = extractUrl(trimmed);
         if (!url) return;
         invoke("open_url", { url })
-          .then(() => flash(id, t("floating.opened")))
-          .catch(() => flash(id, t("floating.openFailed")));
+          .then(() => handoff(id, true, t("floating.opened")))
+          .catch(() => handoff(id, false, t("floating.openFailed")));
         return;
       }
 
@@ -1634,8 +1652,8 @@ export default function App() {
         const addr = extractEmail(trimmed);
         if (!addr) return;
         invoke("open_url", { url: `mailto:${addr}` })
-          .then(() => flash(id, t("floating.mailOpened")))
-          .catch(() => flash(id, t("floating.openFailed")));
+          .then(() => handoff(id, true, t("floating.mailOpened")))
+          .catch(() => handoff(id, false, t("floating.openFailed")));
         return;
       }
 
@@ -1662,7 +1680,7 @@ export default function App() {
         invoke<string | null>("frontmost_web_url", { pid: sourcePidRef.current })
           .catch(() => null)
           .then((pageUrl) =>
-            openInCalendar(hit, trimmed, (ok) => flash(id, ok ? t("floating.calendarOpened") : t("floating.openFailed")), pageUrl ?? undefined),
+            openInCalendar(hit, trimmed, (ok) => handoff(id, ok, t(ok ? "floating.calendarOpened" : "floating.openFailed")), pageUrl ?? undefined),
           );
         return;
       }
@@ -1671,8 +1689,8 @@ export default function App() {
         const place = placeHits[0];
         if (!place) return;
         invoke("open_url", { url: `maps://?q=${encodeURIComponent(place)}` })
-          .then(() => flash(id, t("floating.mapOpened")))
-          .catch(() => flash(id, t("floating.openFailed")));
+          .then(() => handoff(id, true, t("floating.mapOpened")))
+          .catch(() => handoff(id, false, t("floating.openFailed")));
         return;
       }
 
@@ -2725,11 +2743,11 @@ export default function App() {
                             const ev = phase.events?.[i];
                             if (ev) {
                               openEventInCalendar(ev, phase.text, (ok) => {
-                                if (!ok) flash("date", t("floating.openFailed"));
+                                toast(t(ok ? "floating.calendarOpened" : "floating.openFailed"));
                               }, phase.sourceUrl);
                             } else {
                               detectAndOpenCalendar(phase.text, item, (ok) => {
-                                if (!ok) flash("date", t("floating.openFailed"));
+                                toast(t(ok ? "floating.calendarOpened" : "floating.openFailed"));
                               }, phase.sourceUrl);
                             }
                           })}
@@ -2751,9 +2769,11 @@ export default function App() {
                       {g.id === "path" && (
                         <button
                           onClick={guarded(() =>
+                            // 面板是清单，用户会连着点几条：不自动收起，只把回执发给全局
+                            // toast——flash 只渲染在胶囊动作行的文字上，面板里调用等于无提示
                             invoke<PathOutcome>("open_local_path", { path: item })
-                              .then((r) => flash("path", t(PATH_OUTCOME_KEYS[r])))
-                              .catch(() => flash("path", t("path.failed"))),
+                              .then((r) => toast(t(PATH_OUTCOME_KEYS[r])))
+                              .catch(() => toast(t("path.failed"))),
                           )}
                         >
                           {t("floating.actPath")}
