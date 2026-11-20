@@ -45,10 +45,12 @@
 //!      兼容模式，行为零变化；读不到光标一律拒绝（fail-safe）
 //! 键序：主键 Ctrl+Insert（终端里不是中断信号，闸 1+2 都过了也别去碰用户正在跑的
 //! 进程），不认该键的应用才用 Ctrl+C 兜底。残余风险因此收窄到「主键无绑定 + 此刻
-//! 终端里有前台进程」这一种叠加情形。注入前还有两道闸门：用户正物理按住
-//! Ctrl/Shift/Alt/Win 时整段放弃（我们注入的 VK_CONTROL up 会抢走用户的物理状态，
-//! 导致后续按键丢失修饰键）；前台窗口 pid 不是目标应用时短暂等待焦点切回，等不到
-//! 也放弃（复制键发给当前前台窗口而非定向发送，焦点停在结果窗会复制错内容）。
+//! 终端里有前台进程」这一种叠加情形。注入前还有两道闸门：Shift/Alt/Win 正物理按住
+//! 时整段放弃（会改变复制键语义）；Ctrl 按住则放行，但改走「不碰 Ctrl」的注入路径——
+//! 只发主键 Insert、不注入 VK_CONTROL down/up，避免抢走用户物理 Ctrl 状态（否则后续
+//! 按键丢修饰键）。此时主键失败也不兜底 Ctrl+C（单独发 C 会输入字母）。前台窗口 pid
+//! 不是目标应用时短暂等待焦点切回，等不到也放弃（复制键发给当前前台窗口而非定向
+//! 发送，焦点停在结果窗会复制错内容）。
 //! 取词判据是剪贴板**写入序号**前进（GetClipboardSequenceNumber），不是文本变化：
 //! 用户事先复制过同一个词时，复制结果与原剪贴板相同，文本判据看不见这种命中。
 //! 还原竞态规则与 macOS 同一套（拿完重读现状，只在「现状仍是我取到的文本」时物归
@@ -728,7 +730,7 @@ enum Chord {
 ///
 /// 与 macOS 不同，这里不必绕主线程：Windows 剪贴板是系统级句柄，arboard 每次
 /// 调用自开自闭，detect 线程直接读写没有 AppKit 那种 promise 兑现约束。
-fn post_chord(chord: Chord) -> bool {
+fn post_chord(chord: Chord, ctrl_held_by_user: bool) -> bool {
     const KEYEVENTF_EXTENDEDKEY: u32 = 1;
     unsafe {
         let key = |vk: VIRTUAL_KEY, up: bool, extended: bool| {
@@ -753,14 +755,20 @@ fn post_chord(chord: Chord) -> bool {
             }
         };
         // Insert 是扩展键：不带 KEYEVENTF_EXTENDEDKEY 时部分应用收到的是「无绑定」
-        let inputs = match chord {
-            Chord::CtrlInsert => [
+        // ctrl_held_by_user = 用户物理按着 Ctrl：此时只发主键本身，绝不注入 VK_CONTROL
+        // 的 down/up——注入 Ctrl up 会抢走用户的物理 Ctrl 状态，后续按键丢修饰键（老 bug）。
+        // 系统里 Ctrl 已经是按下态，单发 Insert/C 就是组合键，目标应用照常识别。
+        let primary = |vk: VIRTUAL_KEY, extended: bool| vec![key(vk, false, extended), key(vk, true, extended)];
+        let inputs: Vec<INPUT> = match (chord, ctrl_held_by_user) {
+            (Chord::CtrlInsert, true) => primary(VK_INSERT, true),
+            (Chord::CtrlC, true) => primary(VK_C, false),
+            (Chord::CtrlInsert, false) => vec![
                 key(VK_CONTROL, false, false),
                 key(VK_INSERT, false, true),
                 key(VK_INSERT, true, true),
                 key(VK_CONTROL, true, false),
             ],
-            Chord::CtrlC => [
+            (Chord::CtrlC, false) => vec![
                 key(VK_CONTROL, false, false),
                 key(VK_C, false, false),
                 key(VK_C, true, false),
@@ -796,14 +804,14 @@ impl Chord {
 /// 失败。GetClipboardSequenceNumber 是系统级单调计数，每次写入都前进，与内容无关。
 /// 不会复活 stale 选区误弹：那次旧复制发生在记 seq0 之前，不落进本次轮询窗口。
 /// snapshot 只用于诊断日志（区分「文本没变但序号变了」与「文本也变了」）。
-fn copy_once(snapshot: &Option<String>, chord: Chord) -> Option<String> {
+fn copy_once(snapshot: &Option<String>, chord: Chord, ctrl_held_by_user: bool) -> Option<String> {
     const POLL_TIMES: usize = 40; // 40 × 15ms = 600ms 上限；应用响应后首个周期即命中
     const POLL_INTERVAL: Duration = Duration::from_millis(15);
 
     // 基线必须在注入之前记：SendInput 同步投递，目标应用可能在 post_chord 返回前
     // 就完成复制，之后记会把这次写入漏掉。
     let seq0 = unsafe { GetClipboardSequenceNumber() };
-    if !post_chord(chord) {
+    if !post_chord(chord, ctrl_held_by_user) {
         return None;
     }
     for _ in 0..POLL_TIMES {
@@ -836,18 +844,27 @@ fn copy_once(snapshot: &Option<String>, chord: Chord) -> Option<String> {
     None
 }
 
-/// 检测用户是否物理按住任何修饰键（Ctrl/Shift/Alt/Win）。
-/// 兼容取词注入的 VK_CONTROL up 会抢走用户物理按下的修饰键状态，导致后续按键
-/// 丢失修饰键（症状：选中后快速 Ctrl+C → 选中文本变成 "c"）。此闸门在注入前
-/// 采样，只要有任何修饰键物理按下就放弃本次取词——fail silent，符合产品边界。
-fn modifiers_physically_held() -> bool {
+/// 检测 Ctrl 之外是否物理按住修饰键（Shift/Alt/Win）。
+/// 这三个键会改变复制键的语义（Shift+Insert 是粘贴、Alt+Insert 触发菜单、Win 弹
+/// 开始菜单），注入复制键等于触发别的行为，一律拒绝——fail silent。
+/// 注：GetAsyncKeyState 返回 SHORT (i16)，高位为 1 表示键当前按下（即返回值为负）。
+fn non_ctrl_modifier_held() -> bool {
     unsafe {
-        // GetAsyncKeyState 返回 SHORT (i16)，高位为 1 表示键当前按下（即返回值为负）
-        GetAsyncKeyState(VK_CONTROL.0 as i32) < 0
-            || GetAsyncKeyState(VK_SHIFT.0 as i32) < 0
+        GetAsyncKeyState(VK_SHIFT.0 as i32) < 0
             || GetAsyncKeyState(VK_MENU.0 as i32) < 0
             || GetAsyncKeyState(VK_LWIN.0 as i32) < 0
             || GetAsyncKeyState(VK_RWIN.0 as i32) < 0
+    }
+}
+
+/// 用户此刻是否物理按住 Ctrl（左右键分别检测，通用 VK_CONTROL 在部分布局下不可靠）。
+/// 按住时复制键走「不碰 Ctrl」的注入路径：系统 Ctrl 状态已由用户按下，我们只注入
+/// Insert，Ctrl 的 down/up 都不发——否则注入的 Ctrl up 会抢走物理状态，用户接着按
+/// C 就丢了修饰键（老 bug：选中后快速 Ctrl+C → 文本变成 "c"）。
+fn ctrl_physically_held() -> bool {
+    unsafe {
+        GetAsyncKeyState(VK_LCONTROL.0 as i32) < 0
+            || GetAsyncKeyState(VK_RCONTROL.0 as i32) < 0
     }
 }
 
@@ -899,14 +916,16 @@ fn compat_fetch(app_path: &str, down_cursor: isize, up_pid: u32) -> Option<Strin
         return None;
     }
 
-    // 用户物理按住修饰键时放弃：我们注入的 VK_CONTROL up 会抢走用户的 Ctrl 状态，
-    // 导致后续按键丢失修饰键（Bug: 选中后快速 Ctrl+C → 选中文本变成 "c"）
-    if modifiers_physically_held() {
+    // 修饰键闸：Shift/Alt/Win 按住时放弃——三者会改变复制键语义（粘贴/菜单/开始菜单），
+    // 注入只会触发别的行为。Ctrl 按住则放行，但改走「不碰 Ctrl」的注入路径（见下），
+    // 不再简单放弃：实测 Zed 的 Ctrl+拖选是普通选区，这一路此前被闸门误杀了。
+    if non_ctrl_modifier_held() {
         debug_log(format!(
-            "capture/windows: 兼容取词跳过（用户正按住修饰键）app={app_path:?}"
+            "capture/windows: 兼容取词跳过（用户正按住 Shift/Alt/Win）app={app_path:?}"
         ));
         return None;
     }
+    let ctrl_held_by_user = ctrl_physically_held();
 
     if clipboard_holds_rich_payload() {
         debug_log(format!(
@@ -928,15 +947,20 @@ fn compat_fetch(app_path: &str, down_cursor: isize, up_pid: u32) -> Option<Strin
 
     let t0 = Instant::now();
     let snapshot = clip_read_text();
-    let (mut fetched, mut chord) = (copy_once(&snapshot, Chord::CtrlInsert), Chord::CtrlInsert);
-    if fetched.is_none() {
+    let (mut fetched, mut chord) = (
+        copy_once(&snapshot, Chord::CtrlInsert, ctrl_held_by_user),
+        Chord::CtrlInsert,
+    );
+    // Ctrl 由用户按住时不兜底 Ctrl+C：那时只能单独发 C，若用户的 Ctrl 在注入间隙松开，
+    // 这个 C 会变成往文档里输入字母。主键不认就静默失败，绝不冒污染文档的风险。
+    if fetched.is_none() && !ctrl_held_by_user {
         debug_log(format!(
             "capture/windows: 兼容取词：{} 在此应用没取到，改用 {} 兜底",
             chord.label(),
             Chord::CtrlC.label()
         ));
         chord = Chord::CtrlC;
-        fetched = copy_once(&snapshot, chord);
+        fetched = copy_once(&snapshot, chord, false);
     }
 
     let now_text = clip_read_text();
@@ -957,10 +981,11 @@ fn compat_fetch(app_path: &str, down_cursor: isize, up_pid: u32) -> Option<Strin
 
     let text = fetched?;
     debug_log(format!(
-        "capture/windows: 兼容取词命中 len={} 耗时={}ms 键={} app={app_path:?}",
+        "capture/windows: 兼容取词命中 len={} 耗时={}ms 键={} Ctrl用户按住={} app={app_path:?}",
         text.len(),
         t0.elapsed().as_millis(),
-        chord.label()
+        chord.label(),
+        ctrl_held_by_user
     ));
     Some(text)
 }
