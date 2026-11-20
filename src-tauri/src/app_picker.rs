@@ -143,6 +143,17 @@ pub fn pick_dict_file() -> Option<String> {
     Some(path.to_string_lossy().into_owned())
 }
 
+/// 系统文件选择面板：选汉→英词库文件（由 CC-CEDICT 官方文本转换的 SQLite，
+/// 拾趣只读这个文件）。用户取消 = None。必须在主线程调用（同 pick_dict_file）。
+#[tauri::command]
+pub fn pick_zh_dict_file() -> Option<String> {
+    let path = rfd::FileDialog::new()
+        .set_title(crate::i18n::t("picker.zhDictTitle"))
+        .add_filter(crate::i18n::t("picker.zhDictFilter"), &["sqlite", "sqlite3", "db"])
+        .pick_file()?;
+    Some(path.to_string_lossy().into_owned())
+}
+
 /// 系统文件选择面板：选一张图片供「访达选图取字」识别。用户取消 = None。
 /// 必须在主线程调用（rfd 对 AppKit 的线程约束同下方两个选择器）；
 /// 且不能在托盘菜单事件回调内直接调用——先交由独立线程承载，

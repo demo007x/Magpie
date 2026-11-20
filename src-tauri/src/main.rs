@@ -872,6 +872,7 @@ fn main() {
             app_picker::pick_app_bundle,
             app_picker::pick_vault_dir,
             app_picker::pick_dict_file,
+            app_picker::pick_zh_dict_file,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -15,7 +15,7 @@ import { actionRegistry } from "../shared/actions";
 import type {
   AnkiConfig,
   CustomAction,
-  DictStatus,
+  DictStatusBundle,
   ObsidianConfig,
   Provider,
   SearchEngine,
@@ -83,8 +83,8 @@ export function useFloatingSettings() {
       })
       .catch(() => undefined);
     // 词典可用性独立于设置内容（取决于本机文件是否存在/可读），失败一律按不可用
-    invoke<DictStatus>("dict_status")
-      .then((d) => setDictReady(d.state === "ready"))
+    invoke<DictStatusBundle>("dict_status")
+      .then((d) => setDictReady(d.enZh.state === "ready" || d.zhEn.state === "ready"))
       .catch(() => setDictReady(false));
   };
 

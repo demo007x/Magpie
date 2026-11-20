@@ -10,6 +10,7 @@
 //! - 结构探针而非版本串匹配：版本字符串只作展示与诊断，真正决定可用性的是
 //!   「我们依赖的表在不在」。上游 bump 版本号而表结构没变时不该把用户挡在外面。
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
@@ -18,6 +19,15 @@ use rusqlite::{Connection, OpenFlags};
 
 /// 读不到时的等待上限：对方写库通常是秒级，等一轮比直接判失败更不打扰用户
 const BUSY_TIMEOUT: Duration = Duration::from_millis(800);
+
+/// 两本词库结构完全不同，连接缓存必须分开：同路径换探针 = 静默取不到词
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DictKind {
+    /// open-dictionary 的开放式词库（英文词头 → 中文释义）
+    EnZh,
+    /// CC-CEDICT 转换而来的词库（中文词头 → 英文释义）
+    ZhEn,
+}
 
 /// 取词与状态探测依赖的表（缺任何一张就不认识这份库 → 降级为不可用）
 const REQUIRED_TABLES: [&str; 5] = [
@@ -36,6 +46,12 @@ pub struct Versions {
     pub sqlite: String,
     /// `distribution_schema_version`，如 `distribution_entry_v5`（词条内容形状）
     pub entry: String,
+}
+
+/// CC-CEDICT 转换库的元数据（纯文本，读取失败按空串处理）
+fn cedict_meta_str(conn: &Connection, key: &str) -> String {
+    conn.query_row("select value from cedict_meta where key = ?1", [key], |r| r.get::<_, String>(0))
+        .unwrap_or_default()
 }
 
 /// 词库体检结果：`ok` = 结构可用（可取词）
@@ -106,6 +122,70 @@ pub fn probe(conn: &Connection) -> Probe {
     Probe { ok: true, entry_count, versions, reason: String::new() }
 }
 
+/// CC-CEDICT 转换库的结构探针：不认版本串，只认我们依赖的表与列都在、且有词条。
+/// `cedict_meta` 用来展示来源版本，缺了也不影响查询。
+pub fn probe_cedict(conn: &Connection) -> Probe {
+    let exists: i64 = conn
+        .query_row(
+            "select count(*) from sqlite_master where type = 'table' and name = 'cedict'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if exists == 0 {
+        return Probe {
+            ok: false,
+            entry_count: 0,
+            versions: Versions::default(),
+            reason: "缺少表 cedict".into(),
+        };
+    }
+    let entry_count = conn.query_row("select count(*) from cedict", [], |r| r.get(0)).unwrap_or(0);
+    let version = cedict_meta_str(conn, "sourceRelease");
+    if entry_count == 0 {
+        return Probe {
+            ok: false,
+            entry_count: 0,
+            versions: Versions { sqlite: "cedict_sqlite_v1".into(), entry: version },
+            reason: "词条表为空（词库可能未转换完整）".into(),
+        };
+    }
+    // 列探针：文件存在但来自别的可执行文件（同名 cedict 表、列不同）也不能当可用
+    let readable = conn.query_row(
+        "select simplified, traditional, pinyin, definitions from cedict limit 1",
+        [],
+        |r| {
+            let _: String = r.get(0)?;
+            let _: String = r.get(1)?;
+            let _: String = r.get(2)?;
+            let _: String = r.get(3)?;
+            Ok(())
+        },
+    );
+    if let Err(e) = readable {
+        return Probe {
+            ok: false,
+            entry_count: 0,
+            versions: Versions::default(),
+            reason: format!("cedict 列结构不符：{e}"),
+        };
+    }
+    Probe {
+        ok: true,
+        entry_count,
+        versions: Versions { sqlite: "cedict_sqlite_v1".into(), entry: version },
+        reason: String::new(),
+    }
+}
+
+/// 按词库种类分派探针，避免查询侧把两本库混用。
+pub fn probe_by_kind(conn: &Connection, kind: DictKind) -> Probe {
+    match kind {
+        DictKind::EnZh => probe(conn),
+        DictKind::ZhEn => probe_cedict(conn),
+    }
+}
+
 /// 默认词库位置：兼容词典应用（Aictionary）自己的数据目录。
 /// 平台差异只在"应用支持目录在哪"，文件名一致。
 pub fn auto_detected_path() -> Option<PathBuf> {
@@ -131,32 +211,61 @@ pub fn effective_path(configured: &str) -> Option<PathBuf> {
     auto_detected_path().filter(|c| c.exists())
 }
 
+/// 汉→英库没有"通用默认位置"：本机路径完全由用户选择，空 = 未接入
+pub fn effective_zh_path(configured: &str) -> Option<PathBuf> {
+    let p = configured.trim();
+    (!p.is_empty()).then(|| PathBuf::from(p))
+}
+
 struct Cached {
-    path: PathBuf,
     mtime: Option<SystemTime>,
     conn: Connection,
 }
 
-static POOL: OnceLock<Mutex<Option<Cached>>> = OnceLock::new();
+type CacheKey = (DictKind, PathBuf);
 
-fn pool() -> &'static Mutex<Option<Cached>> {
-    POOL.get_or_init(|| Mutex::new(None))
+static POOL: OnceLock<Mutex<HashMap<CacheKey, Cached>>> = OnceLock::new();
+
+fn pool() -> &'static Mutex<HashMap<CacheKey, Cached>> {
+    POOL.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// 取一个可用连接跑 `f`；打不开/结构不认识 → `None`（调用方按未命中处理）。
-/// 全程持锁：单机单用户的查词量下，串行化换来的简单更值
-pub fn with_conn<T>(path: &Path, f: impl FnOnce(&Connection) -> Option<T>) -> Option<T> {
+/// 全程持锁：单机单用户的查词量下，串行化换来的简单更值。
+/// 缓存键含词库种类：同一路径换探针等于静默查不到词，必须分开。
+pub fn with_conn_kind<T>(
+    path: &Path,
+    kind: DictKind,
+    f: impl FnOnce(&Connection) -> Option<T>,
+) -> Option<T> {
     let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+    let key: CacheKey = (kind, path.to_path_buf());
     let mut guard = pool().lock().unwrap_or_else(|e| e.into_inner());
-    let reusable = guard.as_ref().is_some_and(|c| c.path == path && c.mtime == mtime);
+    let reusable = guard.get(&key).is_some_and(|c| c.mtime == mtime);
     if !reusable {
         let conn = open_read_only(path).ok()?;
-        if !probe(&conn).ok {
+        if !probe_by_kind(&conn, kind).ok {
             return None;
         }
-        *guard = Some(Cached { path: path.to_path_buf(), mtime, conn });
+        guard.insert(key.clone(), Cached { mtime, conn });
     }
-    guard.as_ref().and_then(|c| f(&c.conn))
+    guard.get(&key).and_then(|c| f(&c.conn))
+}
+
+/// 英→汉库取连接（保留原名，既有调用点与测试不用改）
+pub fn with_conn<T>(path: &Path, f: impl FnOnce(&Connection) -> Option<T>) -> Option<T> {
+    with_conn_kind(path, DictKind::EnZh, f)
+}
+
+/// 汉→英库取连接
+pub fn with_cedict_conn<T>(path: &Path, f: impl FnOnce(&Connection) -> Option<T>) -> Option<T> {
+    with_conn_kind(path, DictKind::ZhEn, f)
+}
+
+/// 状态探测单独走一次性连接：只读 count，不污染查询连接池
+pub fn inspect(path: &Path, kind: DictKind) -> Option<Probe> {
+    let conn = open_read_only(path).ok()?;
+    Some(probe_by_kind(&conn, kind))
 }
 
 #[cfg(test)]
@@ -190,6 +299,59 @@ pub(crate) mod tests {
         let p = probe(&conn);
         assert!(p.ok, "有词条即可用");
         assert_eq!(p.entry_count, 1);
+    }
+
+    #[test]
+    fn probe_cedict_accepts_valid_library_and_rejects_empty() {
+        let conn = cedict_fixture();
+        let empty = probe_cedict(&conn);
+        assert!(!empty.ok, "空表不能算可用");
+        assert!(empty.reason.contains("为空"), "原因要能进日志：{}", empty.reason);
+
+        insert_cedict(&conn, "你好", "你好", "ni3 hao3", "hello; hi");
+        let p = probe_cedict(&conn);
+        assert!(p.ok, "有词条即可用");
+        assert_eq!(p.entry_count, 1);
+        assert_eq!(p.versions.entry, "2026-11-20 06:49:19 GMT", "来源版本只作展示");
+    }
+
+    #[test]
+    fn probes_are_kind_specific() {
+        let en = fixture();
+        assert!(!probe_cedict(&en).ok, "英文库不能被当成汉英库");
+        let zh = cedict_fixture();
+        assert!(!probe(&zh).ok, "汉英库不能被当成英文库");
+    }
+
+    /// 与 CC-CEDICT 转换库同构的最小夹具
+    pub(crate) fn cedict_fixture() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "create table cedict_meta (key text primary key, value text not null);
+             insert into cedict_meta values ('sourceRelease', '2026-11-20 06:49:19 GMT');
+             create table cedict (
+               id integer primary key, traditional text not null, simplified text not null,
+               pinyin text not null, definitions text not null);
+             create index cedict_simplified_idx on cedict (simplified);
+             create index cedict_traditional_idx on cedict (traditional);",
+        )
+        .unwrap();
+        conn
+    }
+
+    pub(crate) fn insert_cedict(
+        conn: &Connection,
+        traditional: &str,
+        simplified: &str,
+        pinyin: &str,
+        definitions: &str,
+    ) {
+        conn.execute(
+            "insert into cedict (traditional, simplified, pinyin, definitions)
+             values (?1, ?2, ?3, ?4)",
+            rusqlite::params![traditional, simplified, pinyin, definitions],
+        )
+        .unwrap();
     }
 
     /// 与真实词库同构的最小夹具（只建我们依赖的列）
