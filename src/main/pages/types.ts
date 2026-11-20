@@ -10,8 +10,9 @@ export interface PageProps {
   /** 保存按钮页用（自动保存页无按钮） */
   save?: () => void;
   saved?: boolean;
-  /** 即时落盘路径（自动保存类页面用；保存按钮页不需要） */
-  saveNow?: () => void;
+  /** 即时落盘路径（自动保存类页面用；保存按钮页不需要）。
+      resolve = 已写盘，可在其后接一次状态探测 */
+  saveNow?: () => Promise<void>;
   /** 划词捕获能力位（仅划词/黑名单页需要） */
   captureReady?: boolean;
 }

@@ -71,6 +71,27 @@ export const zhFloating = {
   "floating.targetTask": "任务",
   "floating.targetCard": "卡片",
 
+  // 离线词典结果窗（版面在 shared/dict.ts；pos 是词库原文，实测封闭取值 14 个）
+  "dict.pos.noun": "名词",
+  "dict.pos.verb": "动词",
+  "dict.pos.adj": "形容词",
+  "dict.pos.name": "专有名词",
+  "dict.pos.adv": "副词",
+  "dict.pos.phrase": "短语",
+  "dict.pos.intj": "感叹词",
+  "dict.pos.suffix": "后缀",
+  "dict.pos.prefix": "前缀",
+  "dict.pos.prep": "介词",
+  "dict.pos.pron": "代词",
+  "dict.pos.proverb": "谚语",
+  "dict.pos.num": "数词",
+  "dict.pos.det": "限定词",
+  "dict.usage": "用法",
+  "dict.memory": "助记",
+  "dict.etymology": "词源",
+  "dict.miss": "词典里没有「{word}」。中文词句和长段落请用「翻译」。",
+  "floating.dictFailed": "查词失败",
+
   // 杂项
   "floating.unknownApp": "未知应用",
   "floating.uiError": "界面异常：{msg}",

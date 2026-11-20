@@ -76,10 +76,11 @@ Magpie exists to make on-screen text actionable where it is: select to translate
 
 - **Global selection capture** — select text in any app to trigger the bar; drag-select or double-click both work
 - **Floating bar** — pops above the mouse cursor, auto edge-clamping, never steals focus; light / dark / follow-system themes; native per-card shadows on Windows
-- **Fourteen actions** — Translate / Explain / Summarize (AI-generated, streamed) + Copy / Search / Read Aloud / Open Link / Compose Email / Copy Code / Copy Phone + Add to Calendar / Open in Maps / Save to Obsidian / Save to Anki; order and visibility configurable in settings
+- **Fifteen actions** — Translate / Explain / Summarize (AI-generated, streamed) + Copy / Search / Read Aloud / Dictionary / Open Link / Compose Email / Copy Code / Copy Phone + Add to Calendar / Open in Maps / Save to Obsidian / Save to Anki; order and visibility configurable in settings
 - **Context-aware actions** — links, emails, verification codes, phone numbers, dates and places in the selected text are detected automatically: a single entity is one click away (open / compose / copy / calendar / maps), multiple entities open a grouped panel for batch operations; with a model service configured, dates and places are understood by the AI in context (date ranges, event titles), and calendar events carry the source link, selected text and invitees
 - **Save to Obsidian** — write the selection or OCR result straight into your vault as a daily-note excerpt, a task line or a knowledge card, each with its own template; no Obsidian plugin required
 - **Save to Anki** — clip any selection into your local Anki (via AnkiConnect) in one click — short text becomes a word card, longer text a content card, with source and date attached; first use creates the Magpie deck and card templates in one click
+- **Offline dictionary** — select an English word and get its meanings, usage notes and example sentences in milliseconds: no network, no model credits. Magpie reads a compatible dictionary that's already on your computer (Settings › Dictionary) and never modifies it
 - **Screen OCR** — a custom global hotkey or the tray menu starts a region capture, on-device OCR reads the text, with one-step OCR translate / explain / summarize; Snipaste-style pinned images can loop back into OCR
 - **Result window** — AI results and recognized text open in a standalone persistent window that can be pinned, dragged, and remembers position & size, with default-size presets in the appearance settings
 - **Custom AI actions** — a name + prompt + icon become capsule buttons (up to 10, ordered with the built-ins), with a try-run preview
@@ -197,3 +198,9 @@ Issues and PRs are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) (written in S
 ## License
 
 Released under the [MIT](./LICENSE) license.
+
+The offline dictionary feature only reads a dictionary file that already exists on
+your machine; that data comes from [Aictionary](https://github.com/ahpxex/Aictionary)
+(a learner dictionary built on a Wiktionary snapshot) under
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). It is not bundled with
+or redistributed by Magpie, and the same credit appears in Settings › Dictionary.

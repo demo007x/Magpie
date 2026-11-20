@@ -37,6 +37,8 @@ export interface ActionFlags {
   obsidian: boolean;
   /** 接入动作：已连接 AnkiConnect（deck 非空）时出现「Anki」划词建卡 */
   anki: boolean;
+  /** 本地动作：本机词库可用时出现「词典」离线查词（不联网、不用 AI） */
+  dict: boolean;
 }
 
 export interface SearchEngine {
@@ -122,6 +124,13 @@ export interface AnkiConfig {
   defaultCard: string;
 }
 
+/** 离线词典配置（ADR-11）：只读用户本机已有的兼容词库文件——不随安装包分发、
+ *  本版不做下载器。dbPath 空 = 自动探测（装过兼容词典应用时即命中）。 */
+export interface DictConfig {
+  /** 词库文件绝对路径（空 = 自动探测） */
+  dbPath: string;
+}
+
 /** 本地朗读配置：默认音色 + 功能开关（模型是否已安装由 Rust 侧文件系统判定） */
 export interface TtsConfig {
   /** 中文默认音色（Kokoro voice id） */
@@ -190,6 +199,8 @@ export interface Settings {
   autoUpdateCheck: boolean;
   /** 本地朗读：默认中英文音色（音色包安装状态由 Rust 侧判定） */
   tts: TtsConfig;
+  /** 离线词典：本机词库文件位置（空 = 自动探测） */
+  dict: DictConfig;
 }
 
 /** 多模态消息的内容分片：文本或图片（base64 data URL）。chat 形态原样透传，
@@ -201,6 +212,42 @@ export type ContentPart =
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string | ContentPart[];
+}
+
+/** 离线词典状态（对应 src-tauri/src/dict/mod.rs DictStatus）。
+ *  ready = 词库文件可读且结构认识；其余取值下「词典」动作不出现 */
+export interface DictStatus {
+  /** ready = 可用 / unset = 未找到词库 / missing = 文件不存在 / unknown = 结构不认识 */
+  state: "ready" | "unset" | "missing" | "unknown";
+  /** 实际生效的词库文件路径（未探测到时为空串） */
+  path: string;
+  /** 词条数（不可用为 0） */
+  entryCount: number;
+  /** 词库自述版本（未知为空串） */
+  version: string;
+}
+
+/** 词典例句 / 义项 / 词条（对应 src-tauri/src/dict/query.rs）。
+ *  pos 是词库原文（noun/verb/…），显示名由 shared/dict.ts 经 i18n 映射 */
+export interface DictExample {
+  text: string;
+  translation: string;
+}
+
+export interface DictSense {
+  pos: string;
+  gloss: string;
+  explanation: string;
+  usageNote: string;
+  examples: DictExample[];
+}
+
+export interface DictEntry {
+  headword: string;
+  ipa: string[];
+  senses: DictSense[];
+  memoryHook: string;
+  etymology: string;
 }
 
 // ai_chat Channel 流消息（对应 src-tauri/src/ai.rs AiEvent）

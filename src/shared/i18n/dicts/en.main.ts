@@ -21,6 +21,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "nav.search": "Search",
   "nav.obsidian": "Obsidian",
   "nav.anki": "Anki",
+  "nav.dict": "Dictionary",
   "nav.blocklist": "Blocked apps",
   "nav.general": "General",
   "nav.perms": "Permissions",
@@ -212,6 +213,25 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "anki.defaultCardAuto": "Auto",
   "anki.defaultCardWord": "Word",
   "anki.defaultCardContent": "Content",
+
+  // 词典页（离线查词，ADR-11）
+  "dict.hint":
+    "Select an English word and get dictionary meanings instantly — offline, no model credits. The dictionary belongs to the dictionary app on your computer; Magpie only reads it. Changes apply after saving.",
+  "dict.stateReady": "Dictionary ready — {count} entries",
+  "dict.stateUnset": "No dictionary found yet",
+  "dict.stateMissing": "This dictionary file can't be found — it may have moved or been deleted",
+  "dict.stateUnknown": "This file can't be read — it may not be a supported dictionary",
+  "dict.fileLabel": "Dictionary file",
+  "dict.choose": "Choose file…",
+  "dict.autoDetected": "Auto-detected",
+  "dict.chosenManually": "Chosen manually",
+  "dict.useAuto": "Use auto-detection",
+  "dict.autoHint": "If a compatible dictionary app is installed, it works with nothing to set up.",
+  "dict.enOnly": "The dictionary covers English entries only; use Translate for Chinese or long passages.",
+  "dict.sourceTitle": "Where the entries come from",
+  "dict.credit":
+    "Entries come from Aictionary's open-source local dictionary (built on a Wiktionary snapshot), licensed CC BY-SA 4.0.",
+  "dict.sourceLink": "Project page",
 
   // Prompts page
   "prompts.hint":

@@ -65,6 +65,27 @@ export const enFloating: Record<keyof typeof zhFloating, string> = {
   "floating.targetTask": "Task",
   "floating.targetCard": "Card",
 
+  // 离线词典结果窗（版面在 shared/dict.ts；pos 是词库原文，实测封闭取值 14 个）
+  "dict.pos.noun": "Noun",
+  "dict.pos.verb": "Verb",
+  "dict.pos.adj": "Adjective",
+  "dict.pos.name": "Proper noun",
+  "dict.pos.adv": "Adverb",
+  "dict.pos.phrase": "Phrase",
+  "dict.pos.intj": "Exclamation",
+  "dict.pos.suffix": "Suffix",
+  "dict.pos.prefix": "Prefix",
+  "dict.pos.prep": "Preposition",
+  "dict.pos.pron": "Pronoun",
+  "dict.pos.proverb": "Proverb",
+  "dict.pos.num": "Numeral",
+  "dict.pos.det": "Determiner",
+  "dict.usage": "Usage",
+  "dict.memory": "Memory aid",
+  "dict.etymology": "Origin",
+  "dict.miss": "\"{word}\" isn't in the dictionary. Use Translate for Chinese text or long passages.",
+  "floating.dictFailed": "Lookup failed",
+
   "floating.unknownApp": "Unknown app",
   "floating.uiError": "UI error: {msg}",
 

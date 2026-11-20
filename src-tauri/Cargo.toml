@@ -45,6 +45,9 @@ rfd = "0.15"
 tauri-plugin-deep-link = "2"
 # 应用内更新：latest.json 清单 + minisign 验签 + 下载安装（docs/04 ADR-11）
 tauri-plugin-updater = "2"
+# 离线词典：只读打开用户本机的兼容词库（ADR-11）。bundled = 自带 SQLite C 源码
+# 编译，不依赖系统与目标机的 SQLite 版本（链接进我们自己的二进制，版本可控）
+rusqlite = { version = "0.37", features = ["bundled"] }
 
 # 非 macOS 日期实体：本地规则层（正则 + 本地时区日历运算）。
 # macOS 走 NSDataDetector，零日期依赖；两端同一 DateHit 契约

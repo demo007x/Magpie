@@ -27,6 +27,7 @@ export const enShared: Record<keyof typeof zhShared, string> = {
   "action.addr": "Map",
   "action.obsidian": "Obsidian",
   "action.anki": "Anki",
+  "action.dict": "Dictionary",
 
   // 动作一句话描述
   "actionDesc.translate": "Translates into the interface language (Chinese or English), with study notes",
@@ -43,6 +44,7 @@ export const enShared: Record<keyof typeof zhShared, string> = {
   "actionDesc.addr": "Opens the map in one click when the selection contains a place (e.g. \"Guomao Tower B\")",
   "actionDesc.obsidian": "Append the selection to your Obsidian daily note",
   "actionDesc.anki": "Clip into your Anki deck, with the explanation on the back",
+  "actionDesc.dict": "Looks words up in a dictionary on your computer, no network needed",
 
   // 翻译服务注册表
   "tsvc.ai.label": "AI Translate",

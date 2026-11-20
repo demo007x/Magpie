@@ -4,6 +4,7 @@ mod ai;
 mod app_picker;
 mod anki;
 mod capture;
+mod dict;
 mod entities;
 mod floating;
 mod i18n;
@@ -784,6 +785,8 @@ fn main() {
             anki::anki_update_model_styling,
             entities::detect_places,
             entities::open_in_calendar,
+            dict::dict_status,
+            dict::dict_lookup,
             pageurl::frontmost_web_url,
             floating::bar::show_floating_bar,
             floating::bar::resize_floating,
@@ -849,6 +852,7 @@ fn main() {
             pin::pin_from_ocr,
             app_picker::pick_app_bundle,
             app_picker::pick_vault_dir,
+            app_picker::pick_dict_file,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

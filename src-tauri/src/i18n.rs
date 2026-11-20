@@ -149,6 +149,8 @@ static ZH: &[(&str, &str)] = &[
     ("picker.blacklistAppTitle", "选择要加入黑名单的应用"),
     ("picker.appFilter", "应用程序"),
     ("picker.vaultTitle", "选择 Obsidian Vault 目录"),
+    ("picker.dictTitle", "选择词典文件"),
+    ("picker.dictFilter", "词典文件"),
     ("picker.imageTitle", "选择要识别的图片"),
     ("picker.imageFilter", "图片"),
     // 翻译服务（按服务商）
@@ -254,6 +256,8 @@ static EN: &[(&str, &str)] = &[
     ("picker.blacklistAppTitle", "Choose an app to block"),
     ("picker.appFilter", "Applications"),
     ("picker.vaultTitle", "Choose your Obsidian vault folder"),
+    ("picker.dictTitle", "Choose a dictionary file"),
+    ("picker.dictFilter", "Dictionary file"),
     ("picker.imageTitle", "Choose an image to capture text from"),
     ("picker.imageFilter", "Images"),
     // Translation services (per provider)

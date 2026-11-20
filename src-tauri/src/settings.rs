@@ -70,6 +70,8 @@ pub struct Actions {
     pub obsidian: bool,
     /// 接入动作：已连接 AnkiConnect（deck 非空）时「Anki」划词建卡
     pub anki: bool,
+    /// 离线动作：词库可用（dict_status = ready）时「词典」就地取词——零网络、零 Key
+    pub dict: bool,
 }
 
 impl Default for Actions {
@@ -89,6 +91,7 @@ impl Default for Actions {
             addr: true,
             obsidian: true,
             anki: true,
+            dict: true,
         }
     }
 }
@@ -354,6 +357,15 @@ pub struct VisionFlags {
     pub summarize: bool,
 }
 
+/// 离线词典配置（ADR-11）：只指向一个**已存在于用户本机**的词库文件——拾趣只读
+/// 不写、不下载、不随安装包分发（词库数据许可为 CC BY-SA 4.0，见 ADR-11）。
+/// db_path 为空 = 用户未手动选择，由 dict::store 自动探测兼容词典应用的默认位置。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DictConfig {
+    pub db_path: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -412,6 +424,9 @@ pub struct Settings {
     /// Anki 接入（docs/08）：AnkiConnect 建卡配置
     #[serde(default)]
     pub anki: AnkiConfig,
+    /// 离线词典（ADR-11）：指向本机已有词库文件；未设置且探测不到 = 词典动作不出现
+    #[serde(default)]
+    pub dict: DictConfig,
     /// 结果窗口上次位置（逻辑坐标）：关闭后下次（含重启）在同位置出现
     #[serde(default)]
     pub result_window_pos: Option<[f64; 2]>,
@@ -502,6 +517,7 @@ impl Default for Settings {
             debounce_ms: 200,
             obsidian: ObsidianConfig::default(),
             anki: AnkiConfig::default(),
+            dict: DictConfig::default(),
             result_window_pos: None,
             result_window_size: None,
             result_window_pinned: true,
