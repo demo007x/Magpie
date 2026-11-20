@@ -221,6 +221,16 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "anki.defaultCardAuto": "Auto",
   "anki.defaultCardWord": "Word",
   "anki.defaultCardContent": "Content",
+  "anki.deckLabel": "Default deck",
+  "anki.deckPlaceholder": "Choose a deck",
+  "anki.modelLabel": "Note type",
+  "anki.modelPlaceholder": "Choose a note type",
+  "anki.pickEmpty": "Available after connecting",
+  "anki.setupTitle": "Create Magpie companion decks?",
+  "anki.setupText":
+    "Magpie will create two decks in your Anki — \"Magpie::Word cards\" and \"Magpie::Content cards\" — with matching note types, so you can turn selections into cards in one click. To use your own deck instead, choose \"I'll pick\", then select an existing deck below.",
+  "anki.setupCancel": "I'll pick",
+  "anki.setupConfirm": "Create companion decks",
 
   // 词典页（离线查词，ADR-11）
   "dict.hint":

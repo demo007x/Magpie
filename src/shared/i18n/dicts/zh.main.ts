@@ -210,6 +210,16 @@ export const zhMain = {
   "anki.defaultCardAuto": "自动",
   "anki.defaultCardWord": "单词卡",
   "anki.defaultCardContent": "内容卡",
+  "anki.deckLabel": "默认牌组",
+  "anki.deckPlaceholder": "选择牌组",
+  "anki.modelLabel": "笔记类型",
+  "anki.modelPlaceholder": "选择类型",
+  "anki.pickEmpty": "连接后可选",
+  "anki.setupTitle": "创建拾趣配套牌组？",
+  "anki.setupText":
+    "拾趣会在你的 Anki 中创建「拾趣::单词卡」「拾趣::内容卡」两个牌组和对应笔记类型，之后划词就能一键建卡。若想用自己的牌组，请点「我自己选」，在下方选择已有牌组。",
+  "anki.setupCancel": "我自己选",
+  "anki.setupConfirm": "创建配套牌组",
 
   // 词典页（离线查词，ADR-11）
   "dict.hint":

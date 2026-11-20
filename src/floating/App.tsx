@@ -1876,15 +1876,21 @@ export default function App() {
                 .replaceAll("{time}", () => time)
                 .replaceAll("{url}", () => url);
             };
-            // 牌组×类型成对路由：⌄ 菜单显式指定（子牌组）优先；无指定时按主按钮
-            // 默认卡型（设置页可配；auto = 按划词长短自动选——单词卡/内容卡字段
-            // 同构，判错只差排版不丢数据）；自定义类型尊重用户选择（牌组/类型都用
-            // 其配置）
+            // 牌组×类型成对路由。优先级：
+            //   1. ⌄ 菜单显式指定（子牌组）——本次点击临时指定，最高
+            //   2. 用户在设置页显式选了牌组（deck 不是拾趣子牌组）→ 尊重它，
+            //      类型用 cfg.modelName，不再按卡型自动分流（否则选了 AIctionary
+            //      却被悄悄路由回拾趣子牌组）
+            //   3. 未显式选牌组（deck = 某个拾趣子牌组，来自一键配置）→ 按主按钮
+            //      默认卡型自动分流（auto = 按划词长短；单词卡/内容卡字段同构，
+            //      判错只差排版不丢数据）
+            //   4. 自定义笔记类型 → 不成对路由，牌组/类型都用配置值
             const hasWord = cfg.models?.includes(COMPANION_WORD) ?? false;
             const hasContent = cfg.models?.includes(COMPANION_CONTENT) ?? false;
+            const companionDeck = COMPANION_ITEMS.some((i) => i.deck === cfg.deck);
             const pair =
               COMPANION_ITEMS.find((i) => i.deck === targetOverride) ??
-              (!isCompanionModel(cfg.modelName)
+              (!companionDeck || !isCompanionModel(cfg.modelName)
                 ? null
                 : hasWord && hasContent
                   ? cfg.defaultCard === "word"
