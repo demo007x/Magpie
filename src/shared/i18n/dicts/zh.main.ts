@@ -40,6 +40,7 @@ export const zhMain = {
   "common.setDefaultDisabled": "启用后才可设为默认",
   "common.resetDefault": "恢复默认",
   "common.done": "完成",
+  "common.tutorial": "使用教程",
 
   // 划词页
   "capture.actionsHint": "拖动把手调整顺序，开关停用某项；更改即时生效并自动保存。",
@@ -370,4 +371,7 @@ export const zhMain = {
   "update.preparing": "准备下载…",
   "update.downloading": "下载中 {pct}%",
   "update.installFailed": "更新没装上，请稍后再试。",
+
+  // 应用内使用教程（shared/TutorialModal.tsx）
+  "tutorial.fullGuide": "在官网查看完整教程",
 };

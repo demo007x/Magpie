@@ -14,6 +14,7 @@ import {
   isCompanionModel,
 } from "../../shared/anki";
 import { t, useLocale, getLocale } from "../../shared/i18n";
+import { TutorialButton } from "../../shared/TutorialModal";
 
 /** 下拉按钮共用的基础字体族（与 .card 内全局 input 的 font: inherit 对齐） */
 const SANS = `-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`;
@@ -304,7 +305,9 @@ export default function AnkiPage({ settings, patch, save, saved, saveNow }: Page
   return (
     <>
       {/* 无页级标题：左栏导航已标明页面，说明行直接开场 */}
-      <p className="page-hint">{t("anki.hint")}</p>
+      <p className="page-hint">
+        {t("anki.hint")} <TutorialButton id="anki" />
+      </p>
 
       <div className="card">
         <div className="row-between sep">
