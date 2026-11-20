@@ -20,7 +20,7 @@ mod translate;
 mod update;
 
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, RunEvent,
 };
@@ -92,6 +92,15 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             format!("{base}  {display}")
         }
     };
+    // 划词功能总开关（checkbox）
+    let capture_toggle = CheckMenuItem::with_id(
+        app,
+        "capture_toggle",
+        i18n::t("tray.captureToggle"),
+        true,
+        s.capture_enabled,
+        None::<&str>,
+    )?;
     let ocr_item = MenuItem::with_id(app, "ocr", &label(i18n::t("tray.ocr"), &s.ocr_shortcut), true, None::<&str>)?;
     let tr_item = MenuItem::with_id(app, "ocr_translate", &label(i18n::t("tray.ocrTranslate"), &s.ocr_translate_shortcut), true, None::<&str>)?;
     let ex_item = MenuItem::with_id(app, "ocr_explain", &label(i18n::t("tray.ocrExplain"), &s.ocr_explain_shortcut), true, None::<&str>)?;
@@ -105,12 +114,14 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     Menu::with_items(app, &[
+        &capture_toggle,
+        &sep1,
         &ocr_item,
         &tr_item,
         &ex_item,
         &su_item,
         &file_ocr_item,
-        &sep1,
+        &sep2,
         &home_item,
         &check_update_item,
         &github_item,
@@ -687,6 +698,10 @@ fn main() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
+                    // 划词功能总开关
+                    "capture_toggle" => {
+                        settings::toggle_capture_enabled(app.clone());
+                    }
                     // 「打开拾趣」只亮窗不指定页：落到启动默认逻辑（未配模型 → 模型页，
                     // 已配 → 划词页）；此前「功能设置」硬跳 model 页，智能默认后过时
                     "home" => show_main_window(app),
@@ -798,6 +813,8 @@ fn main() {
             settings::get_settings,
             settings::save_settings,
             settings::set_appearance,
+            settings::set_capture_mode,
+            settings::toggle_capture_enabled,
             settings::set_ui_locale,
             speech::tts_status,
             speech::tts_download,

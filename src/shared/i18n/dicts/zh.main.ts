@@ -81,6 +81,14 @@ export const zhMain = {
   "capture.generating": "生成中…",
   "capture.tryRun": "试跑",
 
+  // 划词弹出模式
+  "capture.modeAria": "划词弹出方式",
+  "capture.modeAlways": "选中即弹出",
+  "capture.modeAlwaysSub": "选中文字后立刻弹出胶囊。",
+  "capture.modeCtrl": "按住 Ctrl 才弹出",
+  "capture.modeCtrlSub":
+    "选中文字后，按住 Ctrl（macOS 为 ⌘）才弹出胶囊。适合与其他应用的选中弹出功能共存。",
+
   // 兼容取词允许清单（仅 Windows，划词页）：逐应用授权「代按一次复制键」
   "capture.compatTitle": "有些应用读不到文字",
   "capture.compatSub":
@@ -202,6 +210,16 @@ export const zhMain = {
   "anki.defaultCardAuto": "自动",
   "anki.defaultCardWord": "单词卡",
   "anki.defaultCardContent": "内容卡",
+  "anki.deckLabel": "默认牌组",
+  "anki.deckPlaceholder": "选择牌组",
+  "anki.modelLabel": "笔记类型",
+  "anki.modelPlaceholder": "选择类型",
+  "anki.pickEmpty": "连接后可选",
+  "anki.setupTitle": "创建拾趣配套牌组？",
+  "anki.setupText":
+    "拾趣会在你的 Anki 中创建「拾趣::单词卡」「拾趣::内容卡」两个牌组和对应笔记类型，之后划词就能一键建卡。若想用自己的牌组，请点「我自己选」，在下方选择已有牌组。",
+  "anki.setupCancel": "我自己选",
+  "anki.setupConfirm": "创建配套牌组",
 
   // 词典页（离线查词，ADR-11）
   "dict.hint":

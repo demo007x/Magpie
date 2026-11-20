@@ -1,10 +1,11 @@
 // Anki 页：连接自动检测（打开页面/改地址即探测，保留手动按钮）+ 一键创建
-// Anki 集合（牌组「拾趣」两个子牌组 + 两种配套笔记类型）。
+// Anki 集合（牌组「拾趣」两个子牌组 + 两种配套笔记类型）+ 牌组/笔记类型显式选择。
 // 零配置是主路径：建卡时智能默认 + 配套类型出厂映射（shared/anki.ts，不落盘）
-// 兜底；牌组/标签均无配置面（牌组由建卡路由在两个子牌组间决定，标签走出厂默认）。
+// 兜底；用户在设置页显式选了牌组/类型则覆盖默认（建卡路由见 floating/App.tsx）。
 import { invoke } from "@tauri-apps/api/core";
-import { Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check, ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Modal } from "../../shared/Modal";
 import type { PageProps } from "./types";
 import {
   COMPANION_CONTENT,
@@ -16,6 +17,53 @@ import { t, useLocale, getLocale } from "../../shared/i18n";
 
 /** 下拉按钮共用的基础字体族（与 .card 内全局 input 的 font: inherit 对齐） */
 const SANS = `-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`;
+
+/** 单选下拉：样式见 main.css 的 .pick-*（Anki 页专用，就地卡片列表无弹层）。
+    value 为空时显示 placeholder；选项来自连接测试实拉的缓存，切换即落盘。 */
+function Pick({
+  value,
+  options,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  options: string[];
+  placeholder: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="pick-wrap">
+      <button
+        type="button"
+        className={`pick-btn ${open ? "open" : ""}`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="pick-val">{value || placeholder}</span>
+        <ChevronDown size={13} />
+      </button>
+      {open && (
+        <div className="pick-list">
+          {options.length === 0 && (
+            <div className="pick-opt">{t("anki.pickEmpty")}</div>
+          )}
+          {options.map((o) => (
+            <div
+              key={o}
+              className={`pick-opt ${o === value ? "on" : ""}`}
+              onClick={() => {
+                onChange(o);
+                setOpen(false);
+              }}
+            >
+              {o}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** 配套类型上线时的出厂 CSS（现役出厂值 = 此串 + MD_CSS）。留存为升级指纹：
     设置页连接探测时若卡型现值与之逐字一致（即用户没改过卡型），静默补上
@@ -135,6 +183,10 @@ export default function AnkiPage({ settings, patch, save, saved, saveNow }: Page
   const [testing, setTesting] = useState(false);
   /** 配套类型创建中（按钮忙态；两型一起创建，幂等） */
   const [creating, setCreating] = useState(false);
+  /** 连接成功后询问是否创建配套牌组：deck 空（未接入）才弹，用户选了牌组
+      或创建了配套后永不再弹；本次会话问过一次即止（自动+手动探测共用） */
+  const [askSetup, setAskSetup] = useState(false);
+  const askedRef = useRef(false);
   /** 就绪判定（缓存 vs 实拉的桥）：牌组与笔记类型**都**在才算就绪——用户在
       Anki 侧删掉其中一半（删牌组不会连带删类型，反之亦然）时必须回到
       「一键配置」态，否则徽标在说谎 */
@@ -170,6 +222,13 @@ export default function AnkiPage({ settings, patch, save, saved, saveNow }: Page
             // 连接就绪后顺带做配套样式卫生升级（静默，失败不进连接状态）
             upgradeCompanionCss(url, models);
             setTest({ ok: true });
+            // 主动接入：连上了但没设默认牌组 = 用户还没接入，弹确认问是否
+            // 让拾趣创建配套牌组（也可取消后自己在下方下拉选已有牌组）。
+            // deck 非空或本次会话问过就不再打扰
+            if (!anki.deck && !askedRef.current) {
+              askedRef.current = true;
+              setAskSetup(true);
+            }
           })
           .catch((e) => {
             setTest({ ok: false, msg: String(e), auto: !manual });
@@ -289,6 +348,36 @@ export default function AnkiPage({ settings, patch, save, saved, saveNow }: Page
           </div>
         )}
 
+        {/* 显式选择：连接成功后从实拉缓存里挑默认牌组/笔记类型，选完即落盘。
+            deck 非空 = 已接入，胶囊 Anki 动作随之出现；不挑则由上面的配套
+            按钮一键配置，零配置也能用（建卡时智能默认兜底） */}
+        <div className="row-between sep">
+          <div className="field wide">
+            <span>{t("anki.deckLabel")}</span>
+            <Pick
+              value={anki.deck}
+              options={anki.decks}
+              placeholder={t("anki.deckPlaceholder")}
+              onChange={(deck) => {
+                patch((s) => ({ anki: { ...s.anki, deck } }));
+                saveNow?.();
+              }}
+            />
+          </div>
+          <div className="field wide">
+            <span>{t("anki.modelLabel")}</span>
+            <Pick
+              value={anki.modelName}
+              options={anki.models}
+              placeholder={t("anki.modelPlaceholder")}
+              onChange={(modelName) => {
+                patch((s) => ({ anki: { ...s.anki, modelName } }));
+                saveNow?.();
+              }}
+            />
+          </div>
+        </div>
+
         <div className="row-between sep">
           <span className="row-sub">{t("anki.companionHint")}</span>
           <div className="row-ctl">
@@ -350,6 +439,35 @@ export default function AnkiPage({ settings, patch, save, saved, saveNow }: Page
           {saved ? t("common.saved") : t("common.saveChanges")}
         </button>
       </div>
+
+      {/* 连接成功后的主动接入询问：取消 = 自己在上面下拉选已有牌组；
+          确认 = 建拾趣配套牌组+类型并落盘。不用 Confirm——它的确认按钮是
+          danger 红钮，适合删除而非创建（见 shared/Modal.tsx） */}
+      {askSetup && (
+        <Modal
+          title={t("anki.setupTitle")}
+          size="sm"
+          onClose={() => setAskSetup(false)}
+          footer={
+            <>
+              <button className="btn sm" onClick={() => setAskSetup(false)}>
+                {t("anki.setupCancel")}
+              </button>
+              <button
+                className="btn sm primary"
+                onClick={() => {
+                  setAskSetup(false);
+                  createCompanions();
+                }}
+              >
+                {t("anki.setupConfirm")}
+              </button>
+            </>
+          }
+        >
+          <p className="modal-text">{t("anki.setupText")}</p>
+        </Modal>
+      )}
     </>
   );
 }

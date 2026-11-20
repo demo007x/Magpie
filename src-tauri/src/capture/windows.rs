@@ -32,16 +32,22 @@
 //!
 //! 兼容模式（ADR-05 的 Windows 对位，`compat_fetch`）：**按应用授权，默认绝不发按键**。
 //! macOS 侧兼容模式常开，这里刻意不同——Windows 上无法探测目标应用当前处于什么
-//! 状态，而 Ctrl+C 在终端类界面里是「中断正在运行的进程」的杀伤性信号。三条闸缺一不可：
+//! 状态，而 Ctrl+C 在终端类界面里是「中断正在运行的进程」的杀伤性信号。四条闸缺一不可：
 //!   1. 两条父链都报「TextPattern 层数 = 0」——只有根本不暴露文本接口的应用才借用
 //!      复制；暴露了接口却取到空选区 = 手势没发生，不发按键（否则就是把误报换成
 //!      对他人剪贴板和焦点应用的干扰）
 //!   2. 该应用命中 `settings.compat_apps` 允许清单（划词页逐应用添加）
 //!   3. 剪贴板当前是文件/图片时整段跳过——还原只写得回文本，会把用户刚复制的
 //!      文件或截图换成一段字
+//!   4. 按下瞬间光标是系统 I-beam——Zed 这类自绘应用的滚动条拖动与拖选同形，UIA 树
+//!      是空的（闸 1 拦不住），光标形状是「起点是不是文本」的直接证据。句柄在鼠标
+//!      钩子回调里采样（真正的按下瞬间），判决放在名单闸之后——名单外应用走不到
+//!      兼容模式，行为零变化；读不到光标一律拒绝（fail-safe）
 //! 键序：主键 Ctrl+Insert（终端里不是中断信号，闸 1+2 都过了也别去碰用户正在跑的
 //! 进程），不认该键的应用才用 Ctrl+C 兜底。残余风险因此收窄到「主键无绑定 + 此刻
-//! 终端里有前台进程」这一种叠加情形。
+//! 终端里有前台进程」这一种叠加情形。注入前还有一道物理修饰键闸门：用户正按住
+//! Ctrl/Shift/Alt/Win 时整段放弃（我们注入的 VK_CONTROL up 会抢走用户的物理状态，
+//! 导致后续按键丢失修饰键——fail silent，符合产品边界）。
 //! 还原竞态规则与 macOS 同一套（拿完重读现状，只在「现状仍是我取到的文本」时物归
 //! 原主，否则保留现状不动）。
 //!
@@ -59,8 +65,11 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::AppHandle;
+use serde_json::json;
+use tauri::{AppHandle, Emitter};
 use uiautomation::types::ControlType;
+
+use crate::floating;
 use windows::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{MonitorFromPoint, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::DataExchange::IsClipboardFormatAvailable;
@@ -71,13 +80,16 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetDoubleClickTime, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput, VK_C,
-    VK_CONTROL, VK_ESCAPE, VK_INSERT, VIRTUAL_KEY, INPUT_0, INPUT_KEYBOARD, INPUT,
+    GetAsyncKeyState, GetDoubleClickTime, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput,
+    VK_C, VK_CONTROL, VK_ESCAPE, VK_INSERT, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU,
+    VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VIRTUAL_KEY, INPUT_0, INPUT_KEYBOARD,
+    INPUT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GetAncestor, GetMessageW, GetWindowThreadProcessId, SetWindowsHookExW,
-    WindowFromPoint, GA_ROOT, KBDLLHOOKSTRUCT, MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL,
-    WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_SYSKEYDOWN,
+    CallNextHookEx, GetAncestor, GetCursorInfo, GetMessageW, GetWindowThreadProcessId,
+    LoadCursorW, SetWindowsHookExW, WindowFromPoint, CURSORINFO, GA_ROOT, IDC_IBEAM,
+    KBDLLHOOKSTRUCT, KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED, MSLLHOOKSTRUCT, WH_KEYBOARD_LL,
+    WH_MOUSE_LL, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_SYSKEYDOWN,
 };
 
 use super::{debug_log, CaptureEvent};
@@ -116,10 +128,24 @@ pub fn prompt_accessibility() -> bool {
 // ---------- 钩子线程 → detect 线程的原始事件 ----------
 
 enum RawEvent {
-    /// (消息, 物理x, 物理y, 钩子时间戳ms)
-    Mouse(u32, i32, i32, u32),
+    /// (消息, 物理x, 物理y, 钩子时间戳ms, 按下瞬间的光标句柄；非按下事件为 0)
+    Mouse(u32, i32, i32, u32, isize),
     /// (vkCode, 是否按下)
     Key(u32, bool),
+}
+
+/// 当前光标句柄（系统级，跨进程有效）。读不到返回 0——兼容模式把它当作「非文本
+/// 表面」拒绝，宁可漏取一次也不让 stale 选区误弹。
+fn cursor_handle_now() -> isize {
+    let mut info = CURSORINFO::default();
+    info.cbSize = std::mem::size_of::<CURSORINFO>() as u32;
+    unsafe {
+        if GetCursorInfo(&mut info).is_ok() {
+            info.hCursor.0 as isize
+        } else {
+            0
+        }
+    }
 }
 
 static RAW_TX: Mutex<Option<Sender<RawEvent>>> = Mutex::new(None);
@@ -131,7 +157,10 @@ extern "system" fn mouse_proc(n_code: i32, w: WPARAM, l: LPARAM) -> LRESULT {
         if matches!(msg, WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP) {
             if let Ok(guard) = RAW_TX.lock() {
                 if let Some(tx) = guard.as_ref() {
-                    let _ = tx.send(RawEvent::Mouse(msg, info.pt.x, info.pt.y, info.time));
+                    // 光标必须在此刻采样：detect 线程可能正忙于 UIA 查询，事件排队后
+                    // 再读会拿到鼠标已移走后的形状。只在按下时读，一次系统调用。
+                    let cursor = if msg == WM_LBUTTONDOWN { cursor_handle_now() } else { 0 };
+                    let _ = tx.send(RawEvent::Mouse(msg, info.pt.x, info.pt.y, info.time, cursor));
                 }
             }
         }
@@ -143,7 +172,41 @@ extern "system" fn key_proc(n_code: i32, w: WPARAM, l: LPARAM) -> LRESULT {
     if n_code >= 0 {
         let info = unsafe { &*(l.0 as *const KBDLLHOOKSTRUCT) };
         let down = w.0 as u32 == WM_KEYDOWN || w.0 as u32 == WM_SYSKEYDOWN;
-        if info.vkCode == VK_ESCAPE.0 as u32 {
+
+        // 过滤注入事件（我们自己的兼容取词按键）
+        let is_injected = (info.flags & LLKHF_INJECTED) != KBDLLHOOKSTRUCT_FLAGS(0);
+
+        // 诊断日志（debug 构建）：记录 Ctrl 键事件
+        if cfg!(debug_assertions) {
+            let is_ctrl = info.vkCode == VK_CONTROL.0 as u32
+                || info.vkCode == VK_LCONTROL.0 as u32
+                || info.vkCode == VK_RCONTROL.0 as u32;
+            if is_ctrl {
+                debug_log(format!(
+                    "capture/windows: key_proc Ctrl vk={} down={} injected={} flags={:?}",
+                    info.vkCode, down, is_injected, info.flags
+                ));
+            }
+        }
+
+        // 放行 Esc 和修饰键（Ctrl/Shift/Alt/Win），用于划词弹出门控
+        let should_forward = match info.vkCode as u32 {
+            vk if vk == VK_ESCAPE.0 as u32 => true,
+            vk if vk == VK_CONTROL.0 as u32 => true,
+            vk if vk == VK_LCONTROL.0 as u32 => true,
+            vk if vk == VK_RCONTROL.0 as u32 => true,
+            vk if vk == VK_SHIFT.0 as u32 => true,
+            vk if vk == VK_LSHIFT.0 as u32 => true,
+            vk if vk == VK_RSHIFT.0 as u32 => true,
+            vk if vk == VK_MENU.0 as u32 => true, // Alt
+            vk if vk == VK_LMENU.0 as u32 => true,
+            vk if vk == VK_RMENU.0 as u32 => true,
+            vk if vk == VK_LWIN.0 as u32 => true,
+            vk if vk == VK_RWIN.0 as u32 => true,
+            _ => false,
+        };
+
+        if should_forward && !is_injected {
             if let Ok(guard) = RAW_TX.lock() {
                 if let Some(tx) = guard.as_ref() {
                     let _ = tx.send(RawEvent::Key(info.vkCode, down));
@@ -208,6 +271,8 @@ enum Gesture {
 struct DownState {
     /// 物理坐标
     start: (i32, i32),
+    /// 按下瞬间的光标句柄，兼容模式闸门用（文本区 I-beam 才允许借用复制）
+    down_cursor: isize,
     /// 按下点在浮动条上：本次拖动是搬移浮动条而非划词
     bar_drag: bool,
     /// 双击的第二次按下（抬起时按选词手势处理）
@@ -228,6 +293,12 @@ fn detect_loop(app: &AppHandle, tx: Sender<CaptureEvent>, rx: Receiver<RawEvent>
     let mut last_click: Option<(u32, i32, i32)> = None; // (时间, 物理x, 物理y)
     let mut last_move_sent: u32 = 0;
 
+    // 划词弹出门控状态：跟踪 Ctrl 键按下期间是否有其他键按下
+    let mut ctrl_down_at: Option<Instant> = None;
+    let mut other_key_during_ctrl = false;
+    // Ctrl 是否正在被按住（用于"按住 Ctrl 再选中文本"的交互）
+    let mut ctrl_held = false;
+
     while let Ok(ev) = rx.recv() {
         // 静音闸门：模态操作（截屏框选等）期间鼠标事件不入队（AGENTS.md 纪律）
         if super::capture_muted() {
@@ -235,7 +306,7 @@ fn detect_loop(app: &AppHandle, tx: Sender<CaptureEvent>, rx: Receiver<RawEvent>
             continue;
         }
         match ev {
-            RawEvent::Mouse(msg, px, py, time) => match msg {
+            RawEvent::Mouse(msg, px, py, time, cursor) => match msg {
                 WM_LBUTTONDOWN => {
                     let (lx, ly) = to_logical(px, py);
                     // 拖拽起点只认胶囊卡：二级浮层是独立窗口（分离卡），
@@ -249,7 +320,7 @@ fn detect_loop(app: &AppHandle, tx: Sender<CaptureEvent>, rx: Receiver<RawEvent>
                             })
                             .unwrap_or(false);
                     last_click = Some((time, px, py));
-                    down = Some(DownState { start: (px, py), bar_drag, double_pending });
+                    down = Some(DownState { start: (px, py), down_cursor: cursor, bar_drag, double_pending });
                 }
                 WM_MOUSEMOVE => {
                     let Some(d) = down.as_ref() else {
@@ -292,6 +363,12 @@ fn detect_loop(app: &AppHandle, tx: Sender<CaptureEvent>, rx: Receiver<RawEvent>
                     };
                     // 按下点（手势起点）与抬起点都传给闸门：同形表面看起点，
                     // 选区证据沿终点父链找
+                    if cfg!(debug_assertions) {
+                        debug_log(format!(
+                            "capture/windows: 调用 query_selection ctrl_held={}",
+                            ctrl_held
+                        ));
+                    }
                     query_selection(
                         app,
                         &aut,
@@ -302,6 +379,8 @@ fn detect_loop(app: &AppHandle, tx: Sender<CaptureEvent>, rx: Receiver<RawEvent>
                         px,
                         py,
                         gesture,
+                        ctrl_held,
+                        d.down_cursor,
                     );
                 }
                 _ => {}
@@ -309,6 +388,53 @@ fn detect_loop(app: &AppHandle, tx: Sender<CaptureEvent>, rx: Receiver<RawEvent>
             RawEvent::Key(vk, is_down) => {
                 if is_down && vk == VK_ESCAPE.0 as u32 {
                     let _ = tx.send(CaptureEvent::Escape);
+                }
+
+                // 划词弹出门控：跟踪 Ctrl 键状态
+                let is_ctrl = vk == VK_CONTROL.0 as u32 || vk == VK_LCONTROL.0 as u32 || vk == VK_RCONTROL.0 as u32;
+                let is_modifier = is_ctrl
+                    || vk == VK_SHIFT.0 as u32
+                    || vk == VK_LSHIFT.0 as u32
+                    || vk == VK_RSHIFT.0 as u32
+                    || vk == VK_MENU.0 as u32 // Alt
+                    || vk == VK_LMENU.0 as u32
+                    || vk == VK_RMENU.0 as u32
+                    || vk == VK_LWIN.0 as u32
+                    || vk == VK_RWIN.0 as u32;
+
+                if is_ctrl {
+                    let old_ctrl_held = ctrl_held;
+                    ctrl_held = is_down;
+                    if cfg!(debug_assertions) {
+                        debug_log(format!(
+                            "capture/windows: detect_loop ctrl_held {}→{} vk={} down={}",
+                            old_ctrl_held, ctrl_held, vk, is_down
+                        ));
+                    }
+                    if is_down {
+                        // Ctrl 按下：记录时间，重置其他键标记
+                        ctrl_down_at = Some(Instant::now());
+                        other_key_during_ctrl = false;
+                    } else {
+                        // Ctrl 抬起：若期间无其他键按下，尝试弹出挂起的选区
+                        if ctrl_down_at.is_some() && !other_key_during_ctrl {
+                            if let Some((text, x, y, app_path, pid)) = super::pop_pending() {
+                                debug_log(format!(
+                                    "capture/windows: Ctrl 单独抬起，弹出挂起选区 len={} app={app_path:?}",
+                                    text.len()
+                                ));
+                                let _ = app.emit(
+                                    "selection://captured",
+                                    json!({ "text": text, "x": x, "y": y, "app": app_path, "pid": pid }),
+                                );
+                                floating::dismiss_ocr_if_unpinned(app);
+                            }
+                        }
+                        ctrl_down_at = None;
+                    }
+                } else if is_down && !is_modifier && ctrl_down_at.is_some() {
+                    // 非修饰键按下且 Ctrl 正在按住：标记
+                    other_key_during_ctrl = true;
                 }
             }
         }
@@ -331,8 +457,26 @@ fn query_selection(
     upx: i32,
     upy: i32,
     gesture: Gesture,
+    ctrl_held: bool,
+    down_cursor: isize,
 ) {
+    if cfg!(debug_assertions) {
+        debug_log(format!("capture/windows: query_selection 入口 ctrl_held={}", ctrl_held));
+    }
     let queried = (|| -> Option<(String, u32)> {
+        // 几何闸门：垂直滚动特征检测。垂直滚动条拖动是垂直长距离移动，
+        // 水平划词（选中一行代码）更常见，不做水平滚动检测以免误杀。
+        let dx = (upx - dpx).abs();
+        let dy = (upy - dpy).abs();
+        // 垂直滚动特征：垂直位移 > 30px 且水平位移 < 10px（近似直线）
+        if dy > 30 && dx < 10 {
+            debug_log(format!(
+                "capture/windows: 几何闸门拒绝（垂直滚动特征 dx={} dy={}）",
+                dx, dy
+            ));
+            return None;
+        }
+
         // 第一道：起点分类。滚动条/标签页/文件树行等表面按下的拖动是成型的
         // 其他手势，从这里拒绝（含自身闸门）。不看抬起点链上的祖先——它们
         // 只是内容外层的容器（如网页外壳的 Tab），连坐会把正常的聊天/网页
@@ -395,7 +539,7 @@ fn query_selection(
         // 兼容模式（ADR-05 的 Windows 对位，按应用授权）：只在两条父链都没有任何
         // TextPattern 层时才借用一次复制——那是「应用根本不暴露文本接口」，走链
         // 无解；「有接口但这次没选区」是手势未发生，发按键就是把误报换成对他人
-        // 剪贴板与焦点应用的干扰。三闸与竞态规则见模块头
+        // 剪贴板与焦点应用的干扰。四闸与竞态规则见模块头
         if point_walk.text_levels == 0 && focus_walk.text_levels == 0 {
             let s = crate::settings::current(app);
             // 用户明确禁用的应用同样不发按键：黑名单的原意是「别在我这儿划词」，
@@ -403,7 +547,7 @@ fn query_selection(
             let permitted = crate::settings::compat_allows(&s, &app_path)
                 && !crate::settings::is_blacklisted(app, &app_path, None);
             if permitted {
-                if let Some(text) = compat_fetch(&app_path) {
+                if let Some(text) = compat_fetch(&app_path, down_cursor) {
                     return Some((text, up_pid));
                 }
             } else {
@@ -445,6 +589,7 @@ fn query_selection(
         app: app_path,
         bid: String::new(), // Windows 无 bundle id，黑名单走进程路径匹配
         pid: pid as i32,
+        ctrl_held,
     });
 }
 
@@ -548,7 +693,7 @@ fn probe_text_selection(el: &uiautomation::UIElement) -> Probe {
     }
 }
 
-// ---------- 兼容模式：借用一次复制（按应用授权，三闸与键序见模块头） ----------
+// ---------- 兼容模式：借用一次复制（按应用授权，四闸与键序见模块头） ----------
 
 /// 剪贴板当前装着文件或图片（不是纯文本）。这类内容还原不回来——文本写得回，
 /// 文件组与位图写不回，还原等于把用户刚复制的文件/截图换成一段字。命中即整段
@@ -660,13 +805,50 @@ fn copy_once(snapshot: &Option<String>, chord: Chord) -> Option<String> {
     None
 }
 
+/// 检测用户是否物理按住任何修饰键（Ctrl/Shift/Alt/Win）。
+/// 兼容取词注入的 VK_CONTROL up 会抢走用户物理按下的修饰键状态，导致后续按键
+/// 丢失修饰键（症状：选中后快速 Ctrl+C → 选中文本变成 "c"）。此闸门在注入前
+/// 采样，只要有任何修饰键物理按下就放弃本次取词——fail silent，符合产品边界。
+fn modifiers_physically_held() -> bool {
+    unsafe {
+        // GetAsyncKeyState 返回 SHORT (i16)，高位为 1 表示键当前按下（即返回值为负）
+        GetAsyncKeyState(VK_CONTROL.0 as i32) < 0
+            || GetAsyncKeyState(VK_SHIFT.0 as i32) < 0
+            || GetAsyncKeyState(VK_MENU.0 as i32) < 0
+            || GetAsyncKeyState(VK_LWIN.0 as i32) < 0
+            || GetAsyncKeyState(VK_RWIN.0 as i32) < 0
+    }
+}
+
 /// 兼容取词一次：快照剪贴板 → Ctrl+Insert（不认则 Ctrl+C）→ 轮询变化 → 取词 → 还原快照。
 /// 兜底轮询仍与同一份快照比——主键失败时剪贴板没动过，判据不变。最坏耗时 600ms×2，
 /// 只在主键不认的应用里发生；实测四家主流应用首个周期（15ms）就命中。
 /// 还原竞态规则与 macOS compat.rs 同源：还原前重读现状，只在「现状仍是我取到的
 /// 那段文本」时物归原主，其余一切保留现状——借用期间第三方可能写入比快照更新的
 /// 内容，盲目还原会把它覆盖掉。没取到一律静默。
-fn compat_fetch(app_path: &str) -> Option<String> {
+fn compat_fetch(app_path: &str, down_cursor: isize) -> Option<String> {
+    // 第四道闸：按下点确实是文本表面。自绘应用（Zed）的滚动条拖动与拖选同形，
+    // UIA 树是空的，只有光标形状能区分——文本区是系统 I-beam，滚动条/标签页是箭头。
+    // 读不到（0）一律拒绝：宁可漏取一次，也不让 stale 选区误弹。
+    let ibeam = unsafe { LoadCursorW(None, IDC_IBEAM) }
+        .map(|h| h.0 as isize)
+        .unwrap_or(0);
+    if ibeam == 0 || down_cursor != ibeam {
+        debug_log(format!(
+            "capture/windows: 兼容取词跳过（按下点非文本光标 cursor=0x{down_cursor:X} ibeam=0x{ibeam:X}）app={app_path:?}"
+        ));
+        return None;
+    }
+
+    // 用户物理按住修饰键时放弃：我们注入的 VK_CONTROL up 会抢走用户的 Ctrl 状态，
+    // 导致后续按键丢失修饰键（Bug: 选中后快速 Ctrl+C → 选中文本变成 "c"）
+    if modifiers_physically_held() {
+        debug_log(format!(
+            "capture/windows: 兼容取词跳过（用户正按住修饰键）app={app_path:?}"
+        ));
+        return None;
+    }
+
     if clipboard_holds_rich_payload() {
         debug_log(format!(
             "capture/windows: 兼容取词跳过（剪贴板里是文件或图片，还原没把握）app={app_path:?}"

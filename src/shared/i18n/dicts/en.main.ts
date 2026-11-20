@@ -87,6 +87,14 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "capture.generating": "Generating…",
   "capture.tryRun": "Test run",
 
+  // Capture popup mode
+  "capture.modeAria": "When to show the capsule",
+  "capture.modeAlways": "Show on select",
+  "capture.modeAlwaysSub": "Show the capsule as soon as you select text.",
+  "capture.modeCtrl": "Show on Ctrl",
+  "capture.modeCtrlSub":
+    "Select text, then hold Ctrl (⌘ on macOS) to show the capsule. Useful when other apps already pop up on selection.",
+
   // Compatibility lookup allowlist (Windows only, capture page): per-app opt-in
   "capture.compatTitle": "Apps that hide their text",
   "capture.compatSub":
@@ -213,6 +221,16 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "anki.defaultCardAuto": "Auto",
   "anki.defaultCardWord": "Word",
   "anki.defaultCardContent": "Content",
+  "anki.deckLabel": "Default deck",
+  "anki.deckPlaceholder": "Choose a deck",
+  "anki.modelLabel": "Note type",
+  "anki.modelPlaceholder": "Choose a note type",
+  "anki.pickEmpty": "Available after connecting",
+  "anki.setupTitle": "Create Magpie companion decks?",
+  "anki.setupText":
+    "Magpie will create two decks in your Anki — \"Magpie::Word cards\" and \"Magpie::Content cards\" — with matching note types, so you can turn selections into cards in one click. To use your own deck instead, choose \"I'll pick\", then select an existing deck below.",
+  "anki.setupCancel": "I'll pick",
+  "anki.setupConfirm": "Create companion decks",
 
   // 词典页（离线查词，ADR-11）
   "dict.hint":
