@@ -28,6 +28,9 @@ export function Footer() {
           <a href={`${root}anki/`} className="transition-colors hover:text-ink">
             {d.footer.anki}
           </a>
+          <a href={`${root}dict/`} className="transition-colors hover:text-ink">
+            {d.footer.dict}
+          </a>
           <a href={page === "home" ? "#download" : `${root}#download`} className="transition-colors hover:text-ink">
             {d.footer.download}
           </a>

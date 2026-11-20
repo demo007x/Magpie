@@ -3,7 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { t, useLocale } from "../../shared/i18n";
+import { getLocale, t, useLocale } from "../../shared/i18n";
 import type { DictStatus } from "../../shared/types";
 import type { PageProps } from "./types";
 
@@ -85,6 +85,22 @@ export default function DictPage({ settings, patch, saveNow }: PageProps) {
 
         <p className="row-sub">{t("dict.autoHint")}</p>
         <p className="row-sub">{t("dict.enOnly")}</p>
+        <p className="row-sub">
+          {t("dict.tutorialLead")}{" "}
+          <button
+            className="text-link"
+            onClick={() =>
+              invoke("open_url", {
+                url:
+                  getLocale() === "en"
+                    ? "https://demo007x.github.io/Magpie/en/dict/"
+                    : "https://demo007x.github.io/Magpie/dict/",
+              }).catch(() => undefined)
+            }
+          >
+            {t("dict.tutorialLink")}
+          </button>
+        </p>
       </div>
 
       {/* 词库数据的署名义务：CC BY-SA 4.0，即使我们只读用户本机文件、不随之分发 */}

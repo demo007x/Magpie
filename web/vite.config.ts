@@ -11,7 +11,7 @@ export default defineConfig({
   build: {
     rollupOptions: {
       // 相对路径由 vite 按 root 解析；工程未装 @types/node，避免 node:path
-      input: { main: "index.html", translate: "translate.html", anki: "anki.html" },
+      input: { main: "index.html", translate: "translate.html", anki: "anki.html", dict: "dict.html" },
     },
   },
   plugins: [
@@ -28,6 +28,7 @@ export default defineConfig({
           const url = (req as { url?: string }).url ?? "";
           if (/^\/translate\/?$/.test(url)) (req as { url: string }).url = "/translate.html";
         if (/^\/anki\/?$/.test(url)) (req as { url: string }).url = "/anki.html";
+        if (/^\/dict\/?$/.test(url)) (req as { url: string }).url = "/dict.html";
           next();
         });
       },

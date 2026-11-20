@@ -263,6 +263,7 @@ const zh = {
     download: "下载",
     topic: "划词翻译",
     anki: "Anki 教程",
+    dict: "词典教程",
     copyright: "拾趣 Magpie",
   },
 };
@@ -529,14 +530,15 @@ const en: Dict = {
     download: "Download",
     topic: "Select & Translate guide",
     anki: "Anki tutorial",
+    dict: "Dictionary guide",
     copyright: "Magpie",
   },
 };
 
 const DICTS: Record<Locale, Dict> = { zh, en };
 
-/** 站点页面：首页、功能专题页（/translate/）与 Anki 教程页（/anki/），各自有 zh / en 两个语言变体 */
-export type PageKey = "home" | "translate" | "anki";
+/** 站点页面：首页、功能专题页（/translate/）、Anki 教程页（/anki/）与词典教程页（/dict/），各自有 zh / en 两个语言变体 */
+export type PageKey = "home" | "translate" | "anki" | "dict";
 
 export interface PageMeta {
   lang: string;
@@ -592,6 +594,22 @@ export const META: Record<PageKey, Record<Locale, PageMeta>> = {
       title: "Magpie × Anki tutorial: from install to your first word card · Magpie",
       description:
         "The complete Magpie × Anki tutorial: install Anki and AnkiConnect, let Magpie create the Magpie deck with Word and Content card templates in one click; clip to add cards — words go to Word cards, longer text to Content cards, with source and date attached. Review anywhere via AnkiWeb sync and spaced repetition.",
+      ogLocale: "en_US",
+    },
+  },
+  dict: {
+    zh: {
+      lang: "zh-CN",
+      title: "拾趣 × 离线词典教程：划词查词，毫秒出释义 · 拾趣 Magpie",
+      description:
+        "拾趣 × 离线词典完整教程：两条路径获取 open-dictionary 的 8.4 万词条离线词库（安装 Aictionary 自动接入，或手动下载 SQLite 文件），划英文单词毫秒出释义——用法、双语例句、音标与词源，完全离线、不消耗模型额度。",
+      ogLocale: "zh_CN",
+    },
+    en: {
+      lang: "en",
+      title: "Magpie × offline dictionary guide: select a word, read the entry · Magpie",
+      description:
+        "The complete Magpie × offline dictionary guide: two paths to the 84k-entry offline library from open-dictionary (install Aictionary for automatic setup, or download the SQLite file manually); select an English word and read definitions in milliseconds — usage, bilingual examples, phonetics and etymology. Fully offline, no model quota.",
       ogLocale: "en_US",
     },
   },

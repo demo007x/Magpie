@@ -26,6 +26,7 @@ try {
     home: readFileSync("dist/index.html", "utf8"),
     translate: readFileSync("dist/translate.html", "utf8"),
     anki: readFileSync("dist/anki.html", "utf8"),
+    dict: readFileSync("dist/dict.html", "utf8"),
   };
 
   const pages = [
@@ -54,6 +55,18 @@ try {
       page: "anki",
       url: "https://fm126.top/en/anki/",
       file: "dist/en/anki/index.html",
+    },
+    {
+      locale: "zh",
+      page: "dict",
+      url: "https://fm126.top/dict/",
+      file: "dist/dict/index.html",
+    },
+    {
+      locale: "en",
+      page: "dict",
+      url: "https://fm126.top/en/dict/",
+      file: "dist/en/dict/index.html",
     },
   ];
 

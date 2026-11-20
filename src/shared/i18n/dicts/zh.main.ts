@@ -235,6 +235,8 @@ export const zhMain = {
   "dict.useAuto": "改用自动检测",
   "dict.autoHint": "装过兼容的词典应用就能直接用，无需设置。",
   "dict.enOnly": "词典只收英文词条；中文词句和长段落请用「翻译」。",
+  "dict.tutorialLead": "获取词库的完整步骤（两种方式）：",
+  "dict.tutorialLink": "查看获取教程",
   "dict.sourceTitle": "词典来源",
   "dict.credit":
     "词条来自开源项目 Aictionary 的本机词典（据 Wiktionary 快照整理），授权方式 CC BY-SA 4.0。",

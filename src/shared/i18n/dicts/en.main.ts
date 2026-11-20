@@ -246,6 +246,8 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "dict.useAuto": "Use auto-detection",
   "dict.autoHint": "If a compatible dictionary app is installed, it works with nothing to set up.",
   "dict.enOnly": "The dictionary covers English entries only; use Translate for Chinese or long passages.",
+  "dict.tutorialLead": "Full setup steps (two ways):",
+  "dict.tutorialLink": "Open the setup guide",
   "dict.sourceTitle": "Where the entries come from",
   "dict.credit":
     "Entries come from Aictionary's open-source local dictionary (built on a Wiktionary snapshot), licensed CC BY-SA 4.0.",
