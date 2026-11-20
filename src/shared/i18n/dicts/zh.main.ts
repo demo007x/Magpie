@@ -81,6 +81,14 @@ export const zhMain = {
   "capture.generating": "生成中…",
   "capture.tryRun": "试跑",
 
+  // 划词弹出模式
+  "capture.modeAria": "划词弹出方式",
+  "capture.modeAlways": "选中即弹出",
+  "capture.modeAlwaysSub": "选中文字后立刻弹出胶囊。",
+  "capture.modeCtrl": "按住 Ctrl 才弹出",
+  "capture.modeCtrlSub":
+    "选中文字后，按住 Ctrl（macOS 为 ⌘）才弹出胶囊。适合与其他应用的选中弹出功能共存。",
+
   // 兼容取词允许清单（仅 Windows，划词页）：逐应用授权「代按一次复制键」
   "capture.compatTitle": "有些应用读不到文字",
   "capture.compatSub":

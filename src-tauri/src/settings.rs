@@ -421,6 +421,12 @@ pub struct Settings {
     #[serde(default)]
     pub compat_apps: Vec<String>,
     pub debounce_ms: u64,
+    /// 划词功能总开关（托盘菜单控制）：false = 划词捕获完全禁用，不弹胶囊
+    #[serde(default = "default_capture_enabled")]
+    pub capture_enabled: bool,
+    /// 划词弹出模式："always"（选中即弹，默认）| "ctrl"（选中后按 Ctrl/⌘ 才弹）
+    #[serde(default = "default_capture_mode")]
+    pub capture_mode: String,
     /// Obsidian 接入（docs/07）：vault 直写配置
     #[serde(default)]
     pub obsidian: ObsidianConfig,
@@ -487,6 +493,14 @@ fn default_ui_locale() -> String {
     "auto".into()
 }
 
+fn default_capture_mode() -> String {
+    "always".into()
+}
+
+fn default_capture_enabled() -> bool {
+    true
+}
+
 impl Default for Settings {
     fn default() -> Self {
         let p = Provider::default();
@@ -518,6 +532,8 @@ impl Default for Settings {
             app_blacklist: Vec::new(),
             compat_apps: Vec::new(),
             debounce_ms: 200,
+            capture_enabled: default_capture_enabled(),
+            capture_mode: default_capture_mode(),
             obsidian: ObsidianConfig::default(),
             anki: AnkiConfig::default(),
             dict: DictConfig::default(),
@@ -698,6 +714,22 @@ pub fn set_appearance(app: AppHandle, theme: String) {
     }
     patch(&app, |s| s.appearance = theme);
     apply_appearance(&app);
+}
+
+/// 划词弹出模式切换："always"（选中即弹）| "ctrl"（按 Ctrl/⌘ 才弹）
+#[tauri::command]
+pub fn set_capture_mode(app: AppHandle, mode: String) {
+    if !matches!(mode.as_str(), "always" | "ctrl") {
+        return;
+    }
+    patch(&app, |s| s.capture_mode = mode);
+}
+
+/// 划词功能总开关（托盘菜单 checkbox 调用）：切换后重建托盘菜单更新勾选状态
+#[tauri::command]
+pub fn toggle_capture_enabled(app: AppHandle) {
+    patch(&app, |s| s.capture_enabled = !s.capture_enabled);
+    crate::rebuild_tray_menu(&app);
 }
 
 /// 界面语言切换：校验 → 落盘 → 更新 Rust 侧现行语言 → 广播偏好 → 托盘重建。

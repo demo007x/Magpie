@@ -189,6 +189,8 @@ export interface Settings {
    *  空 = 拾趣绝不代按任何键。条目与 appBlacklist 同一套标识（exe 文件名） */
   compatApps: string[];
   debounceMs: number;
+  /** 划词弹出模式："always"（选中即弹）| "ctrl"（按 Ctrl/⌘ 才弹） */
+  captureMode: "always" | "ctrl";
   /** 结果窗口位置记忆（逻辑坐标） */
   resultWindowPos?: [number, number] | null;
   /** 结果窗口尺寸记忆 */

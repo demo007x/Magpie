@@ -11,6 +11,8 @@ pub enum CaptureEvent {
         /// 运行中应用的 bundle identifier（如 com.apple.Safari）；解析失败为空
         bid: String,
         pid: i32,
+        /// Ctrl/⌘ 正在被按住（用于"按住 Ctrl 再选中文本"的交互，直接弹出不挂起）
+        ctrl_held: bool,
     },
     PlainClick {
         x: f64,
@@ -83,8 +85,10 @@ use other::{
 
 use serde::Serialize;
 use serde_json::json;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 use crate::{floating, settings};
@@ -120,6 +124,63 @@ impl Drop for CaptureMuteGuard {
     fn drop(&mut self) {
         set_capture_muted(false);
     }
+}
+
+// ---------- 划词弹出门控（capture_mode == "ctrl" 时的等待槽） ----------
+
+/// 等待 Ctrl/⌘ 触发的挂起选区。deadline 线程在 2s 后清空；新手势覆盖；PlainClick/Escape
+/// 清空；暂停清空。key_proc / tap callback 在修饰键单独抬起时读取并 emit。
+pub(crate) struct PendingPop {
+    pub text: String,
+    pub x: f64,
+    pub y: f64,
+    pub app: String,
+    #[allow(dead_code)]
+    pub bid: String,
+    pub pid: i32,
+    pub gen: u64,
+    #[allow(dead_code)]
+    pub deadline: Instant,
+}
+
+pub(crate) static PENDING_POP: Mutex<Option<PendingPop>> = Mutex::new(None);
+pub(crate) static POP_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// 挂起一个选区等待 Ctrl/⌘ 触发。返回本次的 gen（用于 deadline 线程校验）。
+pub(crate) fn park_selection(p: PendingPop) -> u64 {
+    let gen = p.gen;
+    *PENDING_POP.lock().unwrap() = Some(p);
+    gen
+}
+
+/// 弹出挂起的选区（修饰键单独抬起时调用）。返回 Some(payload) 表示有东西可弹。
+pub(crate) fn pop_pending() -> Option<(String, f64, f64, String, i32)> {
+    PENDING_POP
+        .lock()
+        .unwrap()
+        .take()
+        .map(|p| (p.text, p.x, p.y, p.app, p.pid))
+}
+
+/// 清空挂起槽（取消条件：新手势覆盖、PlainClick、Escape、暂停）。
+pub(crate) fn clear_pending() {
+    *PENDING_POP.lock().unwrap() = None;
+}
+
+/// 启动 deadline 线程：2s 后若 gen 仍匹配则清空槽。
+pub(crate) fn spawn_deadline(app: AppHandle, gen: u64) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(2000));
+        let mut guard = PENDING_POP.lock().unwrap();
+        if let Some(p) = guard.as_ref() {
+            if p.gen == gen {
+                *guard = None;
+            }
+        }
+        drop(guard);
+        // 避免 unused warning
+        let _ = &app;
+    });
 }
 
 /// 捕获链路调试日志：stderr 仅 debug 构建；文件（magpie.log，与 settings 同
@@ -199,8 +260,12 @@ pub fn spawn_worker(app: AppHandle, rx: Receiver<CaptureEvent>) {
     std::thread::spawn(move || {
         let my_pid = std::process::id() as i32;
         while let Ok(ev) = rx.recv() {
+            // 划词功能总开关：托盘菜单关闭后，所有选区事件直接丢弃
+            if !settings::current(&app).capture_enabled {
+                continue;
+            }
             match ev {
-                CaptureEvent::Selection { text, x, y, app: app_path, bid, pid } => {
+                CaptureEvent::Selection { text, x, y, app: app_path, bid, pid, ctrl_held } => {
                     if pid == my_pid {
                         debug_log("selection 跳过：自身进程");
                         continue;
@@ -216,6 +281,31 @@ pub fn spawn_worker(app: AppHandle, rx: Receiver<CaptureEvent>) {
                         ));
                         continue;
                     }
+
+                    // 划词弹出门控：capture_mode == "ctrl" 时，
+                    // 若 Ctrl 正在被按住（"按住 Ctrl 再选中文本"），直接弹出；
+                    // 否则挂起等待 Ctrl 抬起
+                    let mode = settings::current(&app).capture_mode;
+                    if mode == "ctrl" && !ctrl_held {
+                        let gen = POP_GEN.fetch_add(1, Ordering::Relaxed) + 1;
+                        let pending = PendingPop {
+                            text,
+                            x,
+                            y,
+                            app: app_path.clone(),
+                            bid,
+                            pid,
+                            gen,
+                            deadline: Instant::now(),
+                        };
+                        park_selection(pending);
+                        spawn_deadline(app.clone(), gen);
+                        debug_log(format!(
+                            "selection 挂起等待 Ctrl/⌘ gen={gen} app={app_path:?}"
+                        ));
+                        continue;
+                    }
+
                     // 正常通过不发日志：取词侧（forward_selection）已打完整信息，
                     // 这里再打一遍即每次划词双份刷屏
                     let _ = app.emit(
@@ -228,6 +318,8 @@ pub fn spawn_worker(app: AppHandle, rx: Receiver<CaptureEvent>) {
                     floating::dismiss_ocr_if_unpinned(&app);
                 }
                 CaptureEvent::PlainClick { x, y } => {
+                    // 取消挂起的选区（用户点了别处）
+                    clear_pending();
                     // 点击浮动条/识别面板/截图遮罩本身：不 dismiss（避免点面板
                     // 反而被隐藏）。遮罩上的取消由遮罩页自己判定（点选区外发
                     // cancel 命令）——Windows 拖选被自身闸门拒绝后兜底的
@@ -249,6 +341,8 @@ pub fn spawn_worker(app: AppHandle, rx: Receiver<CaptureEvent>) {
                 CaptureEvent::HoverMove { x, y } => floating::route_hover(&app, x, y),
                 CaptureEvent::DragEnd => floating::end_drag(&app),
                 CaptureEvent::Escape => {
+                    // 取消挂起的选区
+                    clear_pending();
                     // Esc 收起与点击空白走同一个事件：钉住/流式中的「忽略」判定
                     // 全部留在前端 dismiss 守卫里（单一事实来源），此处只管
                     // 「有没有东西可收」——两者都不可见时不发无谓的事件

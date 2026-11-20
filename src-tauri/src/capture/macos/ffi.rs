@@ -176,10 +176,16 @@ pub(super) const EV_MOUSE_MOVED: u32 = 5;
 pub(super) const EV_LEFT_DOWN: u32 = 1;
 pub(super) const EV_LEFT_UP: u32 = 2;
 pub(super) const EV_LEFT_DRAGGED: u32 = 6;
-// kCGEventKeyDown=10：只为「浮动条可见时按 Esc 收起」而监听，且回调内即刻过滤
-// （只放行 Esc 的 keycode，其余按键不入队、不落盘、不读取内容）
+// kCGEventKeyDown=10, kCGEventKeyUp=11：只为「浮动条可见时按 Esc 收起」和
+// 「划词弹出门控（⌘/Ctrl 单独按下）」而监听，且回调内即刻过滤
 pub(super) const EV_KEY_DOWN: u32 = 10;
+pub(super) const EV_KEY_UP: u32 = 11;
 pub(super) const KEY_ESC: u16 = 53;
+// 修饰键 keycode（用于划词弹出门控）
+pub(super) const KEY_CMD_LEFT: u16 = 55;
+pub(super) const KEY_CMD_RIGHT: u16 = 54;
+pub(super) const KEY_CTRL_LEFT: u16 = 59;
+pub(super) const KEY_CTRL_RIGHT: u16 = 62;
 // CGEventTapLocation：kCGHIDEventTap=0, kCGSessionEventTap=1（勿混淆！）
 pub(super) const K_CG_HID_EVENT_TAP: u32 = 0;
 pub(super) const K_CG_SESSION_EVENT_TAP: u32 = 1;

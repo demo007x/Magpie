@@ -87,6 +87,14 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "capture.generating": "Generating…",
   "capture.tryRun": "Test run",
 
+  // Capture popup mode
+  "capture.modeAria": "When to show the capsule",
+  "capture.modeAlways": "Show on select",
+  "capture.modeAlwaysSub": "Show the capsule as soon as you select text.",
+  "capture.modeCtrl": "Show on Ctrl",
+  "capture.modeCtrlSub":
+    "Select text, then hold Ctrl (⌘ on macOS) to show the capsule. Useful when other apps already pop up on selection.",
+
   // Compatibility lookup allowlist (Windows only, capture page): per-app opt-in
   "capture.compatTitle": "Apps that hide their text",
   "capture.compatSub":
