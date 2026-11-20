@@ -200,7 +200,7 @@ Issues and PRs are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) (written in S
 Released under the [MIT](./LICENSE) license.
 
 The offline dictionary feature only reads a dictionary file that already exists on
-your machine; that data comes from [Aictionary](https://github.com/ahpxex/Aictionary)
-(a learner dictionary built on a Wiktionary snapshot) under
-[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). It is not bundled with
-or redistributed by Magpie, and the same credit appears in Settings › Dictionary.
+your machine; that data comes from [open-dictionary](https://github.com/ahpxex/open-dictionary),
+the upstream data project built on a Wiktionary snapshot (Aictionary is one of its clients),
+under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). It is not bundled
+with or redistributed by Magpie, and the same credit appears in Settings › Dictionary.

@@ -235,7 +235,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // 词典页（离线查词，ADR-12）
   "dict.hint":
-    "Select an English word and get dictionary meanings instantly — offline, no model credits. The dictionary belongs to the dictionary app on your computer; Magpie only reads it. Changes apply after saving.",
+    "Select an English word and get dictionary meanings instantly — offline, no model credits. The dictionary file lives on your computer; Magpie only reads it. Changes apply after saving.",
   "dict.stateReady": "Dictionary ready — {count} entries",
   "dict.stateUnset": "No dictionary found yet",
   "dict.stateMissing": "This dictionary file can't be found — it may have moved or been deleted",
@@ -245,13 +245,13 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "dict.autoDetected": "Auto-detected",
   "dict.chosenManually": "Chosen manually",
   "dict.useAuto": "Use auto-detection",
-  "dict.autoHint": "If a compatible dictionary app is installed, it works with nothing to set up.",
+  "dict.autoHint": "By default Magpie detects the dictionary used by compatible apps; if you keep it elsewhere, choose the file manually.",
   "dict.enOnly": "The dictionary covers English entries only; use Translate for Chinese or long passages.",
   "dict.tutorialLead": "Full setup steps (two ways):",
   "dict.tutorialLink": "Open the setup guide",
   "dict.sourceTitle": "Where the entries come from",
   "dict.credit":
-    "Entries come from Aictionary's open-source local dictionary (built on a Wiktionary snapshot), licensed CC BY-SA 4.0.",
+    "Entries come from the open-dictionary project (built on a Wiktionary snapshot), licensed CC BY-SA 4.0. Aictionary is only one client of that dictionary.",
   "dict.sourceLink": "Project page",
 
   // Prompts page

@@ -114,7 +114,7 @@ export default function DictPage({ settings, patch, saveNow }: PageProps) {
           <button
             className="text-link"
             onClick={() =>
-              invoke("open_url", { url: "https://github.com/ahpxex/Aictionary" }).catch(
+              invoke("open_url", { url: "https://github.com/ahpxex/open-dictionary" }).catch(
                 () => undefined,
               )
             }

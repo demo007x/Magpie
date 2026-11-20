@@ -224,7 +224,7 @@ export const zhMain = {
 
   // 词典页（离线查词，ADR-12）
   "dict.hint":
-    "划到英文单词时直接给词典释义——毫秒级出结果、不联网、不消耗模型额度。词典由你本机的词典应用维护，拾趣只读取它，不会改动。更改需保存后生效。",
+    "划到英文单词时直接给词典释义——毫秒级出结果、不联网、不消耗模型额度。词库文件放在你本机，拾趣只读取它，不会改动。更改需保存后生效。",
   "dict.stateReady": "词典可用，共 {count} 条词条",
   "dict.stateUnset": "还没找到可用的词典",
   "dict.stateMissing": "找不到这个词典文件，它可能已被移动或删除",
@@ -234,13 +234,13 @@ export const zhMain = {
   "dict.autoDetected": "自动检测到",
   "dict.chosenManually": "手动选择",
   "dict.useAuto": "改用自动检测",
-  "dict.autoHint": "装过兼容的词典应用就能直接用，无需设置。",
+  "dict.autoHint": "默认检测兼容词典应用的词库；若已把词库放到其他位置，点「选择文件…」指定即可。",
   "dict.enOnly": "词典只收英文词条；中文词句和长段落请用「翻译」。",
   "dict.tutorialLead": "获取词库的完整步骤（两种方式）：",
   "dict.tutorialLink": "查看获取教程",
   "dict.sourceTitle": "词典来源",
   "dict.credit":
-    "词条来自开源项目 Aictionary 的本机词典（据 Wiktionary 快照整理），授权方式 CC BY-SA 4.0。",
+    "词条来自开源项目 open-dictionary 的词库数据（据 Wiktionary 快照整理），授权方式 CC BY-SA 4.0。Aictionary 只是该词库的一个客户端。",
   "dict.sourceLink": "项目主页",
 
   // 提示词页
