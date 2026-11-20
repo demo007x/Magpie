@@ -103,6 +103,7 @@ static ZH: &[(&str, &str)] = &[
     ("toast.updateUpToDate", "已是最新版本 "),
     ("toast.updateCheckFailed", "这次没检查成，请稍后再试"),
     ("toast.vscodeAxGuidance", "VS Code 需开启辅助功能支持才能划词：在 VS Code 设置中把 accessibilitySupport 设为 on（VS Code 将进入读屏优化模式）"),
+    ("toast.compatHint", "「{app}」里的文字读不到\n在「设置 › 划词 › 有些应用读不到文字」里加上它"),
     // 通用错误（返回前端 toast / 结果面板展示）
     ("err.ocrHelperLaunch", "无法启动 OCR 助手"),
     ("err.recognizeFailed", "文本识别失败"),
@@ -208,6 +209,7 @@ static EN: &[(&str, &str)] = &[
     ("toast.updateUpToDate", "You're on the latest version "),
     ("toast.updateCheckFailed", "Couldn't check for updates. Please try again later"),
     ("toast.vscodeAxGuidance", "VS Code needs Accessibility Support enabled to capture text: set accessibilitySupport to on in VS Code settings (VS Code will switch to its screen-reader optimized mode)"),
+    ("toast.compatHint", "Magpie can't read the text in {app}\nAdd it under Settings › Capture › Apps that hide their text"),
     // Errors (shown to the user as toasts / in the result panel)
     ("err.ocrHelperLaunch", "Couldn't launch the text-recognition helper"),
     ("err.recognizeFailed", "Text recognition failed"),

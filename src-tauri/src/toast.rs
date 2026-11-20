@@ -482,6 +482,14 @@ pub fn notify(app: AppHandle, message: String, kind: Option<String>) {
     show_toast(&app, &message, &kind.unwrap_or_else(|| "info".into()));
 }
 
+/// 用户点掉 toast：与自动隐藏同一条收场路径（序号推进，作废未触发的排期）。
+/// toast 窗不可聚焦（Windows WS_EX_NOACTIVATE / macOS 非 key 窗），但点击照常送达
+/// webview——胶囊与结果窗收动作就是同一套，这里不是新机制
+#[tauri::command]
+pub fn dismiss_toast(app: AppHandle) {
+    hide_toast(&app);
+}
+
 /// 前端内容测量回调：渲染完成后量宽高（卡片尺寸），记入 TOAST_SIZE 后触发滚入。
 /// 窗口不在此缩放——tao 的 set_size 是 GCD 异步派发，会与滚入动画竞态
 /// （约束 4），窗口尺寸由 try_roll_in 滚入前 sync_set_frame 同步落定

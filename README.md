@@ -90,6 +90,7 @@ Magpie exists to make on-screen text actionable where it is: select to translate
 - **Tray resident** — lives in the menu bar (macOS) / system tray (Windows); closing the main window just hides it while capture keeps running; GitHub update notifications
 - **Blocked apps** — selection is disabled inside terminals, password managers, and other sensitive apps; system apps are reliably covered
 - **Compatibility mode (macOS)** — text selection also works in WeChat, Office, and similar apps, without disturbing your clipboard contents
+- **Compatibility lookup, per app (Windows)** — some apps never tell the system what you selected (self-drawn editors and players). Add such an app under Settings › Capture and Magpie will press the copy key once to grab the text, then put your clipboard back. **The list ships empty and nothing is ever typed unless you add an app** — a keystroke can't be told apart from a real one by the target app, so this stays an explicit per-app opt-in
 
 ## Prerequisites
 
@@ -151,7 +152,7 @@ Data flow: platform capture (macOS: CGEventTap + AX · Windows: low-level mouse 
 ## Privacy & Security
 
 - macOS: selection is read via Accessibility APIs by default; the built-in compatibility mode simulates ⌘C and restores the clipboard afterwards
-- Windows: selection is read via UI Automation (WH_MOUSE_LL hooks) — no clipboard use and no system-permission grants; apps running as administrator are out of reach (UIPI)
+- Windows: selection is read via UI Automation (WH_MOUSE_LL hooks) — no clipboard use and no system-permission grants, unless you add an app to the compatibility list above, in which case the copy key is pressed once in that app (Ctrl+Insert, falling back to Ctrl+C only if the app ignores it) and the clipboard is restored afterwards. Apps running as administrator are out of reach (UIPI)
 - API keys are stored in plaintext in local `settings.json` (moving to the system keychain in M2) and are sent only to the LLM / translation endpoints you configure
 - No telemetry, no accounts
 

@@ -65,11 +65,20 @@ function ToastApp() {
   const Icon =
     toast.kind === "err" ? AlertCircle : toast.kind === "progress" ? LoaderCircle : Info;
   const [main, ...rest] = toast.message.split("\n");
+  // 点一下即收场（长文案或碍眼时不用等自动隐藏）。进度条不响应：它是状态指示，
+  // 点掉也不会让正在跑的识别停下来，反而让人以为取消了
+  const dismissable = toast.kind !== "progress";
+  const dismiss = () => {
+    if (dismissable) invoke("dismiss_toast").catch(() => undefined);
+  };
   return (
     <div className="stage">
       {/* key 随内容变化：状态换装（如 识别中→失败）时触发滑入动画。
           动画挂在 .toast-body（图标+文字整体），磨砂底面原地不动 */}
-      <div className={`toast-pop ${toast.kind}`}>
+      <div
+        className={`toast-pop ${toast.kind}${dismissable ? " dismissable" : ""}`}
+        onClick={dismiss}
+      >
         <div className="toast-body">
           <Icon className={`ic ${toast.kind === "progress" ? "spin" : ""}`} />
           <span className="toast-text">

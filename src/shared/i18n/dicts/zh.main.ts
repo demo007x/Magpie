@@ -80,6 +80,16 @@ export const zhMain = {
   "capture.generating": "生成中…",
   "capture.tryRun": "试跑",
 
+  // 兼容取词允许清单（仅 Windows，划词页）：逐应用授权「代按一次复制键」
+  "capture.compatTitle": "有些应用读不到文字",
+  "capture.compatSub":
+    "把这些应用加进名单后，你选中文字时拾趣会代按一次复制键把文字取出来，随后立刻把剪贴板恢复成原来的内容。只在读不到文字的应用里这样，其他应用不受影响；名单为空时拾趣不会代你按任何键。",
+  "capture.compatRisk":
+    "注意：如果复制键在那个应用里没起作用，拾趣会改用 Ctrl+C 再试一次——那时应用里正在运行的命令（例如编辑器内置的终端）会被中断。只添加你确实需要的应用。",
+  "capture.compatEmpty": "名单为空。",
+  "capture.compatPick": "选择应用…",
+  "capture.compatRemove": "移出名单",
+
   // 快捷键页
   "sc.hint":
     "点击输入框按下新组合键，需含 ⌘ / Ctrl / Alt / Shift 之一，Esc 取消；被其他应用占用的组合键不生效。需保存生效。",

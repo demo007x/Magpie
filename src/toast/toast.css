@@ -97,6 +97,10 @@ body,
   box-shadow: 0 3px 14px rgba(0, 0, 0, 0.16), 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+.toast-pop.dismissable {
+  cursor: pointer;
+}
+
 .toast-pop svg {
   flex: none;
   width: 15px;
