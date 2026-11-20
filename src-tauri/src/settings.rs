@@ -624,7 +624,10 @@ pub fn is_blacklisted(app: &AppHandle, proc_path: &str, bundle_id: Option<&str>)
 /// 兼容取词允许清单命中判定。匹配语义与黑名单一致（小写、子串）：Windows 侧应用
 /// 标识就是 exe 文件名，应用移动或重装后仍能命中。
 /// 刻意做成不读 AppHandle 的纯函数——它是「是否向别人的应用发按键借用复制」的判据，
-/// 杀伤性动作的闸门必须能单测
+/// 杀伤性动作的闸门必须能单测。
+/// 仅 Windows 兼容取词路径使用（调用方在 cfg(windows) 文件内）；定义随门控走，
+/// mac 构建不编译，免得 dead_code 警告（单测随函数同门控）
+#[cfg(windows)]
 pub fn compat_allows(settings: &Settings, proc_path: &str) -> bool {
     let p = proc_path.to_lowercase();
     settings.compat_apps.iter().any(|a| {
@@ -752,6 +755,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(windows)]
     fn compat_list_matches_exe_name_case_insensitively() {
         let s = Settings {
             compat_apps: vec!["Zed.exe".into()],
@@ -763,6 +767,7 @@ mod tests {
 
     /// 空名单 = 兼容模式绝不发按键；空白条目不算命中（输入框清空不该放行杀伤动作）
     #[test]
+    #[cfg(windows)]
     fn compat_list_never_matches_when_empty_or_blank() {
         assert!(!compat_allows(&Settings::default(), r"E:\Tool\Zed\zed.exe"));
         let blank = Settings {
