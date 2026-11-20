@@ -30,6 +30,14 @@ export function visionOcrPrompt(): string {
   return getLocale() === "en" ? VISION_OCR_PROMPTS.en : VISION_OCR_PROMPTS.zh;
 }
 
+/** 取字路径的用户消息：单段提取，不引入两段式标记协议（system 已约定输出
+ *  口径，user 只需指明本次输入就是这张图，避免与 system 指令打架） */
+export function visionOcrUserText(): string {
+  return getLocale() === "en"
+    ? "Extract all text in this image. Output the text only."
+    : "提取这张图片中的全部文字，只输出文字本身。";
+}
+
 /** 视觉动作的用户消息指令：一次请求完成「提取原文 + 执行任务」，输出用
  *  固定标记分段（system 承载动作提示词，user 附图片与输出格式约定） */
 export function visionUserText(): string {

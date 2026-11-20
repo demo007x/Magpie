@@ -99,7 +99,12 @@ import {
   type AiExtractResult,
 } from "../shared/aiExtract";
 import { TRANSLATE_SERVICES, translateMissingReason, translateService } from "../shared/translate";
-import { visionOcrPrompt, visionSplit, visionUserText } from "../shared/aiVision";
+import {
+  visionOcrPrompt,
+  visionOcrUserText,
+  visionSplit,
+  visionUserText,
+} from "../shared/aiVision";
 import type { OcrLocalResult } from "./types";
 import {
   extractAll,
@@ -2098,16 +2103,17 @@ export default function App() {
     const cacheKey = `vision:${id ?? ""}:${serviceOverride ?? ""}:${imgPath}`;
     const cached = cacheGet(cacheKey);
     if (cached !== null) {
-      // 缓存存的是含标记的完整原文，命中后按流结束语义拆分回填
-      const sp = isExtract ? null : visionSplit(cached, true);
+      // 缓存存的是模型完整输出（动作路径含两段式标记），命中后按流结束
+      // 语义拆分回填；取字经同一拆分兜底，洗掉模型未守单段协议时的标记
+      const sp = visionSplit(cached, true);
       setPhase((p) =>
         p.kind === "ocr"
           ? isExtract
-            ? { ...p, text: cached, streaming: false, error: null }
+            ? { ...p, text: sp.source || sp.result, streaming: false, error: null }
             : {
                 ...p,
-                text: sp!.source,
-                output: sp!.result,
+                text: sp.source,
+                output: sp.result,
                 streaming: false,
                 error: null,
                 plain: false,
@@ -2139,7 +2145,11 @@ export default function App() {
       if (runIdRef.current !== runId) return;
       setPhase((p) => {
         if (p.kind !== "ocr") return p;
-        if (isExtract) return { ...p, text: full };
+        // 取字：单段纯文本，同一拆分兜底（洗掉模型未守协议时输出的标记）
+        if (isExtract) {
+          const sp = visionSplit(full);
+          return { ...p, text: sp.source || sp.result };
+        }
         // 两段式输出：流中原文实时回填原文区（提取进度可见），结果标记
         // 出现后结果区接力流式（拆分见 visionSplit）
         const sp = visionSplit(full);
@@ -2157,7 +2167,11 @@ export default function App() {
             {
               role: "user",
               content: [
-                { type: "text", text: visionUserText() },
+                {
+                  type: "text",
+                  // 取字只要原文，单段指令；动作才要求两段式标记协议
+                  text: isExtract ? visionOcrUserText() : visionUserText(),
+                },
                 { type: "image_url", image_url: { url: dataUrl } },
               ],
             },
@@ -2181,16 +2195,17 @@ export default function App() {
               }
               streamingRef.current = false;
               cachePut(cacheKey, full);
-              // 两段式拆分（done=true：无结果标记时全文按结果容错，见 visionSplit）
-              const sp = isExtract ? null : visionSplit(full, true);
+              // done=true：无结果标记时全文按结果容错，见 visionSplit；取字经
+              // 同一拆分兜底（守协议时纯文本走 result 段，异常标记走 source 段）
+              const sp = visionSplit(full, true);
               setPhase((p) =>
                 p.kind === "ocr"
                   ? isExtract
-                    ? { ...p, text: full, streaming: false }
+                    ? { ...p, text: sp.source || sp.result, streaming: false }
                     : {
                         ...p,
-                        text: sp!.source,
-                        output: sp!.result,
+                        text: sp.source,
+                        output: sp.result,
                         streaming: false,
                       }
                   : p,

@@ -29,6 +29,8 @@ pnpm build:debug:app    # debug .app 包（macOS 26 下 dev 裸二进制的托�
 
 **坑**：`tauri::generate_context!` 在编译期读取 `../dist` 与 `icons/`。若 cargo 报 icon/dist 缺失，先跑 `pnpm build`（dist）或 `pnpm tauri icon`（图标）再重试。
 
+**坑（Windows ARM64 本机）**：构建需要 clang——ring 的 build script 在 `windows + aarch64` 目标强制用 clang 编译 C/汇编（ring 经 `tauri-plugin-updater` → `reqwest` → `rustls` 进依赖图；MSVC 的 armasm64 不支持它要的 GAS 语法，x64 CI 无此需求）。装原生 ARM64 版：`winget install LLVM.LLVM --architecture arm64`，装完重开终端再跑 cargo。
+
 ## 架构：Rust 管不变的，TS 管多变的
 
 前端是多入口 MPA（vite 三入口）：`main`（index.html，设置/自检）、`floating`（floating.html，浮动条/OCR 面板/钉图复用）、`toast`（toast.html，全局轻提示）。
