@@ -24,6 +24,10 @@ export const IS_PIN = WIN_LABEL.startsWith("pin-");
 export const IS_WIN_LIKE = !/Mac/i.test(navigator.platform);
 export const POPS_EXTERNAL = IS_WIN_LIKE && !IS_OCR && !IS_PIN;
 
+// 只给 Windows 的能力（不是「非 macOS」的近似）：盘符路径的打开动作走 Windows
+/// Shell，其余平台 Rust 侧明确回 unsupported，界面上不该出现这一条
+export const IS_WINDOWS = /Win/i.test(navigator.platform);
+
 // 二级浮层开合状态的取值域（fading 退场快照同域）：chev:* 仅浮动条胶囊、
 // overflow 浮动条「更多」收纳 / OCR 结果窗胶囊堆共用一名、pmenu:* 为堆内
 // 行侧菜单、search/translate/obsidian/anki 为结果窗动作行 ⌄ 槽位菜单

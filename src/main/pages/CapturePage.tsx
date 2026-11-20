@@ -21,6 +21,8 @@ import type { PageProps } from "./types";
 import { t, useLocale } from "../../shared/i18n";
 
 const IS_MAC = /Mac/i.test(navigator.platform);
+// 「打开位置」走 Windows Shell 的位置能力，macOS 上没有对应实现（无能力不显示开关）
+const IS_WINDOWS = /Win/i.test(navigator.platform);
 
 export default function CapturePage({ settings, patch, saveNow }: PageProps) {
   useLocale(); // 界面语言变化时重渲染（文案经 t() 取词）
@@ -41,9 +43,13 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
   // 且同时最多上一个胶囊，四者之间排序对浮动条没有意义——混在常驻列表里反而误导"可排"
   const residentIds = orderedActionIds.filter((id) => !CONTEXT_ACTION_IDS.has(id));
   // 打开地图依赖地名识别（macOS NLTagger，Windows 无系统级等价物）——
-  // Windows 上不显示该开关（无能力不显示），地点 chip 运行时本就不会出现
+  // Windows 上不显示该开关（无能力不显示），地点 chip 运行时本就不会出现。
+  // 打开位置同理反向：只有 Windows 有 Shell 位置能力，macOS 上不显示该开关
   const contextIds = orderedActionIds.filter(
-    (id) => CONTEXT_ACTION_IDS.has(id) && (IS_MAC || id !== "addr"),
+    (id) =>
+      CONTEXT_ACTION_IDS.has(id) &&
+      (IS_MAC || id !== "addr") &&
+      (IS_WINDOWS || id !== "path"),
   );
 
   // 拖拽排序（指针事件实现，不依赖 WKWebView 残缺的 HTML5 DnD）：

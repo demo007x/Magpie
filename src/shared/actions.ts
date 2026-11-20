@@ -275,6 +275,14 @@ export const ACTIONS: ActionDef[] = [
     kind: "local",
   },
   {
+    // 整段选区就是一个本机路径时才出现（判据见 textContext.extractPath）。
+    // 仅 Windows：显隐由浮动条按平台筛（floating/env.ts::IS_WINDOWS），注册表本身
+    // 三平台都带这一条——设置页与动作排序不因此分叉
+    id: "path",
+    label: "打开位置",
+    kind: "local",
+  },
+  {
     id: "obsidian",
     label: "Obsidian",
     kind: "local",
@@ -302,6 +310,7 @@ export const allActionIds = (s: Settings) =>
 
 /** 上下文动作：选中内容里出现对应实体才上胶囊，因此它们的相互顺序对胶囊无意义
     （恰好一个 → 该动作单独出现；多个 → 合并成一个「提取信息」按钮）。
-    设置页据此把它们与常驻动作分成两张卡（见 main/App.tsx） */
-export const CONTEXT_ACTION_IDS = new Set(["link", "email", "tel", "code", "date", "addr"]);
+    设置页据此把它们与常驻动作分成两张卡（见 main/App.tsx）。
+    path 的显隐还多一道平台闸（仅 Windows 有 Shell 位置能力，见 CapturePage） */
+export const CONTEXT_ACTION_IDS = new Set(["link", "email", "tel", "code", "date", "addr", "path"]);
 export const isContextAction = (id: string) => CONTEXT_ACTION_IDS.has(id);

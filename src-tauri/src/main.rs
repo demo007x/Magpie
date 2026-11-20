@@ -11,6 +11,7 @@ mod i18n;
 mod obsidian;
 mod ocr;
 mod pageurl;
+mod paths;
 mod pin;
 mod settings;
 mod speech;
@@ -785,6 +786,7 @@ fn main() {
             anki::anki_update_model_styling,
             entities::detect_places,
             entities::open_in_calendar,
+            paths::open_local_path,
             dict::dict_status,
             dict::dict_lookup,
             pageurl::frontmost_web_url,

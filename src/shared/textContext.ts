@@ -199,6 +199,64 @@ export function extractTels(raw: string): string[] {
   return cap(dedupe(t.match(TEL_CN_RE) ?? []));
 }
 
+// ---------- 本机路径（Windows 形态，0.1.24） ----------
+
+/** 盘符绝对路径的整体形态：`E:\a\b`、`E:/a/b`、`E:\`。锚定整段匹配，因此裸盘符
+ *  （`E:`）与相对路径都不在这一支。NTFS 非法字符与控制字符出现即说明这坨文本不是
+ *  路径（带通配的搜索串、日志片段），不给动作。空格合法（`C:\Program Files`），而
+ *  路径可以长到占满整块屏幕——「结尾在哪里」无法从语法判断，这就是只认整段选区的原因 */
+const DRIVE_PATH_RE = /^[A-Za-z]:[\\/][^<>"|?*\p{Cc}]*$/u;
+/** WSL 发行版路径：`\\wsl.localhost\Ubuntu\home\me\a`，旧别名 `\\wsl$\` 同样收下。
+ *  它写起来是 UNC，但不是共享盘：这条命名空间由 Windows 自己提供，Explorer 原生能开，
+ *  不需要凭据、也不经过网络会话（用户 2026-11-19 明确要求支持这一条）。
+ *  大小写不敏感：主机段是本机命名空间标识，日志里常按习惯写成 `\\WSL.LOCALHOST\`，
+ *  Rust 侧（paths.rs::wsl_form）同样 to_ascii_lowercase，两边判据必须一致 */
+const WSL_PATH_RE = /^\\\\wsl(?:\.localhost|\$)(?:\\[^<>"|?*\p{Cc}]*)?$/iu;
+const MAX_PATH_LEN = 1024; // 正常路径远不到；超长串是误选（整段日志、base64）
+
+/** `file:///E:/a`、`file://localhost/E:/a` → `E:\a`（资源管理器地址栏与浏览器里
+ *  复制出来的链接就是这种写法）。盘符要靠正则从 scheme 之后取，不能用
+ *  search(/[A-Za-z]:/)：`file:` 自己就是「字母+冒号」，会把 `e:` 当成盘符（探针实测）。
+ *  地址栏做过百分号编码，还原一次（%20 → 空格）；残缺序列原样保留，不猜 */
+const FILE_URL_RE = /^file:\/\/(?:localhost)?\/{0,2}([A-Za-z]:[\\/][^?#]*)/i;
+
+function fileUrlToPath(raw: string): string | null {
+  const m = FILE_URL_RE.exec(raw);
+  if (!m) return null;
+  return m[1].replace(/%[0-9A-Fa-f]{2}/g, (esc) => {
+    try {
+      return decodeURIComponent(esc);
+    } catch {
+      return esc;
+    }
+  });
+}
+
+/** 提取本机路径：只在**整段选区就是一个路径**时命中（产品决策 2026-11-19）。
+ *  句子里夹着的路径不认——路径含空格，「结尾在哪里」无法从语法判断，猜结尾就会把
+ *  「见 E:\Project\Magpie 目录里的说明」后面的中文一起带上，打开的是不存在的位置。
+ *
+ *  只看语法、不问文件系统：这条判据跑在每次划词的热路径上，一次 stat 会让网络盘、
+ *  映射盘、已拔掉的 U 盘变成几百毫秒的卡顿（WSL 未启动的发行版也一样，第一次访问要
+ *  等它开机）。真不存在是常态（选区里的路径常来自日志或聊天记录），交给执行侧回一行
+ *  「这个位置不存在」，语气是陈述不是报错。用户点了才去问，那时等一等是应得的。
+ *
+ *  本版收下的形态：盘符路径、`file:///E:/` 地址栏写法、WSL 发行版路径。
+ *  不做、接口预留的形态：共享盘 `\\server\share`（判在不在要发起 SMB 会话，服务器
+ *  掉线时以十秒计，且可能弹凭据窗）、POSIX 写法 `/home/me/a`（那是 Linux 的路径，
+ *  在原生 Linux 上做才对，塞进 WSL 里做只会得到一个既不像 Windows 也不像 Linux 的东西）。
+ *  将来放开时只动这一处判据 + paths.rs 的执行分支，动作与面板不用改。 */
+export function extractPath(raw: string): string | null {
+  const t = raw.trim();
+  if (!t || t.length > MAX_PATH_LEN) return null;
+  const fromUrl = /^file:\/\//i.test(t) ? fileUrlToPath(t) : null;
+  if (!fromUrl && /^file:\/\//i.test(t)) return null; // file:// 开头却还原不出盘符：不是本机位置
+  // 正斜杠统一成反斜杠再判：`E:/a` 与 `//wsl.localhost/Ubuntu/a` 都是合法写法，但面板
+  // 要显示的、复制走的是同一个形态，资源管理器地址栏也只认反斜杠
+  const body = (fromUrl ?? t).replace(/\//g, "\\");
+  return DRIVE_PATH_RE.test(body) || WSL_PATH_RE.test(body) ? body : null;
+}
+
 // ---------- 统一提取入口（胶囊「提取信息」用） ----------
 
 export interface Extracted {
@@ -206,6 +264,9 @@ export interface Extracted {
   emails: string[];
   tels: string[];
   codes: string[];
+  /** 本机路径（Windows 形态）：整段选区就是一个路径时才有这一条，其余组同时清空——
+   *  路径里的数字段（`D:\2026\1031`）不是验证码也不是电话，反斜杠也不是分隔符 */
+  paths: string[];
 }
 
 function uniqByKey(arr: string[], key: (s: string) => string): string[] {
@@ -235,7 +296,12 @@ export function extractAll(raw: string): Extracted {
   // 输入截断至 8KB：超长选区（整篇文章）提取无意义，同时封死
   // 邮箱正则尾部回溯的理论 O(n²) 最坏情况
   if (t.length > 8192) t = t.slice(0, 8192);
-  if (!t) return { urls: [], emails: [], tels: [], codes: [] };
+  if (!t) return { urls: [], emails: [], tels: [], codes: [], paths: [] };
+
+  // 整段就是一个本机路径 → 这一组独占，其余组清空（不走保护区间：那套只挡验证码，
+  // 而路径里的数字段既会被当成电话，也会被当成编号——位置本身就是答案，不该再拆）
+  const wholePath = extractPath(t);
+  if (wholePath) return { urls: [], emails: [], tels: [], codes: [], paths: [wholePath] };
 
   const protectedRanges: Array<[number, number]> = [];
 
@@ -292,6 +358,7 @@ export function extractAll(raw: string): Extracted {
     emails: cap(uniqByKey(emails, (e) => normKey("email", e))),
     tels: cap(uniqByKey(tels, (n) => normKey("tel", n))),
     codes: cap(dedupe(codes)),
+    paths: [],
   };
 }
 

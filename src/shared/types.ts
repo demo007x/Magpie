@@ -33,6 +33,8 @@ export interface ActionFlags {
   date: boolean;
   /** 上下文动作：选中文本含地点时出现「打开地图」 */
   addr: boolean;
+  /** 上下文动作（仅 Windows）：整段选区就是一个本机路径时出现「打开位置」 */
+  path: boolean;
   /** 接入动作：已配置 Obsidian vault 时出现「Obsidian」（笔记/任务/卡片） */
   obsidian: boolean;
   /** 接入动作：已连接 AnkiConnect（deck 非空）时出现「Anki」划词建卡 */
@@ -249,6 +251,18 @@ export interface DictEntry {
   memoryHook: string;
   etymology: string;
 }
+
+/** Rust paths::open_local_path 的回包（对应 src-tauri/src/paths.rs 六个常量）。
+ * 成功分三档：打开目录 / 在文件管理器里选中 / 交给默认应用——三种结局用户看到的
+ * 完全不同，文案也就不同。前端只按值取文案、不做算术——所以这里用字面量联合而不是
+ * string：Rust 侧新增一档时取值处编译期报错，不会把 unknown 当成功提示发出去 */
+export type PathOutcome =
+  | "opened-dir"
+  | "opened-reveal"
+  | "opened-app"
+  | "missing"
+  | "failed"
+  | "unsupported";
 
 // ai_chat Channel 流消息（对应 src-tauri/src/ai.rs AiEvent）
 export type AiEvent =
