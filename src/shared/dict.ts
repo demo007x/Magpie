@@ -1,4 +1,4 @@
-// src/shared/dict.ts —— 离线词典结果的排版层（ADR-11）。
+// src/shared/dict.ts —— 离线词典结果的排版层（ADR-12）。
 // Rust 只回结构化数据（src-tauri/src/dict/query.rs 的 DictEntry），词性显示名、
 // 版面与提示文案都在 TS——与「Rust 管不变的、TS 管多变的」同一分工。
 // 产出 markdown 送进既有结果窗（remarkGfm + remarkBreaks），于是钉图、朗读、复制、

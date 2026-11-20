@@ -126,7 +126,7 @@ export interface AnkiConfig {
   defaultCard: string;
 }
 
-/** 离线词典配置（ADR-11）：只读用户本机已有的兼容词库文件——不随安装包分发、
+/** 离线词典配置（ADR-12）：只读用户本机已有的兼容词库文件——不随安装包分发、
  *  本版不做下载器。dbPath 空 = 自动探测（装过兼容词典应用时即命中）。 */
 export interface DictConfig {
   /** 词库文件绝对路径（空 = 自动探测） */

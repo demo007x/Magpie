@@ -1,4 +1,4 @@
-// 词典页：离线查词的词库来源（ADR-11）。拾趣只读用户本机已有的词典文件——
+// 词典页：离线查词的词库来源（ADR-12）。拾趣只读用户本机已有的词典文件——
 // 不下载、不随包分发、也不写它一个字节；本页只回答「用的哪个文件、能不能用」。
 import { invoke } from "@tauri-apps/api/core";
 import { Trash2 } from "lucide-react";

@@ -1589,7 +1589,7 @@ export default function App() {
       }
 
       if (id === "dict") {
-        // 本机词库直查（ADR-11，毫秒级、不联网）。胶囊上点击先导流到结果窗再执行：
+        // 本机词库直查（ADR-12，毫秒级、不联网）。胶囊上点击先导流到结果窗再执行：
         // 结果落进既有窗口，钉图/朗读/复制/存 Obsidian 与 Anki 背面全都免费可用
         if (phase.kind !== "ocr" && sourceOverride === undefined) {
           invoke("push_selection_result", {

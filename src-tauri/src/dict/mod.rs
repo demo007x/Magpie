@@ -1,5 +1,5 @@
-//! 离线词典（ADR-11）：读用户本机已有的兼容词库做零网络取词——不联网、不要
-//! API Key、不随安装包分发（数据许可 CC BY-SA 4.0，见 ADR-11）。
+//! 离线词典（ADR-12）：读用户本机已有的兼容词库做零网络取词——不联网、不要
+//! API Key、不随安装包分发（数据许可 CC BY-SA 4.0，见 ADR-12）。
 //!
 //! `#[tauri::command]` 包装器集中在本模块：`generate_handler!(dict::xxx)` 在此路径
 //! 解析宏生成项，子模块 re-export 不可靠（与 entities/mod.rs 同一教训）。

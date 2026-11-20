@@ -132,7 +132,7 @@ pub fn pick_vault_dir() -> Option<String> {
     Some(path.to_string_lossy().into_owned())
 }
 
-/// 系统文件选择面板：选离线词库文件（本机已有的兼容词库，见 ADR-11——拾趣只读
+/// 系统文件选择面板：选离线词库文件（本机已有的兼容词库，见 ADR-12——拾趣只读
 /// 这个文件，不复制、不改写）。用户取消 = None。必须在主线程调用（同 pick_vault_dir）。
 #[tauri::command]
 pub fn pick_dict_file() -> Option<String> {

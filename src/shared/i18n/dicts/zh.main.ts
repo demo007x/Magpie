@@ -221,7 +221,7 @@ export const zhMain = {
   "anki.setupCancel": "我自己选",
   "anki.setupConfirm": "创建配套牌组",
 
-  // 词典页（离线查词，ADR-11）
+  // 词典页（离线查词，ADR-12）
   "dict.hint":
     "划到英文单词时直接给词典释义——毫秒级出结果、不联网、不消耗模型额度。词典由你本机的词典应用维护，拾趣只读取它，不会改动。更改需保存后生效。",
   "dict.stateReady": "词典可用，共 {count} 条词条",

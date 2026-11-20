@@ -232,7 +232,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "anki.setupCancel": "I'll pick",
   "anki.setupConfirm": "Create companion decks",
 
-  // 词典页（离线查词，ADR-11）
+  // 词典页（离线查词，ADR-12）
   "dict.hint":
     "Select an English word and get dictionary meanings instantly — offline, no model credits. The dictionary belongs to the dictionary app on your computer; Magpie only reads it. Changes apply after saving.",
   "dict.stateReady": "Dictionary ready — {count} entries",
