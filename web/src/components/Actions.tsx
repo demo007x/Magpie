@@ -141,6 +141,13 @@ export function Actions() {
               {d.actions.ankiGuideLink}
               <ArrowRight size={13} strokeWidth={2} />
             </a>
+            <a
+              href={`${root}dict/`}
+              className="inline-flex items-center gap-1.5 text-[13px] text-mute transition-colors hover:text-ink"
+            >
+              {d.actions.dictGuideLink}
+              <ArrowRight size={13} strokeWidth={2} />
+            </a>
           </div>
         </Reveal>
       </div>
