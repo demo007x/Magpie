@@ -64,6 +64,7 @@ const zh = {
     moreItem: { name: "更多能力开发中", desc: "存至 Notion / 备忘录等笔记应用，生词本、稍后读等同类接入。" },
     topicLink: "深入了解划词翻译",
     ankiGuideLink: "Anki 使用教程：从安装到第一张单词卡",
+    dictGuideLink: "离线词典教程：划词查词，毫秒出释义",
     customBand: {
       label: "AI 可定制",
       items: [
@@ -331,6 +332,7 @@ const en: Dict = {
     moreItem: { name: "More in development", desc: "Save to Notion / Apple Notes and more, plus vocabulary and read-later hand-offs." },
     topicLink: "A deep dive into select & translate",
     ankiGuideLink: "Magpie × Anki tutorial: from install to your first word card",
+    dictGuideLink: "Magpie × offline dictionary guide: select a word, read the entry",
     customBand: {
       label: "Customizable",
       items: [

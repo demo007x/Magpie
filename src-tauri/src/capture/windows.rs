@@ -682,7 +682,7 @@ enum Chord {
 ///
 /// 与 macOS 不同，这里不必绕主线程：Windows 剪贴板是系统级句柄，arboard 每次
 /// 调用自开自闭，detect 线程直接读写没有 AppKit 那种 promise 兑现约束。
-fn post_chord(chord: Chord) -> bool {
+fn post_chord(chord: Chord, ctrl_held_by_user: bool) -> bool {
     const KEYEVENTF_EXTENDEDKEY: u32 = 1;
     unsafe {
         let key = |vk: VIRTUAL_KEY, up: bool, extended: bool| {
@@ -707,14 +707,20 @@ fn post_chord(chord: Chord) -> bool {
             }
         };
         // Insert 是扩展键：不带 KEYEVENTF_EXTENDEDKEY 时部分应用收到的是「无绑定」
-        let inputs = match chord {
-            Chord::CtrlInsert => [
+        // ctrl_held_by_user = 用户物理按着 Ctrl：此时只发主键本身，绝不注入 VK_CONTROL
+        // 的 down/up——注入 Ctrl up 会抢走用户的物理 Ctrl 状态，后续按键丢修饰键（老 bug）。
+        // 系统里 Ctrl 已经是按下态，单发 Insert/C 就是组合键，目标应用照常识别。
+        let primary = |vk: VIRTUAL_KEY, extended: bool| vec![key(vk, false, extended), key(vk, true, extended)];
+        let inputs: Vec<INPUT> = match (chord, ctrl_held_by_user) {
+            (Chord::CtrlInsert, true) => primary(VK_INSERT, true),
+            (Chord::CtrlC, true) => primary(VK_C, false),
+            (Chord::CtrlInsert, false) => vec![
                 key(VK_CONTROL, false, false),
                 key(VK_INSERT, false, true),
                 key(VK_INSERT, true, true),
                 key(VK_CONTROL, true, false),
             ],
-            Chord::CtrlC => [
+            (Chord::CtrlC, false) => vec![
                 key(VK_CONTROL, false, false),
                 key(VK_C, false, false),
                 key(VK_C, true, false),
@@ -750,14 +756,14 @@ impl Chord {
 /// 失败。GetClipboardSequenceNumber 是系统级单调计数，每次写入都前进，与内容无关。
 /// 不会复活 stale 选区误弹：那次旧复制发生在记 seq0 之前，不落进本次轮询窗口。
 /// snapshot 只用于诊断日志（区分「文本没变但序号变了」与「文本也变了」）。
-fn copy_once(snapshot: &Option<String>, chord: Chord) -> Option<String> {
+fn copy_once(snapshot: &Option<String>, chord: Chord, ctrl_held_by_user: bool) -> Option<String> {
     const POLL_TIMES: usize = 40; // 40 × 15ms = 600ms 上限；应用响应后首个周期即命中
     const POLL_INTERVAL: Duration = Duration::from_millis(15);
 
     // 基线必须在注入之前记：SendInput 同步投递，目标应用可能在 post_chord 返回前
     // 就完成复制，之后记会把这次写入漏掉。
     let seq0 = unsafe { GetClipboardSequenceNumber() };
-    if !post_chord(chord) {
+    if !post_chord(chord, ctrl_held_by_user) {
         return None;
     }
     for _ in 0..POLL_TIMES {
@@ -790,41 +796,28 @@ fn copy_once(snapshot: &Option<String>, chord: Chord) -> Option<String> {
     None
 }
 
-/// 检测用户是否物理按住 Shift（左右任一侧）。GetAsyncKeyState 返回 SHORT (i16)，
-/// 高位为 1 表示键当前按下（即返回值为负）。左右分别检测，同 modifier_mask_now。
-fn shift_physically_held() -> bool {
-    unsafe { GetAsyncKeyState(VK_LSHIFT.0 as i32) < 0 || GetAsyncKeyState(VK_RSHIFT.0 as i32) < 0 }
-}
-
-/// 检测用户是否物理按住 Ctrl/Alt/Win（左右任一侧）——这三类在取词注入时仍整段
-/// 放弃：Alt/Win 会改变复制键语义，Ctrl 走的是 #16 的「不碰 Ctrl」路径（本分支
-/// 基于 main 不含 #16，维持整段放弃，不与 #16 重复实现，避免将来合并冲突）。
-/// Shift 不在这里：它单独走「等松开再注入」路径（见 wait_shift_release）。
-fn other_modifier_held() -> bool {
+/// 检测 Ctrl 之外是否物理按住修饰键（Shift/Alt/Win）。
+/// 这三个键会改变复制键的语义（Shift+Insert 是粘贴、Alt+Insert 触发菜单、Win 弹
+/// 开始菜单），注入复制键等于触发别的行为，一律拒绝——fail silent。
+/// 注：GetAsyncKeyState 返回 SHORT (i16)，高位为 1 表示键当前按下（即返回值为负）。
+fn non_ctrl_modifier_held() -> bool {
     unsafe {
-        GetAsyncKeyState(VK_LCONTROL.0 as i32) < 0
-            || GetAsyncKeyState(VK_RCONTROL.0 as i32) < 0
-            || GetAsyncKeyState(VK_LMENU.0 as i32) < 0
-            || GetAsyncKeyState(VK_RMENU.0 as i32) < 0
+        GetAsyncKeyState(VK_SHIFT.0 as i32) < 0
+            || GetAsyncKeyState(VK_MENU.0 as i32) < 0
             || GetAsyncKeyState(VK_LWIN.0 as i32) < 0
             || GetAsyncKeyState(VK_RWIN.0 as i32) < 0
     }
 }
 
-/// 等用户松开 Shift 再注入复制键。辅助键交互是「按住 Shift + 拖选 + 松鼠标」，
-/// 松手瞬间 Shift 通常还按着，但用户随即就会松开、而选区不会因此消失。若此刻
-/// 直接注入，Shift+Insert 是粘贴、Shift+C 语义也不同，会把剪贴板内容粘进文档。
-/// 所以先短暂等待：最多 300ms（12 × 25ms），期间 Shift 松开即返回 true，可用
-/// 干净的 Ctrl+Insert 取词；一直按住则放弃本次取词（fail silent，宁可漏取不可
-/// 误粘）。选区在松 Shift 后仍保留，取词内容不受影响。
-fn wait_shift_release() -> bool {
-    for _ in 0..12 {
-        if !shift_physically_held() {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(25));
+/// 用户此刻是否物理按住 Ctrl（左右键分别检测，通用 VK_CONTROL 在部分布局下不可靠）。
+/// 按住时复制键走「不碰 Ctrl」的注入路径：系统 Ctrl 状态已由用户按下，我们只注入
+/// Insert，Ctrl 的 down/up 都不发——否则注入的 Ctrl up 会抢走物理状态，用户接着按
+/// C 就丢了修饰键（老 bug：选中后快速 Ctrl+C → 文本变成 "c"）。
+fn ctrl_physically_held() -> bool {
+    unsafe {
+        GetAsyncKeyState(VK_LCONTROL.0 as i32) < 0
+            || GetAsyncKeyState(VK_RCONTROL.0 as i32) < 0
     }
-    false
 }
 
 /// 前台窗口所属进程 pid（读不到返回 0）。注入的复制键发给当前前台窗口而非定向发给
@@ -875,24 +868,16 @@ fn compat_fetch(app_path: &str, down_cursor: isize, up_pid: u32) -> Option<Strin
         return None;
     }
 
-    // Ctrl/Alt/Win 按住时放弃：注入的 VK_CONTROL up 会抢走用户的 Ctrl 状态（老 bug：
-    // 选中后快速 Ctrl+C → 文本变成 "c"），Alt/Win 会改变复制键语义。
-    if other_modifier_held() {
+    // 修饰键闸：Shift/Alt/Win 按住时放弃——三者会改变复制键语义（粘贴/菜单/开始菜单），
+    // 注入只会触发别的行为。Ctrl 按住则放行，但改走「不碰 Ctrl」的注入路径（见下），
+    // 不再简单放弃：实测 Zed 的 Ctrl+拖选是普通选区，这一路此前被闸门误杀了。
+    if non_ctrl_modifier_held() {
         debug_log(format!(
-            "capture/windows: 兼容取词跳过（用户正按住 Ctrl/Alt/Win）app={app_path:?}"
+            "capture/windows: 兼容取词跳过（用户正按住 Shift/Alt/Win）app={app_path:?}"
         ));
         return None;
     }
-
-    // Shift 是辅助键的默认键位：按住 Shift 拖选后松手，此刻 Shift 往往仍按着。
-    // 直接注入会变成 Shift+Insert（粘贴），所以先等它松开——用户手势完成后随即
-    // 松开，选区保留，再用干净的 Ctrl+Insert 取词。等不到就放弃，绝不冒误粘风险。
-    if shift_physically_held() && !wait_shift_release() {
-        debug_log(format!(
-            "capture/windows: 兼容取词跳过（Shift 一直按住，未等到松开）app={app_path:?}"
-        ));
-        return None;
-    }
+    let ctrl_held_by_user = ctrl_physically_held();
 
     if clipboard_holds_rich_payload() {
         debug_log(format!(
@@ -914,15 +899,20 @@ fn compat_fetch(app_path: &str, down_cursor: isize, up_pid: u32) -> Option<Strin
 
     let t0 = Instant::now();
     let snapshot = clip_read_text();
-    let (mut fetched, mut chord) = (copy_once(&snapshot, Chord::CtrlInsert), Chord::CtrlInsert);
-    if fetched.is_none() {
+    let (mut fetched, mut chord) = (
+        copy_once(&snapshot, Chord::CtrlInsert, ctrl_held_by_user),
+        Chord::CtrlInsert,
+    );
+    // Ctrl 由用户按住时不兜底 Ctrl+C：那时只能单独发 C，若用户的 Ctrl 在注入间隙松开，
+    // 这个 C 会变成往文档里输入字母。主键不认就静默失败，绝不冒污染文档的风险。
+    if fetched.is_none() && !ctrl_held_by_user {
         debug_log(format!(
             "capture/windows: 兼容取词：{} 在此应用没取到，改用 {} 兜底",
             chord.label(),
             Chord::CtrlC.label()
         ));
         chord = Chord::CtrlC;
-        fetched = copy_once(&snapshot, chord);
+        fetched = copy_once(&snapshot, chord, false);
     }
 
     let now_text = clip_read_text();
@@ -943,10 +933,11 @@ fn compat_fetch(app_path: &str, down_cursor: isize, up_pid: u32) -> Option<Strin
 
     let text = fetched?;
     debug_log(format!(
-        "capture/windows: 兼容取词命中 len={} 耗时={}ms 键={} app={app_path:?}",
+        "capture/windows: 兼容取词命中 len={} 耗时={}ms 键={} Ctrl用户按住={} app={app_path:?}",
         text.len(),
         t0.elapsed().as_millis(),
-        chord.label()
+        chord.label(),
+        ctrl_held_by_user
     ));
     Some(text)
 }

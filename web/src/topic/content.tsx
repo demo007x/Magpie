@@ -47,6 +47,13 @@ export interface TopicCopy {
     items: { q: string; a: string }[];
     home: string;
   };
+  /** 延伸阅读：同一条阅读工作流的其他教程页 */
+  related: {
+    eyebrow: string;
+    title: string;
+    lead: string;
+    items: { name: string; url: string; desc: string }[];
+  };
   cta: {
     title: string;
     lead: string;
@@ -112,6 +119,15 @@ const zh: TopicCopy = {
       { q: "文字选不了怎么办？", a: "扫描版 PDF、图片、视频字幕这类选不到的文字，改用识图翻译：按 ⌥T 框选屏幕区域，识别完成后自动翻译，适用于截图、扫描件与应用界面。" },
     ],
     home: "了解拾趣的全部功能 →",
+  },
+  related: {
+    eyebrow: "延伸阅读",
+    title: "读完翻译，还能做什么",
+    lead: "同一条阅读工作流的更多玩法：",
+    items: [
+      { name: "离线词典教程", url: "dict/", desc: "划英文词条毫秒出释义——用法、双语例句、音标与词源，完全离线、不耗模型额度。" },
+      { name: "Anki 使用教程", url: "anki/", desc: "划词即建卡，短划词进单词卡、长内容进内容卡，复习交给间隔重复。" },
+    ],
   },
   cta: {
     title: "把翻译放进划选里",
@@ -273,6 +289,15 @@ const en: TopicCopy = {
       { q: "What if the text can't be selected?", a: "Scanned PDFs, images and video subtitles were never selectable — use OCR translate instead: press ⌥T, drag a box over the region, and the recognized text is translated automatically. Works for screenshots, scanned pages and app interfaces." },
     ],
     home: "Explore everything Magpie can do →",
+  },
+  related: {
+    eyebrow: "Keep reading",
+    title: "More from the same workflow",
+    lead: "More ways to work with the text you select:",
+    items: [
+      { name: "Offline dictionary guide", url: "dict/", desc: "Select an English word and read definitions in milliseconds — fully offline, no model quota." },
+      { name: "Anki tutorial", url: "anki/", desc: "Clip to add cards; let spaced repetition handle the review schedule." },
+    ],
   },
   cta: {
     title: "Translation, built into the selection",

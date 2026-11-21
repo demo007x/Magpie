@@ -267,6 +267,26 @@ export function TopicApp() {
           </Reveal>
         </Section>
 
+        {/* 延伸阅读：同一条阅读工作流的其他教程页（离线词典 / Anki） */}
+        <Section id="related" eyebrow={t.related.eyebrow} title={t.related.title} lead={t.related.lead}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {t.related.items.map((r, idx) => (
+              <Reveal key={r.name} delay={idx * 0.05}>
+                <a
+                  href={`${root}${r.url}`}
+                  className="lift block h-full rounded-2xl border border-line bg-panel p-6 transition-colors hover:border-accent-line"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-[15px] font-semibold tracking-tight">{r.name}</h3>
+                    <ArrowRight size={14} strokeWidth={1.9} className="shrink-0 text-mute-faint" />
+                  </div>
+                  <p className="mt-2 text-[13.5px] leading-relaxed text-mute">{r.desc}</p>
+                </a>
+              </Reveal>
+            ))}
+          </div>
+        </Section>
+
         {/* 收尾行动：下载 + 返回首页 */}
         <section id="download" className="mx-auto w-full max-w-6xl px-6 pb-20">
           <Reveal>
