@@ -19,6 +19,7 @@ import { actionDesc, actionLabel } from "./labels";
 import { CUSTOM_ICON_CHOICES, customIconNode } from "../../shared/icons";
 import type { PageProps } from "./types";
 import { t, useLocale } from "../../shared/i18n";
+import { TutorialButton } from "../../shared/TutorialModal";
 
 const IS_MAC = /Mac/i.test(navigator.platform);
 // 「打开位置」走 Windows Shell 的位置能力，macOS 上没有对应实现（无能力不显示开关）
@@ -261,7 +262,9 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
               </div>
             )}
             <div className="card">
-              <p className="card-hint">{t("capture.actionsHint")}</p>
+              <p className="card-hint">
+                {t("capture.actionsHint")} <TutorialButton id="capture" />
+              </p>
               {residentIds.map((k) => {
                 const c = customById(k);
                 return (

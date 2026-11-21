@@ -2,6 +2,7 @@
 // 行语义由页顶 hint 一句统一说明（四个开关无差异描述）；资格判定还需默认
 // 模型服务已配置密钥（「模型」页）。自动保存页（patch + saveNow，无保存按钮）。
 import type { Settings } from "../../shared/types";
+import { TutorialButton } from "../../shared/TutorialModal";
 import type { PageProps } from "./types";
 import { t, useLocale } from "../../shared/i18n";
 
@@ -17,7 +18,9 @@ export default function VisionPage({ settings, patch, saveNow }: PageProps) {
 
   return (
     <>
-      <p className="page-hint">{t("vision.hint")}</p>
+      <p className="page-hint">
+        {t("vision.hint")} <TutorialButton id="vision" />
+      </p>
       <div className="card">
         {VISION_ITEMS.map(([k, label], i) => (
           <div className={`row-between${i > 0 ? " sep" : ""}`} key={k}>

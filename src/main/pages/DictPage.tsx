@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getLocale, t, useLocale } from "../../shared/i18n";
+import { TutorialButton } from "../../shared/TutorialModal";
 import type { DictStatus } from "../../shared/types";
 import type { PageProps } from "./types";
 
@@ -49,7 +50,9 @@ export default function DictPage({ settings, patch, saveNow }: PageProps) {
   return (
     <>
       {/* 无页级标题：左栏导航已标明页面，说明行直接开场 */}
-      <p className="page-hint">{t("dict.hint")}</p>
+      <p className="page-hint">
+        {t("dict.hint")} <TutorialButton id="dict" />
+      </p>
 
       <div className="card">
         <div className="row-between">

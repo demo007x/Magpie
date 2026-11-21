@@ -42,6 +42,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "common.setDefaultDisabled": "Turn it on first to set it as default",
   "common.resetDefault": "Reset to default",
   "common.done": "Done",
+  "common.tutorial": "Usage guide",
 
   // Capture page
   "capture.actionsHint":
@@ -386,4 +387,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "update.preparing": "Preparing download…",
   "update.downloading": "Downloading {pct}%",
   "update.installFailed": "The update didn't complete. Please try again later.",
+
+  // In-app tutorials (shared/TutorialModal.tsx)
+  "tutorial.fullGuide": "Read the full guide on the website",
 };

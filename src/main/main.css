@@ -1786,3 +1786,50 @@ input.recording {
   background: var(--accent);
   transition: width 0.2s ease;
 }
+
+/* 应用内使用教程弹窗：编号步骤列表（shared/TutorialModal.tsx） */
+.tutorial-steps {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  counter-reset: step;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tutorial-steps li {
+  counter-increment: step;
+  position: relative;
+  padding-left: 30px;
+}
+
+.tutorial-steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 0.5px solid var(--line);
+  background: var(--hov);
+  font-size: 11px;
+  color: var(--text);
+}
+
+.tutorial-step-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.tutorial-step-body {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text);
+}
