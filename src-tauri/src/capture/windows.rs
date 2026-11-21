@@ -45,10 +45,12 @@
 //!      兼容模式，行为零变化；读不到光标一律拒绝（fail-safe）
 //! 键序：主键 Ctrl+Insert（终端里不是中断信号，闸 1+2 都过了也别去碰用户正在跑的
 //! 进程），不认该键的应用才用 Ctrl+C 兜底。残余风险因此收窄到「主键无绑定 + 此刻
-//! 终端里有前台进程」这一种叠加情形。注入前还有两道闸门：用户正物理按住
-//! Ctrl/Shift/Alt/Win 时整段放弃（我们注入的 VK_CONTROL up 会抢走用户的物理状态，
-//! 导致后续按键丢失修饰键）；前台窗口 pid 不是目标应用时短暂等待焦点切回，等不到
-//! 也放弃（复制键发给当前前台窗口而非定向发送，焦点停在结果窗会复制错内容）。
+//! 终端里有前台进程」这一种叠加情形。注入前还有两道闸门：Ctrl/Alt/Win 正物理按住
+//! 时整段放弃（注入的 VK_CONTROL up 会抢走用户物理状态、Alt/Win 会改变复制键语义）；
+//! Shift 是辅助键默认键位，按住时先等它松开（Shift+Insert 是粘贴、直接注入会误粘，
+//! 而松鼠标后用户随即松开、选区仍在），等不到也放弃；前台窗口 pid 不是目标应用时
+//! 短暂等待焦点切回，等不到也放弃（复制键发给当前前台窗口而非定向发送，焦点停在
+//! 结果窗会复制错内容）。
 //! 取词判据是剪贴板**写入序号**前进（GetClipboardSequenceNumber），不是文本变化：
 //! 用户事先复制过同一个词时，复制结果与原剪贴板相同，文本判据看不见这种命中。
 //! 还原竞态规则与 macOS 同一套（拿完重读现状，只在「现状仍是我取到的文本」时物归
@@ -84,8 +86,8 @@ use windows::Win32::System::Threading::{
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetDoubleClickTime, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput,
-    VK_C, VK_CONTROL, VK_ESCAPE, VK_INSERT, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT, VIRTUAL_KEY,
-    INPUT_0, INPUT_KEYBOARD, INPUT,
+    VK_C, VK_CONTROL, VK_ESCAPE, VK_INSERT, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_RCONTROL,
+    VK_RMENU, VK_RSHIFT, VK_RWIN, VIRTUAL_KEY, INPUT_0, INPUT_KEYBOARD, INPUT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GetAncestor, GetCursorInfo, GetForegroundWindow, GetMessageW,
@@ -159,16 +161,22 @@ fn cursor_handle_now() -> isize {
 /// 辅助键（按住辅助键拖选时通常是「先松鼠标、后松键」，但排队延迟会吃掉这个
 /// 窗口）。用物理状态而非键盘钩子状态机，也顺带去掉了「漏收 keyup」这类偏差。
 /// Alt 位同时承载 macOS Option（同一套跨平台位定义）。
+///
+/// 左右键分别检测：通用虚拟键（VK_SHIFT/VK_CONTROL/VK_MENU）在部分键盘布局下
+/// 不可靠——实测按右 Shift 时 VK_SHIFT 读不到，导致 Shift 辅助键采样为 0、worker
+/// 门控把选区整个丢掉（与 #16 里「通用 VK_CONTROL 在部分布局下不可靠」同源）。
+/// 逐侧读再取或，四键任一按住都能采到。
 fn modifier_mask_now() -> u8 {
     let mut m = 0u8;
     unsafe {
-        if GetAsyncKeyState(VK_MENU.0 as i32) < 0 {
+        if GetAsyncKeyState(VK_LMENU.0 as i32) < 0 || GetAsyncKeyState(VK_RMENU.0 as i32) < 0 {
             m |= crate::settings::MOD_ALT;
         }
-        if GetAsyncKeyState(VK_CONTROL.0 as i32) < 0 {
+        if GetAsyncKeyState(VK_LCONTROL.0 as i32) < 0 || GetAsyncKeyState(VK_RCONTROL.0 as i32) < 0
+        {
             m |= crate::settings::MOD_CTRL;
         }
-        if GetAsyncKeyState(VK_SHIFT.0 as i32) < 0 {
+        if GetAsyncKeyState(VK_LSHIFT.0 as i32) < 0 || GetAsyncKeyState(VK_RSHIFT.0 as i32) < 0 {
             m |= crate::settings::MOD_SHIFT;
         }
         if GetAsyncKeyState(VK_LWIN.0 as i32) < 0 || GetAsyncKeyState(VK_RWIN.0 as i32) < 0 {
@@ -782,19 +790,41 @@ fn copy_once(snapshot: &Option<String>, chord: Chord) -> Option<String> {
     None
 }
 
-/// 检测用户是否物理按住任何修饰键（Ctrl/Shift/Alt/Win）。
-/// 兼容取词注入的 VK_CONTROL up 会抢走用户物理按下的修饰键状态，导致后续按键
-/// 丢失修饰键（症状：选中后快速 Ctrl+C → 选中文本变成 "c"）。此闸门在注入前
-/// 采样，只要有任何修饰键物理按下就放弃本次取词——fail silent，符合产品边界。
-fn modifiers_physically_held() -> bool {
+/// 检测用户是否物理按住 Shift（左右任一侧）。GetAsyncKeyState 返回 SHORT (i16)，
+/// 高位为 1 表示键当前按下（即返回值为负）。左右分别检测，同 modifier_mask_now。
+fn shift_physically_held() -> bool {
+    unsafe { GetAsyncKeyState(VK_LSHIFT.0 as i32) < 0 || GetAsyncKeyState(VK_RSHIFT.0 as i32) < 0 }
+}
+
+/// 检测用户是否物理按住 Ctrl/Alt/Win（左右任一侧）——这三类在取词注入时仍整段
+/// 放弃：Alt/Win 会改变复制键语义，Ctrl 走的是 #16 的「不碰 Ctrl」路径（本分支
+/// 基于 main 不含 #16，维持整段放弃，不与 #16 重复实现，避免将来合并冲突）。
+/// Shift 不在这里：它单独走「等松开再注入」路径（见 wait_shift_release）。
+fn other_modifier_held() -> bool {
     unsafe {
-        // GetAsyncKeyState 返回 SHORT (i16)，高位为 1 表示键当前按下（即返回值为负）
-        GetAsyncKeyState(VK_CONTROL.0 as i32) < 0
-            || GetAsyncKeyState(VK_SHIFT.0 as i32) < 0
-            || GetAsyncKeyState(VK_MENU.0 as i32) < 0
+        GetAsyncKeyState(VK_LCONTROL.0 as i32) < 0
+            || GetAsyncKeyState(VK_RCONTROL.0 as i32) < 0
+            || GetAsyncKeyState(VK_LMENU.0 as i32) < 0
+            || GetAsyncKeyState(VK_RMENU.0 as i32) < 0
             || GetAsyncKeyState(VK_LWIN.0 as i32) < 0
             || GetAsyncKeyState(VK_RWIN.0 as i32) < 0
     }
+}
+
+/// 等用户松开 Shift 再注入复制键。辅助键交互是「按住 Shift + 拖选 + 松鼠标」，
+/// 松手瞬间 Shift 通常还按着，但用户随即就会松开、而选区不会因此消失。若此刻
+/// 直接注入，Shift+Insert 是粘贴、Shift+C 语义也不同，会把剪贴板内容粘进文档。
+/// 所以先短暂等待：最多 300ms（12 × 25ms），期间 Shift 松开即返回 true，可用
+/// 干净的 Ctrl+Insert 取词；一直按住则放弃本次取词（fail silent，宁可漏取不可
+/// 误粘）。选区在松 Shift 后仍保留，取词内容不受影响。
+fn wait_shift_release() -> bool {
+    for _ in 0..12 {
+        if !shift_physically_held() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    false
 }
 
 /// 前台窗口所属进程 pid（读不到返回 0）。注入的复制键发给当前前台窗口而非定向发给
@@ -845,11 +875,21 @@ fn compat_fetch(app_path: &str, down_cursor: isize, up_pid: u32) -> Option<Strin
         return None;
     }
 
-    // 用户物理按住修饰键时放弃：我们注入的 VK_CONTROL up 会抢走用户的 Ctrl 状态，
-    // 导致后续按键丢失修饰键（Bug: 选中后快速 Ctrl+C → 选中文本变成 "c"）
-    if modifiers_physically_held() {
+    // Ctrl/Alt/Win 按住时放弃：注入的 VK_CONTROL up 会抢走用户的 Ctrl 状态（老 bug：
+    // 选中后快速 Ctrl+C → 文本变成 "c"），Alt/Win 会改变复制键语义。
+    if other_modifier_held() {
         debug_log(format!(
-            "capture/windows: 兼容取词跳过（用户正按住修饰键）app={app_path:?}"
+            "capture/windows: 兼容取词跳过（用户正按住 Ctrl/Alt/Win）app={app_path:?}"
+        ));
+        return None;
+    }
+
+    // Shift 是辅助键的默认键位：按住 Shift 拖选后松手，此刻 Shift 往往仍按着。
+    // 直接注入会变成 Shift+Insert（粘贴），所以先等它松开——用户手势完成后随即
+    // 松开，选区保留，再用干净的 Ctrl+Insert 取词。等不到就放弃，绝不冒误粘风险。
+    if shift_physically_held() && !wait_shift_release() {
+        debug_log(format!(
+            "capture/windows: 兼容取词跳过（Shift 一直按住，未等到松开）app={app_path:?}"
         ));
         return None;
     }
