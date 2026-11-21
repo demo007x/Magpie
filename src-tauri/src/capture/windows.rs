@@ -45,9 +45,12 @@
 //!      兼容模式，行为零变化；读不到光标一律拒绝（fail-safe）
 //! 键序：主键 Ctrl+Insert（终端里不是中断信号，闸 1+2 都过了也别去碰用户正在跑的
 //! 进程），不认该键的应用才用 Ctrl+C 兜底。残余风险因此收窄到「主键无绑定 + 此刻
-//! 终端里有前台进程」这一种叠加情形。注入前还有一道物理修饰键闸门：用户正按住
+//! 终端里有前台进程」这一种叠加情形。注入前还有两道闸门：用户正物理按住
 //! Ctrl/Shift/Alt/Win 时整段放弃（我们注入的 VK_CONTROL up 会抢走用户的物理状态，
-//! 导致后续按键丢失修饰键——fail silent，符合产品边界）。
+//! 导致后续按键丢失修饰键）；前台窗口 pid 不是目标应用时短暂等待焦点切回，等不到
+//! 也放弃（复制键发给当前前台窗口而非定向发送，焦点停在结果窗会复制错内容）。
+//! 取词判据是剪贴板**写入序号**前进（GetClipboardSequenceNumber），不是文本变化：
+//! 用户事先复制过同一个词时，复制结果与原剪贴板相同，文本判据看不见这种命中。
 //! 还原竞态规则与 macOS 同一套（拿完重读现状，只在「现状仍是我取到的文本」时物归
 //! 原主，否则保留现状不动）。
 //!
@@ -72,7 +75,9 @@ use uiautomation::types::ControlType;
 use crate::floating;
 use windows::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{MonitorFromPoint, MONITOR_DEFAULTTONEAREST};
-use windows::Win32::System::DataExchange::IsClipboardFormatAvailable;
+use windows::Win32::System::DataExchange::{
+    GetClipboardSequenceNumber, IsClipboardFormatAvailable,
+};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Ole::{CF_DIB, CF_DIBV5, CF_HDROP};
 use windows::Win32::System::Threading::{
@@ -86,8 +91,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     INPUT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GetAncestor, GetCursorInfo, GetMessageW, GetWindowThreadProcessId,
-    LoadCursorW, SetWindowsHookExW, WindowFromPoint, CURSORINFO, GA_ROOT, IDC_IBEAM,
+    CallNextHookEx, GetAncestor, GetCursorInfo, GetForegroundWindow, GetMessageW,
+    GetWindowThreadProcessId, LoadCursorW, SetWindowsHookExW, WindowFromPoint, CURSORINFO,
+    GA_ROOT, IDC_IBEAM,
     KBDLLHOOKSTRUCT, KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED, MSLLHOOKSTRUCT, WH_KEYBOARD_LL,
     WH_MOUSE_LL, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_SYSKEYDOWN,
 };
@@ -547,7 +553,7 @@ fn query_selection(
             let permitted = crate::settings::compat_allows(&s, &app_path)
                 && !crate::settings::is_blacklisted(app, &app_path, None);
             if permitted {
-                if let Some(text) = compat_fetch(&app_path, down_cursor) {
+                if let Some(text) = compat_fetch(&app_path, down_cursor, up_pid) {
                     return Some((text, up_pid));
                 }
             } else {
@@ -784,24 +790,49 @@ impl Chord {
     }
 }
 
-/// 发一根复制键并等剪贴板出现新文本。判据是「相对快照变了且非空」——因此「复制
-/// 结果恰好等于原剪贴板」这一种命中我们看不见（两种键都一样，换键不解决）
+/// 发一根复制键，等这次手势真的把文本写进剪贴板。判据是**写入序号前进**，不是文本
+/// 变化——用户可能事先复制过同一个词（典型：词典结果里复制了 rhombus，再回编辑器
+/// 选中 rhombus），复制出的文本与快照相同，旧判据会把它当成「没取到」，进而兜底、静默
+/// 失败。GetClipboardSequenceNumber 是系统级单调计数，每次写入都前进，与内容无关。
+/// 不会复活 stale 选区误弹：那次旧复制发生在记 seq0 之前，不落进本次轮询窗口。
+/// snapshot 只用于诊断日志（区分「文本没变但序号变了」与「文本也变了」）。
 fn copy_once(snapshot: &Option<String>, chord: Chord) -> Option<String> {
     const POLL_TIMES: usize = 40; // 40 × 15ms = 600ms 上限；应用响应后首个周期即命中
     const POLL_INTERVAL: Duration = Duration::from_millis(15);
 
+    // 基线必须在注入之前记：SendInput 同步投递，目标应用可能在 post_chord 返回前
+    // 就完成复制，之后记会把这次写入漏掉。
+    let seq0 = unsafe { GetClipboardSequenceNumber() };
     if !post_chord(chord) {
         return None;
     }
     for _ in 0..POLL_TIMES {
         std::thread::sleep(POLL_INTERVAL);
-        if let Some(now) = clip_read_text() {
-            let changed = snapshot.as_ref().map_or(true, |s| *s != now);
-            if changed && !now.trim().is_empty() {
-                return Some(now);
-            }
+        let seq = unsafe { GetClipboardSequenceNumber() };
+        if seq == seq0 {
+            continue; // 序号没前进：这次复制没写进剪贴板，继续等
         }
+        let Some(now) = clip_read_text() else { continue };
+        if now.trim().is_empty() {
+            continue; // 序号前进但文本空（例如清空剪贴板），继续等下一次写入
+        }
+        let same = snapshot.as_deref() == Some(now.as_str());
+        debug_log(format!(
+            "capture/windows: 兼容取词命中 {} 序号 {seq0}→{seq}；文本{}快照 len={}",
+            chord.label(),
+            if same { "等于" } else { "不同于" },
+            now.len(),
+        ));
+        return Some(now);
     }
+    // 超时诊断：一眼区分「复制键没生效」与「写了但读不到/是空文本」
+    let seq_end = unsafe { GetClipboardSequenceNumber() };
+    debug_log(format!(
+        "capture/windows: 兼容取词 {} 未命中：序号 {seq0}→{seq_end}（{}），末文本={:?}",
+        chord.label(),
+        if seq_end == seq0 { "序号未变" } else { "序号变了但文本为空或读不到" },
+        clip_read_text().map(|t| t.chars().take(40).collect::<String>()),
+    ));
     None
 }
 
@@ -820,13 +851,41 @@ fn modifiers_physically_held() -> bool {
     }
 }
 
-/// 兼容取词一次：快照剪贴板 → Ctrl+Insert（不认则 Ctrl+C）→ 轮询变化 → 取词 → 还原快照。
-/// 兜底轮询仍与同一份快照比——主键失败时剪贴板没动过，判据不变。最坏耗时 600ms×2，
-/// 只在主键不认的应用里发生；实测四家主流应用首个周期（15ms）就命中。
+/// 前台窗口所属进程 pid（读不到返回 0）。注入的复制键发给当前前台窗口而非定向发给
+/// 目标应用——焦点若停在别处（例如刚从词典结果窗复制完词），复制键会复制错窗口的内容。
+fn foreground_pid() -> u32 {
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_invalid() {
+            return 0;
+        }
+        let mut pid = 0u32;
+        let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        pid
+    }
+}
+
+/// 短暂等待焦点切回目标应用（点击编辑器到焦点落地有几十毫秒延迟）。只有在明确
+/// 读到「前台是别的进程」时才等待；读不到（0）视为无法判断、直接放行——避免某些
+/// 自绘应用顶层窗口 pid 与 UIA 元素 pid 不一致时被误拒。等满仍未切回才 false。
+fn wait_foreground_pid(want: u32) -> bool {
+    for _ in 0..8 {
+        let fg = foreground_pid();
+        if fg == want || fg == 0 {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    false
+}
+
+/// 兼容取词一次：查四闸 → 快照剪贴板文本 → 前台确认 → Ctrl+Insert（不认则 Ctrl+C）
+/// → 轮询写入序号 → 取词 → 还原快照。序号判据每次注入各自记基线，兜底不受主键影响；
+/// 最坏耗时 600ms×2，只在主键不认的应用里发生；实测主流应用首个周期（15ms）就命中。
 /// 还原竞态规则与 macOS compat.rs 同源：还原前重读现状，只在「现状仍是我取到的
 /// 那段文本」时物归原主，其余一切保留现状——借用期间第三方可能写入比快照更新的
 /// 内容，盲目还原会把它覆盖掉。没取到一律静默。
-fn compat_fetch(app_path: &str, down_cursor: isize) -> Option<String> {
+fn compat_fetch(app_path: &str, down_cursor: isize, up_pid: u32) -> Option<String> {
     // 第四道闸：按下点确实是文本表面。自绘应用（Zed）的滚动条拖动与拖选同形，
     // UIA 树是空的，只有光标形状能区分——文本区是系统 I-beam，滚动条/标签页是箭头。
     // 读不到（0）一律拒绝：宁可漏取一次，也不让 stale 选区误弹。
@@ -852,6 +911,17 @@ fn compat_fetch(app_path: &str, down_cursor: isize) -> Option<String> {
     if clipboard_holds_rich_payload() {
         debug_log(format!(
             "capture/windows: 兼容取词跳过（剪贴板里是文件或图片，还原没把握）app={app_path:?}"
+        ));
+        return None;
+    }
+
+    // 前台闸：复制键发给的是当前前台窗口，不是按 up_pid 定向发送。刚从词典结果窗
+    // 复制完词、焦点还没回到编辑器时，注入的复制键会复制结果窗里的同一个词（内容
+    // 没变，旧判据正好看不见）。等焦点切回目标应用，等不到就放弃。
+    if !wait_foreground_pid(up_pid) {
+        debug_log(format!(
+            "capture/windows: 兼容取词跳过（前台窗口不是目标应用 want={up_pid} fg={}）app={app_path:?}",
+            foreground_pid()
         ));
         return None;
     }
