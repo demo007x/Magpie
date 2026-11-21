@@ -1,6 +1,7 @@
 // 词典页：双向离线查词的词库来源（ADR-12）。拾趣只读用户本机的词库文件——
 // 不下载、不随包分发、也不写它一个字节；本页只回答「用的哪个文件、能不能用」。
-// 英→汉读 open-dictionary 文件，汉→英读用户选择的 CC-CEDICT 转换库。
+// 英→汉读 open-dictionary 兼容词库，汉→英读 CC-CEDICT 兼容词库；两个方向都是
+// 可替换的槽位，具体产品只是默认来源——文案标题因此只写方向、不写产品名。
 import { invoke } from "@tauri-apps/api/core";
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
