@@ -424,8 +424,19 @@ pub struct Settings {
     /// 划词功能总开关（托盘菜单控制）：false = 划词捕获完全禁用，不弹胶囊
     #[serde(default = "default_capture_enabled")]
     pub capture_enabled: bool,
-    /// 划词弹出模式："always"（选中即弹，默认）| "ctrl"（选中后按 Ctrl/⌘ 才弹）
-    #[serde(default = "default_capture_mode")]
+    /// 是否启用「按住辅助键才划词弹出」（issue #14）：false = 选中即弹（默认）。
+    /// 与辅助键位拆成两项独立配置，便于适配不同用户习惯与避免快捷键冲突。
+    #[serde(default)]
+    pub capture_assist_enabled: bool,
+    /// 辅助键位：用户录制的单个修饰键，规范名 "Alt"(Windows Alt/macOS Option，
+    /// 默认) | "Ctrl" | "Shift" | "Cmd"(macOS ⌘ / Windows Win)。只认修饰键——
+    /// 按住普通键拖选会连续输入字符污染文档，且捕获层的键盘监听止于修饰键
+    /// 与 Esc（隐私边界），不为本功能扩张。
+    #[serde(default = "default_capture_assist_key")]
+    pub capture_assist_key: String,
+    /// 旧版二选一模式，仅为一次性迁移保留：读出 "ctrl" 后转成上面两项，
+    /// 之后不再落盘（skip_serializing），避免新旧两份配置同时生效。
+    #[serde(default = "default_capture_mode", skip_serializing)]
     pub capture_mode: String,
     /// Obsidian 接入（docs/07）：vault 直写配置
     #[serde(default)]
@@ -497,6 +508,11 @@ fn default_capture_mode() -> String {
     "always".into()
 }
 
+/// 辅助键出厂默认：Alt（macOS 上显示 Option/⌥），与 issue #14 作者建议一致。
+fn default_capture_assist_key() -> String {
+    "Alt".into()
+}
+
 fn default_capture_enabled() -> bool {
     true
 }
@@ -533,6 +549,8 @@ impl Default for Settings {
             compat_apps: Vec::new(),
             debounce_ms: 200,
             capture_enabled: default_capture_enabled(),
+            capture_assist_enabled: false,
+            capture_assist_key: default_capture_assist_key(),
             capture_mode: default_capture_mode(),
             obsidian: ObsidianConfig::default(),
             anki: AnkiConfig::default(),
@@ -589,7 +607,17 @@ pub fn init(app: &AppHandle) {
         .unwrap_or_default();
     // 旧版平铺翻译凭据一次性搬进 credentials map 并回写（升级迁移）：
     // 此后凭据只存 map，legacy 字段不再落盘
-    if settings.translate.migrate_legacy_credentials() {
+    let mut dirty = settings.translate.migrate_legacy_credentials();
+    // 旧版 capture_mode="ctrl" 转成「启用辅助键 + Ctrl」两项（issue #14）：
+    // 迁移后 capture_mode 因 skip_serializing 不再落盘，下次启动读到默认
+    // "always"，不会重复迁移。旧 "always" 无需动作（新开关默认 false 即等价）。
+    if settings.capture_mode == "ctrl" {
+        settings.capture_assist_enabled = true;
+        settings.capture_assist_key = "Ctrl".into();
+        settings.capture_mode = "always".into();
+        dirty = true;
+    }
+    if dirty {
         if let Ok(json) = serde_json::to_string_pretty(&settings) {
             let _ = fs::write(&path, json);
         }
@@ -719,13 +747,38 @@ pub fn set_appearance(app: AppHandle, theme: String) {
     apply_appearance(&app);
 }
 
-/// 划词弹出模式切换："always"（选中即弹）| "ctrl"（按 Ctrl/⌘ 才弹）
+// 修饰键位掩码：两个平台的捕获层按各自的虚拟键码/键码换算成这一套位，
+// 只把「当前按住哪些修饰键」随 Selection 事件报上来；是否弹出由 worker 读
+// 配置比对（判定集中在 spawn_worker，无需检测线程持有 AppHandle 或读配置）。
+// Alt 位同时表示 Windows Alt 与 macOS Option（同一物理键）。
+pub const MOD_ALT: u8 = 1 << 0;
+pub const MOD_CTRL: u8 = 1 << 1;
+pub const MOD_SHIFT: u8 = 1 << 2;
+pub const MOD_CMD: u8 = 1 << 3;
+
+/// 辅助键规范名 → 掩码位。未知值回退 Alt：配置被手改坏时保持默认行为，
+/// 而不是让功能彻底失效。
+pub fn assist_key_mask(key: &str) -> u8 {
+    match key {
+        "Ctrl" => MOD_CTRL,
+        "Shift" => MOD_SHIFT,
+        "Cmd" => MOD_CMD,
+        _ => MOD_ALT, // "Alt" 及未知值
+    }
+}
+
+/// 兼容桥：旧「划词弹出模式」命令（"always"/"ctrl"）。新 UI 走 save_settings
+/// 整包落盘，但托盘/脚本若仍调用本命令，仍映射到新的「开关 + 键位」两项。
 #[tauri::command]
 pub fn set_capture_mode(app: AppHandle, mode: String) {
-    if !matches!(mode.as_str(), "always" | "ctrl") {
-        return;
+    match mode.as_str() {
+        "always" => patch(&app, |s| s.capture_assist_enabled = false),
+        "ctrl" => patch(&app, |s| {
+            s.capture_assist_enabled = true;
+            s.capture_assist_key = "Ctrl".into();
+        }),
+        _ => {}
     }
-    patch(&app, |s| s.capture_mode = mode);
 }
 
 /// 划词功能总开关（托盘菜单 checkbox 调用）：切换后重建托盘菜单更新勾选状态
@@ -775,5 +828,24 @@ mod tests {
             ..Default::default()
         };
         assert!(!compat_allows(&blank, r"E:\Tool\Zed\zed.exe"));
+    }
+
+    /// issue #14：辅助键规范名 → 掩码；未知值必须回退默认 Alt，避免配置损坏时功能全失效
+    #[test]
+    fn assist_key_mask_maps_every_key_and_falls_back_to_alt() {
+        assert_eq!(assist_key_mask("Alt"), MOD_ALT);
+        assert_eq!(assist_key_mask("Ctrl"), MOD_CTRL);
+        assert_eq!(assist_key_mask("Shift"), MOD_SHIFT);
+        assert_eq!(assist_key_mask("Cmd"), MOD_CMD);
+        assert_eq!(assist_key_mask("option"), MOD_ALT);
+        assert_eq!(assist_key_mask(""), MOD_ALT);
+    }
+
+    /// 出厂默认：不启用辅助键 = 选中即弹，与旧 "always" 行为一致
+    #[test]
+    fn capture_assist_defaults_to_disabled_with_alt_key() {
+        let s = Settings::default();
+        assert!(!s.capture_assist_enabled);
+        assert_eq!(s.capture_assist_key, "Alt");
     }
 }
