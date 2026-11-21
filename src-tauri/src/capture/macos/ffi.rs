@@ -153,6 +153,8 @@ extern "C" {
     pub(super) fn CGEventGetLocation(ev: CGEventRef) -> CGPoint;
     /// 读取事件字段：kCGKeyboardEventKeycode=9（物理键码）、kCGKeyboardEventAutorepeat=8
     pub(super) fn CGEventGetIntegerValueField(ev: CGEventRef, field: u64) -> i64;
+    /// 事件自带的修饰键位（松手瞬间采样用；鼠标事件同样携带当前按住的修饰键）
+    pub(super) fn CGEventGetFlags(ev: CGEventRef) -> u64;
     // 键盘事件合成（兼容模式模拟 ⌘C）
     pub(super) fn CGEventCreateKeyboardEvent(source: *mut c_void, keycode: u16, keydown: u8) -> CGEventRef;
     pub(super) fn CGEventSetFlags(ev: CGEventRef, flags: u64);
@@ -176,16 +178,19 @@ pub(super) const EV_MOUSE_MOVED: u32 = 5;
 pub(super) const EV_LEFT_DOWN: u32 = 1;
 pub(super) const EV_LEFT_UP: u32 = 2;
 pub(super) const EV_LEFT_DRAGGED: u32 = 6;
-// kCGEventKeyDown=10, kCGEventKeyUp=11：只为「浮动条可见时按 Esc 收起」和
-// 「划词弹出门控（⌘/Ctrl 单独按下）」而监听，且回调内即刻过滤
+// kCGEventKeyDown=10：键盘通道只为「全局 Esc 收起」而监听，回调内即刻过滤。
+// 辅助键是否按住改由鼠标事件的 CGEventFlags 在松手瞬间采样（见 mod.rs
+// held_modifiers_from_event），不再逐个监听修饰键本身——监听面反而更窄，
+// 也天然覆盖 ⌘ / Ctrl / Option / Shift 四种可配置键。
 pub(super) const EV_KEY_DOWN: u32 = 10;
-pub(super) const EV_KEY_UP: u32 = 11;
 pub(super) const KEY_ESC: u16 = 53;
-// 修饰键 keycode（用于划词弹出门控）
-pub(super) const KEY_CMD_LEFT: u16 = 55;
-pub(super) const KEY_CMD_RIGHT: u16 = 54;
-pub(super) const KEY_CTRL_LEFT: u16 = 59;
-pub(super) const KEY_CTRL_RIGHT: u16 = 62;
+// CGEventFlags 位（kCGEventFlagMask*，对应 IOKit 的 NX_*MASK）：松手瞬间
+// CGEventGetFlags 读出的修饰键状态，换算成 settings::MOD_*。
+// Command = 1<<20 与 compat.rs 的 K_CG_EVENT_FLAG_COMMAND 同源。
+pub(super) const K_CG_FLAG_MASK_SHIFT: u64 = 1 << 17;
+pub(super) const K_CG_FLAG_MASK_CONTROL: u64 = 1 << 18;
+pub(super) const K_CG_FLAG_MASK_ALTERNATE: u64 = 1 << 19;
+pub(super) const K_CG_FLAG_MASK_COMMAND: u64 = 1 << 20;
 // CGEventTapLocation：kCGHIDEventTap=0, kCGSessionEventTap=1（勿混淆！）
 pub(super) const K_CG_HID_EVENT_TAP: u32 = 0;
 pub(super) const K_CG_SESSION_EVENT_TAP: u32 = 1;

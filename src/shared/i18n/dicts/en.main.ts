@@ -88,14 +88,6 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "capture.generating": "Generating…",
   "capture.tryRun": "Test run",
 
-  // Capture popup mode
-  "capture.modeAria": "When to show the capsule",
-  "capture.modeAlways": "Show on select",
-  "capture.modeAlwaysSub": "Show the capsule as soon as you select text.",
-  "capture.modeCtrl": "Show on Ctrl",
-  "capture.modeCtrlSub":
-    "Select text, then hold Ctrl (⌘ on macOS) to show the capsule. Useful when other apps already pop up on selection.",
-
   // Compatibility lookup allowlist (Windows only, capture page): per-app opt-in
   "capture.compatTitle": "Apps that hide their text",
   "capture.compatSub":
@@ -124,6 +116,24 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "sc.needMod": "Include at least one modifier key",
   "sc.resetTitle": "Reset to the default shortcut",
   "sc.reset": "Reset",
+
+  // Selection modifier (issue #14): toggle + single-key recorder
+  "sc.assistTitle": "Selection modifier",
+  "sc.assistDesc":
+    "When on, hold the modifier below while dragging to select text; the capsule appears when you release the mouse. Off keeps the default show-on-select. Useful if you don't want a popup on every selection.",
+  "sc.assistEnable": "Use a modifier to trigger",
+  "sc.assistEnableSub": "Off = show as soon as you select (default).",
+  "sc.assistKeyLabel": "Modifier key",
+  "sc.assistKeySub":
+    "Click the box, then press a single modifier (Ctrl / Alt / Shift / ⌘ / Win). Set your own to avoid clashing with other apps.",
+  "sc.assistPress": "Press a modifier key…",
+  "sc.assistRecordPh": "Click to record the modifier",
+  "sc.assistNeedMod": "The modifier must be a single key (Ctrl / Alt / Shift / ⌘ / Win)",
+  "sc.assistResetTitle": "Reset to the default modifier (Alt / Option)",
+  "sc.assistNoteOn": "Now: hold {key} while dragging; release the mouse to show the capsule.",
+  "sc.assistNoteOff": "Now: the capsule shows as soon as you select text.",
+  "sc.assistCaveat":
+    "Note: only the hold-and-drag trigger is kept. In apps that need a synthetic copy, Alt / Shift / Win may clash with compatibility lookup; macOS support is still being verified.",
 
   // Model services page
   "model.hint":
