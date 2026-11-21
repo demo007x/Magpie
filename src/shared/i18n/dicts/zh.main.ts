@@ -82,14 +82,6 @@ export const zhMain = {
   "capture.generating": "生成中…",
   "capture.tryRun": "试跑",
 
-  // 划词弹出模式
-  "capture.modeAria": "划词弹出方式",
-  "capture.modeAlways": "选中即弹出",
-  "capture.modeAlwaysSub": "选中文字后立刻弹出胶囊。",
-  "capture.modeCtrl": "按住 Ctrl 才弹出",
-  "capture.modeCtrlSub":
-    "选中文字后，按住 Ctrl（macOS 为 ⌘）才弹出胶囊。适合与其他应用的选中弹出功能共存。",
-
   // 兼容取词允许清单（仅 Windows，划词页）：逐应用授权「代按一次复制键」
   "capture.compatTitle": "有些应用读不到文字",
   "capture.compatSub":
@@ -118,6 +110,24 @@ export const zhMain = {
   "sc.needMod": "需至少包含一个修饰键",
   "sc.resetTitle": "重置为默认快捷键",
   "sc.reset": "重置",
+
+  // 划词辅助键（issue #14）：开关 + 单个修饰键录制
+  "sc.assistTitle": "划词辅助键",
+  "sc.assistDesc":
+    "开启后，要按住下面的辅助键并用鼠标左键拖选文字，松开鼠标时才弹出胶囊；关闭则保持选中即弹出。适合不想一划词就触发的人。",
+  "sc.assistEnable": "启用辅助键",
+  "sc.assistEnableSub": "关闭 = 选中即弹出（默认）。",
+  "sc.assistKeyLabel": "辅助键",
+  "sc.assistKeySub":
+    "点击右侧输入框后按下想用的单个修饰键（Ctrl / Alt / Shift / ⌘ / Win）。可自行设定以避免与其他软件冲突。",
+  "sc.assistPress": "按下一个修饰键…",
+  "sc.assistRecordPh": "点击录制辅助键",
+  "sc.assistNeedMod": "辅助键只能是单个修饰键（Ctrl / Alt / Shift / ⌘ / Win）",
+  "sc.assistResetTitle": "恢复默认辅助键（Alt / Option）",
+  "sc.assistNoteOn": "当前：按住 {key} 拖选文字，松开鼠标时弹出。",
+  "sc.assistNoteOff": "当前：选中文字后立即弹出。",
+  "sc.assistCaveat":
+    "边界：辅助键只保留「按住 + 拖选」一种触发方式；在需要代按复制的应用里，Alt / Shift / Win 可能与兼容取词冲突，macOS 侧支持仍在验证。",
 
   // 模型服务页
   "model.hint":

@@ -552,35 +552,8 @@ export default function CapturePage({ settings, patch, saveNow }: PageProps) {
               );
             })()}
 
-      {/* 划词弹出方式：与智能提取模式同构（mode-line + seg + mode-note），
-          二选一互斥，说明跟随所选选项 */}
-      <div className="mode-line">
-        <div className="seg" role="radiogroup" aria-label={t("capture.modeAria")}>
-          <button
-            className={settings.captureMode === "always" ? "on" : ""}
-            onClick={() => {
-              patch({ captureMode: "always" });
-              saveNow?.();
-            }}
-          >
-            {t("capture.modeAlways")}
-          </button>
-          <button
-            className={settings.captureMode === "ctrl" ? "on" : ""}
-            onClick={() => {
-              patch({ captureMode: "ctrl" });
-              saveNow?.();
-            }}
-          >
-            {t("capture.modeCtrl")}
-          </button>
-        </div>
-        <span className="mode-note">
-          {settings.captureMode === "always"
-            ? t("capture.modeAlwaysSub")
-            : t("capture.modeCtrlSub")}
-        </span>
-      </div>
+      {/* 划词触发方式（「开关 + 辅助键」）已按 issue #14 迁到快捷键页，
+          划词页不再放这组配置，避免与兼容取词清单等设置挤在同一屏。 */}
 
       {/* 兼容取词允许清单（仅 Windows）：macOS 的兼容模式常开，Windows 上改成
           逐应用授权——自绘应用无法探测其内部状态，主键 Ctrl+Insert 虽在终端里不是

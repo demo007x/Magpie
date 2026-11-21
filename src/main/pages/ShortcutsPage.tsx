@@ -148,6 +148,71 @@ function ShortcutRecorder({
   );
 }
 
+// 划词辅助键（issue #14）：一个开关 + 用户录制的单个修饰键。规范名与 Rust 侧
+// settings.rs::assist_key_mask 同一套：Alt(Windows Alt / macOS Option) / Ctrl /
+// Shift / Cmd(macOS ⌘ / Windows Win)。显示按平台给惯用名，存储保持规范名不变。
+const ASSIST_LABELS: Record<string, { mac: string; win: string }> = {
+  Alt: { mac: "⌥ Option", win: "Alt" },
+  Ctrl: { mac: "⌃ Control", win: "Ctrl" },
+  Shift: { mac: "⇧ Shift", win: "Shift" },
+  Cmd: { mac: "⌘ Command", win: "Win" },
+};
+function displayAssistKey(v: string): string {
+  const e = ASSIST_LABELS[v];
+  return e ? (IS_MAC ? e.mac : e.win) : v;
+}
+// 浏览器 keydown 里单独按下修饰键时 e.key 就是这些名字；映射到规范名。
+const DOM_MOD_TO_ASSIST: Record<string, string> = {
+  Control: "Ctrl",
+  Alt: "Alt",
+  Shift: "Shift",
+  Meta: "Cmd",
+};
+
+// 单键录制器：只接受一个修饰键，普通主键提示不合法。只读、Esc 取消、
+// 录入即 blur——与全局快捷键录制器同构，但不接受组合键（辅助键必须能
+// 「按住 + 拖选」，组合键做不到也不符合快捷键设计规范）。
+function AssistKeyRecorder({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: Settings["captureAssistKey"]) => void;
+}) {
+  const [recording, setRecording] = useState(false);
+  const [hint, setHint] = useState("");
+
+  return (
+    <input
+      readOnly
+      style={{ width: 180, flexShrink: 0, cursor: "pointer" }}
+      className={recording ? "recording" : ""}
+      value={recording ? hint || t("sc.assistPress") : displayAssistKey(value)}
+      placeholder={t("sc.assistRecordPh")}
+      onFocus={() => {
+        setRecording(true);
+        setHint("");
+      }}
+      onBlur={() => setRecording(false)}
+      onKeyDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === "Escape") {
+          e.currentTarget.blur();
+          return;
+        }
+        const mapped = DOM_MOD_TO_ASSIST[e.key];
+        if (mapped) {
+          onChange(mapped as Settings["captureAssistKey"]);
+          e.currentTarget.blur();
+          return;
+        }
+        setHint(t("sc.assistNeedMod"));
+      }}
+    />
+  );
+}
+
   return (
           <>
             {/* 无页级标题：左栏导航已标明页面，说明行直接开场 */}
@@ -180,6 +245,62 @@ function ShortcutRecorder({
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* 划词辅助键（issue #14）：开关 + 单个修饰键录制，按作者定案从划词页
+                迁到快捷键页，沿用本页「改完点保存统一落盘」范式（只 patch）。 */}
+            <div className="card">
+              <div className="row-between tight">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="row-title">{t("sc.assistTitle")}</div>
+                  <div className="row-sub">{t("sc.assistDesc")}</div>
+                </div>
+                <label className="switch" title={t("sc.assistEnableSub")}>
+                  <input
+                    type="checkbox"
+                    checked={settings.captureAssistEnabled}
+                    onChange={(e) =>
+                      patch({ captureAssistEnabled: e.target.checked })
+                    }
+                  />
+                  <span className="knob" />
+                </label>
+              </div>
+
+              {settings.captureAssistEnabled && (
+                <div className="row-between" style={{ marginTop: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="row-title">{t("sc.assistKeyLabel")}</div>
+                    <div className="row-sub">{t("sc.assistKeySub")}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    <AssistKeyRecorder
+                      value={settings.captureAssistKey}
+                      onChange={(v) => patch({ captureAssistKey: v })}
+                    />
+                    {settings.captureAssistKey !== "Alt" && (
+                      <button
+                        className="btn sm"
+                        title={t("sc.assistResetTitle")}
+                        onClick={() => patch({ captureAssistKey: "Alt" })}
+                      >
+                        {t("sc.reset")}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="mode-note" style={{ marginTop: 10 }}>
+                {settings.captureAssistEnabled
+                  ? t("sc.assistNoteOn", {
+                      key: displayAssistKey(settings.captureAssistKey),
+                    })
+                  : t("sc.assistNoteOff")}
+              </div>
+              <div className="row-sub" style={{ marginTop: 6 }}>
+                {t("sc.assistCaveat")}
+              </div>
             </div>
 
             <div className="save-bar">

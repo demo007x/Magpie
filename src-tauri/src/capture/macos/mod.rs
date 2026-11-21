@@ -66,7 +66,32 @@ struct MouseEvent {
     y: f64,
     /// 键盘事件的物理键码（鼠标事件恒为 0）
     keycode: u16,
+    /// 松手瞬间（EV_LEFT_UP）按住的修饰键位掩码（settings::MOD_*）；其余事件为 0。
+    /// 在 tap 回调里同步采样，与物理事件同一时刻——detect 线程排队期间状态可能漂移。
+    held_modifiers: u8,
     t: Instant,
+}
+
+/// 从事件自带的 CGEventFlags 读出松手瞬间按住的修饰键，换算成跨平台位掩码。
+/// 与 Windows 侧 GetAsyncKeyState 采样对位：都是「手势完成那一刻」的物理状态，
+/// 判定集中到 worker 读配置比对。用 flags 而非键盘状态机，既不必扩大键盘监听
+/// 白名单（隐私边界），也天然覆盖 ⌘ / Ctrl / Option / Shift 四种可配置键。
+fn held_modifiers_from_event(ev: CGEventRef) -> u8 {
+    let flags = unsafe { CGEventGetFlags(ev) };
+    let mut m = 0u8;
+    if flags & K_CG_FLAG_MASK_ALTERNATE != 0 {
+        m |= crate::settings::MOD_ALT;
+    }
+    if flags & K_CG_FLAG_MASK_CONTROL != 0 {
+        m |= crate::settings::MOD_CTRL;
+    }
+    if flags & K_CG_FLAG_MASK_SHIFT != 0 {
+        m |= crate::settings::MOD_SHIFT;
+    }
+    if flags & K_CG_FLAG_MASK_COMMAND != 0 {
+        m |= crate::settings::MOD_CMD;
+    }
+    m
 }
 
 static EVENT_TX: Mutex<Option<Sender<MouseEvent>>> = Mutex::new(None);
@@ -83,7 +108,7 @@ extern "C" fn tap_callback(
     _user: *mut c_void,
 ) -> CGEventRef {
     // 回调内只做计数 + 入队（绝不查询 AX）
-    let is_key = kind == EV_KEY_DOWN || kind == EV_KEY_UP;
+    let is_key = kind == EV_KEY_DOWN;
     // 拖选矩形记录（须在静音早退之前——静音期间 mouse 事件到此为止）：
     // LeftDown 记起点，LeftUp 与起点距离 >6px 时成矩形写入 LAST_SNIP_RECT。
     // 这正是截图框选（capture_muted）的形态，也是自愈重截的数据来源
@@ -109,32 +134,20 @@ extern "C" fn tap_callback(
     if !is_key && kind != EV_MOUSE_MOVED && capture_muted() {
         return ev;
     }
-    // 键盘通道只放行 Esc 按下和修饰键（⌘/Ctrl）的按下与抬起：其余按键即刻丢弃，
-    // 不读内容、不入队、不落盘——监听范围与隐私边界都止于这些键码
+    // 键盘通道只放行「Esc 按下」：其余按键（含所有修饰键）即刻丢弃，
+    // 不读内容、不入队、不落盘——监听范围与隐私边界都止于这一个键码。
+    // 辅助键是否按住改由松手事件的 CGEventFlags 采样（held_modifiers_from_event），
+    // 键盘 tap 不再需要监听修饰键本身，也不再有「单独按下→补按抬起」那套门控。
     let keycode = if is_key {
         let code = unsafe { CGEventGetIntegerValueField(ev, 9) } as u16;
-        let is_esc = code == KEY_ESC;
-        let is_modifier = matches!(
-            code,
-            KEY_CMD_LEFT | KEY_CMD_RIGHT | KEY_CTRL_LEFT | KEY_CTRL_RIGHT
-        );
-        // Esc 只放行按下（排除长按自动重复和抬起）；修饰键放行按下和抬起
-        if is_esc {
-            // 非按下事件（抬起）或自动重复，丢弃
-            if kind != EV_KEY_DOWN
-                || unsafe { CGEventGetIntegerValueField(ev, 8) } != 0
-            {
-                return ev;
-            }
-        } else if !is_modifier {
-            return ev; // 非 Esc 非修饰键，丢弃
+        // 排除自动重复；非 Esc 一律丢弃
+        if code != KEY_ESC || unsafe { CGEventGetIntegerValueField(ev, 8) } != 0 {
+            return ev;
         }
         // Esc 转发给截图遮罩流程（若进行中）：遮罩是非 key 窗口收不到键盘，
         // 选区/会话的取消只能靠 tap 全局转发——在回调内即时处理（轻量锁 +
         // 事件消息），不走 worker 队列，保证立即响应
-        if is_esc {
-            crate::floating::snip::esc_pressed();
-        }
+        crate::floating::snip::esc_pressed();
         code
     } else {
         0
@@ -157,7 +170,21 @@ extern "C" fn tap_callback(
             let p = unsafe { CGEventGetLocation(ev) };
             (p.x, p.y)
         };
-        let _ = tx.send(MouseEvent { kind, x, y, keycode, t: Instant::now() });
+        // 松手瞬间同步采样修饰键位：与 EV_LEFT_UP 同一时刻，避免 detect 线程
+        // 排队期间用户已先松开辅助键导致判定失真。
+        let held_modifiers = if kind == EV_LEFT_UP {
+            held_modifiers_from_event(ev)
+        } else {
+            0
+        };
+        let _ = tx.send(MouseEvent {
+            kind,
+            x,
+            y,
+            keycode,
+            held_modifiers,
+            t: Instant::now(),
+        });
     }
     ev
 }
@@ -180,8 +207,9 @@ struct SelectionJob {
     queued_at: Instant,
     /// 创建时的代际号；查询线程各检查点比对 GESTURE_GEN，不一致即判废
     gen: u64,
-    /// ⌘/Ctrl 是否正在被按住（用于"按住 ⌘ 再选中文本"的交互）
-    ctrl_held: bool,
+    /// 松手瞬间按住的修饰键位掩码（settings::MOD_*），随 Selection 上报给
+    /// worker 比对配置键。平台层只如实上报，判定不在本线程。
+    held_modifiers: u8,
 }
 
 /// 手势代际号：detect 线程在每次「收起意图/新手势」时递增——PlainClick、
@@ -383,8 +411,7 @@ fn tap_mask() -> u64 {
     let mut m = (1u64 << EV_LEFT_DOWN)
         | (1u64 << EV_LEFT_UP)
         | (1u64 << EV_LEFT_DRAGGED)
-        | (1u64 << EV_KEY_DOWN)
-        | (1u64 << EV_KEY_UP);
+        | (1u64 << EV_KEY_DOWN);
     if std::env::var("SHICI_ALL_EVENTS").as_deref() == Ok("1") {
         m |= 1u64 << 5; // kCGEventMouseMoved
     }
@@ -408,11 +435,8 @@ fn detect_loop(
     let mut down_baseline: Option<(i32, String)> = None;
     let mut last_up: Option<(Instant, f64, f64)> = None;
     let mut last_hover: Option<Instant> = None;
-    // ⌘/Ctrl 单独按下状态追踪（用于 capture_mode == "ctrl" 的弹出门控）
-    let mut ctrl_down_at: Option<Instant> = None;
-    let mut other_key_during_ctrl = false;
-    // ⌘/Ctrl 是否正在被按住（用于"按住 ⌘ 再选中文本"的交互）
-    let mut ctrl_held = false;
+    // 辅助键是否按住不在此维护状态机：tap 回调已把「松手瞬间的修饰键掩码」
+    // 随 MouseEvent 带过来，判定集中到 worker 读配置比对（issue #14）。
 
     while let Ok(ev) = rx.recv() {
         match ev.kind {
@@ -432,65 +456,13 @@ fn detect_loop(
                 }
             }
             EV_KEY_DOWN => {
-                // Esc 按下：收起意图
+                // tap 回调已把键盘收窄到「Esc 按下」，这里只负责收起意图：
+                // 判废在飞查询（收起之后不该再弹陈旧胶囊）。辅助键状态不再经
+                // 键盘事件维护，改由松手事件的 CGEventFlags 上报。
                 if ev.keycode == KEY_ESC {
                     debug_log("key-down：Esc");
-                    // Esc = 收起意图：判废在飞查询（收起之后不该再弹陈旧胶囊）
                     GESTURE_GEN.fetch_add(1, Ordering::Relaxed);
                     let _ = tx.send(CaptureEvent::Escape);
-                }
-                // ⌘/Ctrl 按下：开始追踪（用于 capture_mode == "ctrl" 的弹出门控）
-                else if matches!(
-                    ev.keycode,
-                    KEY_CMD_LEFT | KEY_CMD_RIGHT | KEY_CTRL_LEFT | KEY_CTRL_RIGHT
-                ) {
-                    ctrl_held = true;
-                    ctrl_down_at = Some(Instant::now());
-                    other_key_during_ctrl = false;
-                    debug_log("key-down：⌘/Ctrl 开始追踪");
-                }
-                // 其他键按下：若正在追踪 ⌘/Ctrl，标记为「非单独」
-                else if ctrl_down_at.is_some() {
-                    other_key_during_ctrl = true;
-                }
-            }
-            EV_KEY_UP => {
-                // ⌘/Ctrl 抬起：若单独按下（无其他键），触发挂起的选区弹出
-                if matches!(
-                    ev.keycode,
-                    KEY_CMD_LEFT | KEY_CMD_RIGHT | KEY_CTRL_LEFT | KEY_CTRL_RIGHT
-                ) {
-                    ctrl_held = false;
-                    if let Some(down_at) = ctrl_down_at.take() {
-                        let held_ms = down_at.elapsed().as_millis();
-                        let alone = !other_key_during_ctrl;
-                        debug_log(format!(
-                            "key-up：⌘/Ctrl 抬起 held={}ms alone={}",
-                            held_ms, alone
-                        ));
-                        if alone {
-                            // 单独抬起：弹出挂起的选区并 emit
-                            if let Some((text, x, y, app, pid)) =
-                                crate::capture::pop_pending()
-                            {
-                                debug_log(format!(
-                                    "⌘/Ctrl 触发弹出：len={} app={:?}",
-                                    text.len(),
-                                    app
-                                ));
-                                let _ = tx.send(CaptureEvent::Selection {
-                                    text,
-                                    x,
-                                    y,
-                                    app,
-                                    bid: String::new(), // macOS 侧 bid 在 worker 层补
-                                    pid,
-                                    ctrl_held: false, // ⌘/Ctrl 触发弹出：选中后再按键
-                                });
-                            }
-                        }
-                        other_key_during_ctrl = false;
-                    }
                 }
             }
             EV_LEFT_DOWN => {
@@ -576,7 +548,7 @@ fn detect_loop(
                         wait_ms,
                         queued_at: Instant::now(),
                         gen,
-                        ctrl_held,
+                        held_modifiers: ev.held_modifiers,
                     });
                 }
                 last_up = Some((ev.t, ev.x, ev.y));
@@ -615,7 +587,7 @@ fn query_loop(app: &AppHandle, rx: Receiver<SelectionJob>, tx: Sender<CaptureEve
         // 发之前最后核一次代际号——陈旧结果不弹（点空白后冒出新胶囊比不弹更伤）
         let mut emit = |text: String, pid: i32, source: &str| {
             if fresh() {
-                forward_selection(&tx, &mut last_emitted, text, pid, job.up.0, job.up.1, source, job.ctrl_held);
+                forward_selection(&tx, &mut last_emitted, text, pid, job.up.0, job.up.1, source, job.held_modifiers);
             } else {
                 debug_log("查询判废（发事件前）：手势已过期，丢弃取词结果");
             }
@@ -668,7 +640,7 @@ fn forward_selection(
     x: f64,
     y: f64,
     source: &str,
-    ctrl_held: bool,
+    held_modifiers: u8,
 ) {
     // 重复抑制：同文本 + 坐标相近（< 4px）
     let dup = last_emitted.as_ref().map_or(false, |(lt, lx, ly)| {
@@ -698,7 +670,7 @@ fn forward_selection(
         app,
         bid,
         pid,
-        ctrl_held,
+        held_modifiers,
     });
     *last_emitted = Some((text, x, y));
 }

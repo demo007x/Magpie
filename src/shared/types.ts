@@ -189,8 +189,12 @@ export interface Settings {
    *  空 = 拾趣绝不代按任何键。条目与 appBlacklist 同一套标识（exe 文件名） */
   compatApps: string[];
   debounceMs: number;
-  /** 划词弹出模式："always"（选中即弹）| "ctrl"（按 Ctrl/⌘ 才弹） */
-  captureMode: "always" | "ctrl";
+  /** 是否启用「按住辅助键才划词弹出」（issue #14）：false = 选中即弹。
+   *  UI 在快捷键页，与 captureAssistKey 组成「开关 + 键位」两项独立配置 */
+  captureAssistEnabled: boolean;
+  /** 辅助键规范名："Alt"(Windows Alt / macOS Option，默认) | "Ctrl" | "Shift"
+   *  | "Cmd"(macOS ⌘ / Windows Win)。仅修饰键，由快捷键页单键录制器写入 */
+  captureAssistKey: "Alt" | "Ctrl" | "Shift" | "Cmd";
   /** 结果窗口位置记忆（逻辑坐标） */
   resultWindowPos?: [number, number] | null;
   /** 结果窗口尺寸记忆 */
