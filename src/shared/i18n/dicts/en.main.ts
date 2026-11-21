@@ -120,20 +120,15 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   // Selection modifier (issue #14): toggle + single-key recorder
   "sc.assistTitle": "Selection modifier",
   "sc.assistDesc":
-    "When on, hold the modifier below while dragging to select text; the capsule appears when you release the mouse. Off keeps the default show-on-select. Useful if you don't want a popup on every selection.",
-  "sc.assistEnable": "Use a modifier to trigger",
+    "When on, hold the modifier and drag to select; the capsule appears when you release the mouse. Off = show on select.",
   "sc.assistEnableSub": "Off = show as soon as you select (default).",
   "sc.assistKeyLabel": "Modifier key",
   "sc.assistKeySub":
-    "Click the box, then press a single modifier (Ctrl / Alt / Shift / ⌘ / Win). Set your own to avoid clashing with other apps.",
+    "Click the box, then press the modifier you want.",
   "sc.assistPress": "Press a modifier key…",
   "sc.assistRecordPh": "Click to record the modifier",
   "sc.assistNeedMod": "The modifier must be a single key (Ctrl / Alt / Shift / ⌘ / Win)",
   "sc.assistResetTitle": "Reset to the default modifier (Alt / Option)",
-  "sc.assistNoteOn": "Now: hold {key} while dragging; release the mouse to show the capsule.",
-  "sc.assistNoteOff": "Now: the capsule shows as soon as you select text.",
-  "sc.assistCaveat":
-    "Note: only the hold-and-drag trigger is kept. In apps that need a synthetic copy, Alt / Shift / Win may clash with compatibility lookup; macOS support is still being verified.",
 
   // Model services page
   "model.hint":

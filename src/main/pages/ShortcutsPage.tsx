@@ -290,17 +290,6 @@ function AssistKeyRecorder({
                   </div>
                 </div>
               )}
-
-              <div className="mode-note" style={{ marginTop: 10 }}>
-                {settings.captureAssistEnabled
-                  ? t("sc.assistNoteOn", {
-                      key: displayAssistKey(settings.captureAssistKey),
-                    })
-                  : t("sc.assistNoteOff")}
-              </div>
-              <div className="row-sub" style={{ marginTop: 6 }}>
-                {t("sc.assistCaveat")}
-              </div>
             </div>
 
             <div className="save-bar">
