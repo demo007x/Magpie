@@ -33,6 +33,8 @@ pnpm build:debug:app    # debug .app 包（macOS 26 下 dev 裸二进制的托�
 
 **坑（ocr_helper 陈旧二进制）**：`pnpm tauri dev` 走 `cargo run`（默认 run = magpie），只重编主程序及其依赖；兄弟 bin `ocr_helper` 不是依赖，改了 `src/bin/ocr_helper/` 源码也不会跟着重编。改 helper 后必须 `cargo build`（或 `cargo build --bin ocr_helper`）再联调，否则主程序新参数配旧 helper 出离谱报错（实例：旧 helper 不认识 `--qr`，把参数字符串当路径做 exists 检查报「文件不存在」，而文件明明存在）。helper 是每次调用现拉起的子进程，重编落盘即生效，无需重启 dev。dev 启动的 beforeDevCommand 已带一次 helper 编译（2026-11-22 起，挡跨会话陈旧），会话中途改 helper 源码仍需手动编。
 
+**坑（更新签名）**：`tauri.conf.json` 的 `bundle.createUpdaterArtifacts: true` 是产出 `.sig` 更新签名的开关（缺了它 CLI 跳过全部 minisign 签名，tauri-action 报「Signature not found for the updater JSON」跳过上传，发版 manifest 组装随之失败，2026-11-22 v0.2.0 实证）。开启后本地 `tauri build` 系命令（build:debug:app / build:mac / pnpm tauri build）在 bundle 阶段也要求 `TAURI_SIGNING_PRIVATE_KEY`（没导出就报 "no private key"），`tauri dev` 与 `--no-bundle` 不走签名不受影响；密钥与 GitHub secrets 的 TAURI_SIGNING_PRIVATE_KEY 同源。
+
 ## 架构：Rust 管不变的，TS 管多变的
 
 前端是多入口 MPA（vite 三入口）：`main`（index.html，设置/自检）、`floating`（floating.html，浮动条/OCR 面板/钉图复用）、`toast`（toast.html，全局轻提示）。
