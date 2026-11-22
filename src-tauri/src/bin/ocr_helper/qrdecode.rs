@@ -15,27 +15,56 @@ pub fn decode_image_file(path: &Path) -> Vec<String> {
 }
 
 /// 解码图片字节里的全部二维码，去重保序（同一码在图里出现两次只算一条）。
-/// 尝试顺序：缩放图 → 原图 → 反色缩放图 → 反色原图。前两档管「码太小被
-/// 缩没了」，后两档管暗色模式的白码黑底（rqrr 只认深色模块在浅底上的
-/// 标准形态）。全空 = 图里没有可解的码，对上层静默
+/// 每个极性内尝试三档：限缩图（超大图先缩，prepare 是像素级成本）→ 原图 →
+/// 小图放大 3 倍。放大档的实证（2026-11-22）：1x 屏大框选整卡时 PNG 只有
+/// 400 余像素宽，密点码摊到 ≈2px/模块，低于 rqrr 可解下限，原图与反色
+/// 全失败；同一颗码小框占满选区（6px/模块）即可解。rqrr 只认深色模块在
+/// 浅底上的标准形态，反色档管暗色模式的白码黑底。全空 = 图里没有可解的
+/// 码，对上层静默
 pub fn decode_png_bytes(raw: &[u8]) -> Vec<String> {
     let Ok(img) = image::load_from_memory(raw) else {
         return Vec::new();
     };
-    // 长边超限先等比缩小：rqrr 预处理（二值化）是像素级成本，大图显著变慢
     const MAX_EDGE: u32 = 1600;
+    // 长边低于此值视为小图：模块像素密度不足是这类图的主因，放大 4 倍
+    // 再试（两种插值都试：Lanczos 平滑边缘 / Nearest 原样复制截屏像素）。
+    // 实测标定（2026-11-22 真实 110px 密点码）：2px/模块时 3 倍放大不够、
+    // 4 倍起可解（rqrr 的检测对模块密度有硬下限）；4 倍后 ≤3200px，
+    // prepare 成本有界且只在解码失败路径才走到
+    const UPSCALE_BELOW: u32 = 800;
+    const UPSCALE: u32 = 4;
     let long = img.width().max(img.height());
-    let scaled = (long > MAX_EDGE)
-        .then(|| img.resize(MAX_EDGE, MAX_EDGE, image::imageops::FilterType::Triangle));
+    let fit = (long > MAX_EDGE).then(|| {
+        img.resize(MAX_EDGE, MAX_EDGE, image::imageops::FilterType::Triangle)
+    });
+    let upscaled: Vec<image::DynamicImage> = (long < UPSCALE_BELOW)
+        .then(|| {
+            [
+                image::imageops::FilterType::Lanczos3,
+                image::imageops::FilterType::Nearest,
+            ]
+            .into_iter()
+            .map(|f| {
+                img.resize_exact(img.width() * UPSCALE, img.height() * UPSCALE, f)
+            })
+            .collect()
+        })
+        .unwrap_or_default();
     let mut out = Vec::new();
     for inverted in [false, true] {
-        let view = scaled.as_ref().unwrap_or(&img);
-        out = decode_gray(to_luma(view, inverted));
+        let first = fit.as_ref().unwrap_or(&img);
+        out = decode_gray(to_luma(first, inverted));
         if !out.is_empty() {
             return out;
         }
-        if scaled.is_some() {
+        if fit.is_some() {
             out = decode_gray(to_luma(&img, inverted));
+            if !out.is_empty() {
+                return out;
+            }
+        }
+        for up in &upscaled {
+            out = decode_gray(to_luma(up, inverted));
             if !out.is_empty() {
                 return out;
             }
@@ -155,7 +184,51 @@ mod tests {
     }
 
     #[test]
+    fn decodes_small_module_qr_via_upscale() {
+        // 复现 2026-11-22 真机失败案例（1x 屏大框选整卡）：密点码摊到
+        // ≈2px/模块（屏幕渲染的抗锯齿灰阶），原图与反色全失败；放大 3 倍
+        // 后 ≈6px/模块可解
+        let code = QrCode::with_version(
+            "https://magpie.app/small-module".as_bytes(),
+            qrcode::types::Version::Normal(7), // 45 模块，密点码
+            qrcode::types::EcLevel::M,
+        )
+        .unwrap();
+        let img = code
+            .render::<image::Luma<u8>>()
+            .quiet_zone(true)
+            .build();
+        // 缩到 110px 长边：45+8 模块 ≈ 2px/模块（Triangle 模拟屏幕渲染的
+        // 抗锯齿灰阶）
+        let small = image::imageops::resize(
+            &img,
+            110,
+            110,
+            image::imageops::FilterType::Triangle,
+        );
+        let mut out = std::io::Cursor::new(Vec::new());
+        small.write_to(&mut out, image::ImageFormat::Png).unwrap();
+        let s = decode_png_bytes(&out.into_inner());
+        assert_eq!(s, vec!["https://magpie.app/small-module".to_string()]);
+    }
+
+    #[test]
     fn garbage_bytes_yield_empty() {
         assert!(decode_png_bytes(b"not an image").is_empty());
+    }
+
+    // 真实失败样本的回归锚：110px 密点码（2026-11-22 真机案例）曾因 3 倍
+    // 放大不足而漏解，4 倍起可解。样本由 npx qrcode 生成，此处只存构造方式
+    #[test]
+    fn decodes_real_world_dense_qr() {
+        let raw = std::fs::read("/tmp/magpie-small-qr.png");
+        if raw.is_err() {
+            return; // 临时样本不在时跳过（CI 无此文件）
+        }
+        let s = decode_png_bytes(&raw.unwrap());
+        assert!(s
+            .first()
+            .map(|u| u.starts_with("https://deep-forest-mushroom.app.workbuddy.host/"))
+            .unwrap_or(false));
     }
 }
