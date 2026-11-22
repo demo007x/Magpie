@@ -152,6 +152,8 @@ static ZH: &[(&str, &str)] = &[
     ("picker.vaultTitle", "选择 Obsidian Vault 目录"),
     ("picker.dictTitle", "选择词典文件"),
     ("picker.dictFilter", "词典文件"),
+    ("picker.zhDictTitle", "选择汉英词典文件"),
+    ("picker.zhDictFilter", "汉英词典文件"),
     ("picker.imageTitle", "选择要识别的图片"),
     ("picker.imageFilter", "图片"),
     // 翻译服务（按服务商）
@@ -260,6 +262,8 @@ static EN: &[(&str, &str)] = &[
     ("picker.vaultTitle", "Choose your Obsidian vault folder"),
     ("picker.dictTitle", "Choose a dictionary file"),
     ("picker.dictFilter", "Dictionary file"),
+    ("picker.zhDictTitle", "Choose a Chinese-English dictionary file"),
+    ("picker.zhDictFilter", "Chinese-English dictionary file"),
     ("picker.imageTitle", "Choose an image to capture text from"),
     ("picker.imageFilter", "Images"),
     // Translation services (per provider)

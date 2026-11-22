@@ -129,8 +129,10 @@ export interface AnkiConfig {
 /** 离线词典配置（ADR-12）：只读用户本机已有的兼容词库文件——不随安装包分发、
  *  本版不做下载器。dbPath 空 = 自动探测（装过兼容词典应用时即命中）。 */
 export interface DictConfig {
-  /** 词库文件绝对路径（空 = 自动探测） */
+  /** 英→汉词库文件绝对路径（空 = 自动探测） */
   dbPath: string;
+  /** 汉→英词库文件绝对路径（CC-CEDICT 转换库；空 = 未接入） */
+  zhEnPath: string;
 }
 
 /** 本地朗读配置：默认音色 + 功能开关（模型是否已安装由 Rust 侧文件系统判定） */
@@ -235,6 +237,12 @@ export interface DictStatus {
   version: string;
 }
 
+/** dict_status 回包：两本词库各自体检，胶囊只要任一 ready 就出现「词典」 */
+export interface DictStatusBundle {
+  enZh: DictStatus;
+  zhEn: DictStatus;
+}
+
 /** 词典例句 / 义项 / 词条（对应 src-tauri/src/dict/query.rs）。
  *  pos 是词库原文（noun/verb/…），显示名由 shared/dict.ts 经 i18n 映射 */
 export interface DictExample {
@@ -253,6 +261,8 @@ export interface DictSense {
 export interface DictEntry {
   headword: string;
   ipa: string[];
+  /** 拼音（汉→英库）；英→汉库为空串 */
+  reading: string;
   senses: DictSense[];
   memoryHook: string;
   etymology: string;

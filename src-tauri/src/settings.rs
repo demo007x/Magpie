@@ -360,13 +360,17 @@ pub struct VisionFlags {
     pub summarize: bool,
 }
 
-/// 离线词典配置（ADR-12）：只指向一个**已存在于用户本机**的词库文件——拾趣只读
-/// 不写、不下载、不随安装包分发（词库数据许可为 CC BY-SA 4.0，见 ADR-12）。
-/// db_path 为空 = 用户未手动选择，由 dict::store 自动探测兼容词典应用的默认位置。
+/// 离线词典配置（ADR-12）：只指向**已存在于用户本机**的词库文件——拾趣只读
+/// 不写、不下载、不随安装包分发（词库数据许可均为 CC BY-SA 4.0，见 ADR-12）。
+/// db_path 为空 = 用户未手动选择，由 dict::store 自动探测兼容词典应用的默认位置；
+/// zh_en_path 指向由 CC-CEDICT 官方文本转换而来的汉→英 SQLite，无自动探测
+///（本机路径因人而异，且拾趣不替用户下载/写盘）。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct DictConfig {
     pub db_path: String,
+    #[serde(default)]
+    pub zh_en_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

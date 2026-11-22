@@ -24,9 +24,14 @@ function literal(text: string): string {
 export function formatDictEntry(e: DictEntry): string {
   const blocks: string[] = [];
   const ipa = e.ipa.map((p) => `/${p}/`).join(" · ");
-  blocks.push(ipa ? `**${e.headword}**\n${ipa}` : `**${e.headword}**`);
+  // 汉→英库给的是拼音，不是 IPA：用方括号，别让 `/…/` 把声调数字读成音标
+  const reading = e.reading ? `[${e.reading}]` : "";
+  const pron = [ipa, reading].filter(Boolean).join(" · ");
+  blocks.push(pron ? `**${e.headword}**\n${pron}` : `**${e.headword}**`);
   for (const s of e.senses) {
-    const lines = [`**${[posLabel(s.pos), s.gloss].filter(Boolean).join(" ｜ ")}**`];
+    // CC-CEDICT 没有词性维度，pos 为空时不该回退成未翻译的键名
+    const pos = s.pos ? posLabel(s.pos) : "";
+    const lines = [`**${[pos, s.gloss].filter(Boolean).join(" ｜ ")}**`];
     if (s.explanation) lines.push(literal(s.explanation));
     if (s.usageNote) lines.push(`**${t("dict.usage")}** ｜ ${literal(s.usageNote)}`);
     const ex = s.examples.flatMap((x) => [x.text, x.translation]).filter(Boolean);

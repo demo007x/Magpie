@@ -245,24 +245,34 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // 词典页（离线查词，ADR-12）
   "dict.hint":
-    "Select an English word and get dictionary meanings instantly — offline, no model credits. The dictionary belongs to the dictionary app on your computer; Magpie only reads it. Changes apply after saving.",
+    "Select English for Chinese meanings, or Chinese for English meanings — instant, offline, no model credits. Both word lists stay on your computer; Magpie only reads them. Selections with Chinese characters use the Chinese-English list; everything else uses English-Chinese. Changes apply after saving.",
   "dict.stateReady": "Dictionary ready — {count} entries",
   "dict.stateUnset": "No dictionary found yet",
   "dict.stateMissing": "This dictionary file can't be found — it may have moved or been deleted",
   "dict.stateUnknown": "This file can't be read — it may not be a supported dictionary",
   "dict.fileLabel": "Dictionary file",
+  "dict.enZhTitle": "EN → ZH word list",
+  "dict.zhEnTitle": "ZH → EN word list",
   "dict.choose": "Choose file…",
+  "dict.chooseZh": "Choose Chinese-English list…",
   "dict.autoDetected": "Auto-detected",
   "dict.chosenManually": "Chosen manually",
   "dict.useAuto": "Use auto-detection",
-  "dict.autoHint": "If a compatible dictionary app is installed, it works with nothing to set up.",
+  "dict.autoHint":
+    "Detects the open-dictionary list used by compatible apps by default; choose a file to use a different EN→ZH list on your computer.",
+  "dict.zhHint":
+    "Defaults to a list converted from the official CC-CEDICT text. Magpie never downloads or bundles it; choose a file to use a different ZH→EN list.",
   "dict.enOnly": "The dictionary covers English entries only; use Translate for Chinese or long passages.",
+  "dict.routeHint": "Chinese characters use the ZH→EN list; other selections use EN→ZH. Use Translate for full sentences.",
   "dict.tutorialLead": "Full setup steps (two ways):",
   "dict.tutorialLink": "Open the setup guide",
   "dict.sourceTitle": "Where the entries come from",
   "dict.credit":
-    "Entries come from Aictionary's open-source local dictionary (built on a Wiktionary snapshot), licensed CC BY-SA 4.0.",
-  "dict.sourceLink": "Project page",
+    "English-Chinese entries come from the open-dictionary project (built on a Wiktionary snapshot), licensed CC BY-SA 4.0. Aictionary is only one client of that dictionary.",
+  "dict.zhCredit":
+    "Chinese-English entries come from CC-CEDICT (published by MDBG), licensed CC BY-SA 4.0. Magpie only reads your local converted file and never bundles it.",
+  "dict.sourceLink": "open-dictionary page",
+  "dict.zhSourceLink": "CC-CEDICT page",
 
   // Prompts page
   "prompts.hint":

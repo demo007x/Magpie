@@ -21,6 +21,8 @@ const EXAMPLE_CAP: i64 = 1;
 const IPA_CAP: usize = 3;
 /// 词头长度上限：库内最长的是谚语条目（约 80 字符），再长的选区不可能是词条
 const HEADWORD_MAX_CHARS: usize = 160;
+/// 汉→英库同词头不同读音可能有多条（行/重/长），前几条就够结果窗展示
+const ZH_SENSE_CAP: i64 = 8;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,8 +49,10 @@ pub struct DictSense {
 #[serde(rename_all = "camelCase")]
 pub struct DictEntry {
     pub headword: String,
-    /// 音标（IPA），按词性组顺序去重后取前几条
+    /// 音标（IPA），按词性组顺序去重后取前几条；汉→英库为空
     pub ipa: Vec<String>,
+    /// 拼音（汉→英库）；英→汉库为空。TS 渲染时不用 `/…/` 包它
+    pub reading: String,
     pub senses: Vec<DictSense>,
     /// 记忆锚点（一句话帮用户记住这个词），空串 = 无
     pub memory_hook: String,
@@ -66,6 +70,79 @@ pub fn normalize(raw: &str) -> Option<String> {
         return None;
     }
     Some(trimmed.to_lowercase())
+}
+
+/// 选区是否含汉字：用来在两本词库之间路由，而不是让一本库假装支持双向。
+/// 覆盖基本区、扩展 A 与兼容表意文字；日文假名/韩文按英文路径走（未收录即未命中）。
+pub fn contains_cjk(raw: &str) -> bool {
+    raw.chars().any(|c| {
+        matches!(c, '\u{3400}'..='\u{9FFF}' | '\u{F900}'..='\u{FAFF}' | '\u{20000}'..='\u{2FFFF}')
+    })
+}
+
+/// 汉→英词头的取值：不做小写化（阿 Q 这类混合词头大小写有语义），其余同 normalize。
+fn normalize_cjk(raw: &str) -> Option<String> {
+    let collapsed = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = collapsed.trim_matches(|c: char| !c.is_alphanumeric());
+    if trimmed.is_empty() || trimmed.chars().count() > HEADWORD_MAX_CHARS {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+/// 汉→英查词：CC-CEDICT 同名不同音会占多行，全部并成一条词条；拼音放 reading，
+/// 每行定义并成一条 sense（词库本身没有词性/例句维度，不伪造）。
+pub fn lookup_zh(conn: &Connection, raw: &str) -> Option<DictEntry> {
+    let key = normalize_cjk(raw)?;
+    let mut st = conn
+        .prepare(
+            "select traditional, simplified, pinyin, definitions
+               from cedict
+              where simplified = ?1 or traditional = ?1
+              order by id
+              limit ?2",
+        )
+        .ok()?;
+    let rows = st
+        .query_map(params![key, ZH_SENSE_CAP], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })
+        .ok()?
+        .flatten()
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        return None;
+    }
+    let headword = rows[0].1.clone();
+    let reading = rows
+        .iter()
+        .map(|r| r.2.clone())
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let senses = rows
+        .into_iter()
+        .map(|(_, _, _, definitions)| DictSense {
+            pos: String::new(),
+            gloss: definitions,
+            explanation: String::new(),
+            usage_note: String::new(),
+            examples: Vec::new(),
+        })
+        .collect();
+    Some(DictEntry {
+        headword,
+        ipa: Vec::new(),
+        reading,
+        senses,
+        memory_hook: String::new(),
+        etymology: String::new(),
+    })
 }
 
 pub fn lookup(conn: &Connection, raw: &str) -> Option<DictEntry> {
@@ -96,6 +173,7 @@ pub fn lookup(conn: &Connection, raw: &str) -> Option<DictEntry> {
     Some(DictEntry {
         headword,
         ipa: fetch_ipa(conn, &entry_id),
+        reading: String::new(),
         senses,
         memory_hook,
         etymology,
@@ -185,7 +263,7 @@ fn fetch_ipa(conn: &Connection, entry_id: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dict::store::tests::{fixture, insert_entry};
+    use crate::dict::store::tests::{cedict_fixture, fixture, insert_cedict, insert_entry};
 
     fn add_sense(
         conn: &Connection,
@@ -218,6 +296,34 @@ mod tests {
         assert_eq!(normalize("by and by"), Some("by and by".into()), "词组内部空格保留");
         assert_eq!(normalize("   "), None, "空白不该发起查询");
         assert_eq!(normalize(&"x".repeat(200)), None, "超长选区不可能是词条");
+    }
+
+    #[test]
+    fn cjk_routing_recognizes_han_but_not_latin() {
+        assert!(contains_cjk("你好"), "汉字选区走汉英库");
+        assert!(contains_cjk("苹果电脑"), "繁简都算汉字");
+        assert!(!contains_cjk("perceive"), "英文选区仍走英汉库");
+        assert!(contains_cjk("hello 世界"), "混入汉字也按汉英库路由");
+    }
+
+    #[test]
+    fn lookup_zh_merges_pinyin_variants_and_matches_traditional() {
+        let conn = cedict_fixture();
+        insert_cedict(&conn, "蘋果", "苹果", "Ping2 guo3", "Apple (company)");
+        insert_cedict(&conn, "苹果", "苹果", "ping2 guo3", "apple");
+        insert_cedict(&conn, "你好", "你好", "ni3 hao3", "hello; hi");
+
+        let e = lookup_zh(&conn, " 苹果 ").expect("简体命中");
+        assert_eq!(e.headword, "苹果");
+        assert!(e.ipa.is_empty(), "汉英库没有 IPA");
+        assert_eq!(e.reading, "Ping2 guo3 · ping2 guo3", "同名不同音合并展示");
+        assert_eq!(e.senses.len(), 2);
+        assert!(e.senses[0].gloss.contains("Apple"));
+        assert!(e.senses[1].gloss.contains("apple"));
+
+        let trad = lookup_zh(&conn, "蘋果").expect("繁体也能命中");
+        assert_eq!(trad.headword, "苹果", "回包统一用简体词头");
+        assert!(lookup_zh(&conn, "草莓").is_none(), "未收录按未命中");
     }
 
     #[test]

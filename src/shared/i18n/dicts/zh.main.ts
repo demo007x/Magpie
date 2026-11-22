@@ -234,24 +234,34 @@ export const zhMain = {
 
   // 词典页（离线查词，ADR-12）
   "dict.hint":
-    "划到英文单词时直接给词典释义——毫秒级出结果、不联网、不消耗模型额度。词典由你本机的词典应用维护，拾趣只读取它，不会改动。更改需保存后生效。",
+    "划英文给中文释义、划中文给英文释义——毫秒级、不联网、不消耗模型额度。两本词库都放在你本机，拾趣只读不写；选区含汉字时自动查汉英库，否则查英汉库。更改需保存后生效。",
   "dict.stateReady": "词典可用，共 {count} 条词条",
   "dict.stateUnset": "还没找到可用的词典",
   "dict.stateMissing": "找不到这个词典文件，它可能已被移动或删除",
   "dict.stateUnknown": "这个文件读不了，可能不是支持的词典",
   "dict.fileLabel": "词典文件",
+  "dict.enZhTitle": "英 → 汉词库",
+  "dict.zhEnTitle": "汉 → 英词库",
   "dict.choose": "选择文件…",
+  "dict.chooseZh": "选择汉英词库…",
   "dict.autoDetected": "自动检测到",
   "dict.chosenManually": "手动选择",
   "dict.useAuto": "改用自动检测",
-  "dict.autoHint": "装过兼容的词典应用就能直接用，无需设置。",
+  "dict.autoHint":
+    "默认检测兼容词典应用用的 open-dictionary 词库；也可点「选择文件…」换成本机其它英汉词库。",
+  "dict.zhHint":
+    "默认使用 CC-CEDICT 官方文本转换的词库，拾趣不下载、不随包分发；点「选择汉英词库…」可换成本机其它汉英词库。",
   "dict.enOnly": "词典只收英文词条；中文词句和长段落请用「翻译」。",
+  "dict.routeHint": "选区含汉字查汉英库，其余查英汉库；整句翻译请用「翻译」。",
   "dict.tutorialLead": "获取词库的完整步骤（两种方式）：",
   "dict.tutorialLink": "查看获取教程",
   "dict.sourceTitle": "词典来源",
   "dict.credit":
-    "词条来自开源项目 Aictionary 的本机词典（据 Wiktionary 快照整理），授权方式 CC BY-SA 4.0。",
-  "dict.sourceLink": "项目主页",
+    "英汉词条来自开源项目 open-dictionary 的词库数据（据 Wiktionary 快照整理），授权方式 CC BY-SA 4.0。Aictionary 只是该词库的一个客户端。",
+  "dict.zhCredit":
+    "汉英词条来自 CC-CEDICT（MDBG 发布），授权方式 CC BY-SA 4.0；拾趣只读你本机的转换文件，不随安装包分发。",
+  "dict.sourceLink": "open-dictionary 主页",
+  "dict.zhSourceLink": "CC-CEDICT 主页",
 
   // 提示词页
   "prompts.hint": "编辑各动作发给模型的指令；{lang} 按界面语言解析为简体中文或 English，{date} 解析为当天日期，所选文字随后附带。需保存生效。",
