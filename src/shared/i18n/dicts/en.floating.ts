@@ -5,6 +5,7 @@ export const enFloating: Record<keyof typeof zhFloating, string> = {
   "floating.ocrResultTitle": "Capture {action}",
 
   "floating.snipOcr": "Capture Text",
+  "floating.snipQr": "QR code",
   "floating.extractEntry": "Extract Info",
   "floating.extractTitle": "Extract Results",
 
@@ -50,9 +51,11 @@ export const enFloating: Record<keyof typeof zhFloating, string> = {
   "floating.actMap": "Map",
   "floating.actPath": "Open location",
   "floating.extractLoading": "Making sense of the selection…",
+  "floating.qrCopyPwd": "Copy password",
   "floating.group.tel": "Phone",
   "floating.group.email": "Email",
   "floating.group.link": "Link",
+  "floating.group.qr": "QR code",
   "floating.group.code": "Code",
   "floating.group.date": "Date",
   "floating.group.addr": "Place",

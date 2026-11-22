@@ -967,6 +967,27 @@ body,
   color: var(--accent-strong);
 }
 
+/* 二维码区（识图来源）：行结构复用 .extract-*。按钮常显不靠悬停——码常常
+   是面板唯一内容，悬停才浮现的按钮发现性太差（用户不知道能打开/复制）；
+   行数少（一帧几个码），常显不喧宾夺主 */
+.qr-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.qr-list .extract-acts {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 按钮常显后正文常驻渐隐让位：长 URL 不从按钮底下穿过（短文本右侧是
+   空白，渐隐无视觉影响） */
+.qr-list .extract-item .extract-text {
+  -webkit-mask-image: linear-gradient(to right, #000 60%, transparent 90%);
+  mask-image: linear-gradient(to right, #000 60%, transparent 90%);
+}
+
 /* OCR 文本识别：识别原文区（两种模式随动作状态切换）：
    原文模式（未执行动作）= 撑满面板全量展示；结果模式（已执行动作）= 折叠 3 行让位。
    高度约束用 max-height 表达（可平滑过渡，实际高度 = min(内容, 上限)）：

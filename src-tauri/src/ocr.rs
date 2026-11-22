@@ -10,30 +10,65 @@ use tauri::Emitter;
 
 use crate::i18n::t;
 use crate::settings;
-// Windows 识图流程（下方 cfg(windows) 函数）使用裸 AppHandle；
-// macOS 编译路径无此使用，按平台门控导入避免 unused 警告
-#[cfg(target_os = "windows")]
 use tauri::AppHandle;
 
 // 交互式系统框选（screencapture -i）已于 2026-11-04 退役：框选挪到自绘遮罩上
 // （floating::snip），选区框与截后遮罩同一窗同一视觉，无「先系统框选、松手后
 // 补遮罩」的闪变；静默截图走 snap_region（snip.rs）。
 
-/// 用助手子进程识别图片文字（Vision；子进程隔离 ObjC 异常）。
-/// 助手直连模式：`ocr_helper <图片路径>`，文本走 stdout。
-pub fn recognize_file(path: &Path) -> Result<String, String> {
+/// 助手的识别结果：text = 识别文本（可能为空），barcodes = 截图里解出的
+/// 二维码载荷（无码为空数组）
+#[derive(Debug, Default)]
+pub struct OcrText {
+    pub text: String,
+    pub barcodes: Vec<String>,
+}
+
+/// 用助手子进程识别图片文字 + 二维码解码（子进程隔离平台栈异常）。
+/// 助手直连模式：`ocr_helper <图片路径>`，stdout = 单行 JSON
+/// `{"text", "barcodes"}`（两平台一致）；按纯文本兼容旧输出（仅手工调试
+/// 场景会碰到，正常链路 helper 与主应用同版本发布）
+pub fn recognize_file(path: &Path) -> Result<OcrText, String> {
+    eprintln!("[ocr] 启动助手进程：{}", helper_path()?.display());
+    let r = run_helper(&[path.to_string_lossy().into_owned()])?;
+    if r.text.trim().is_empty() && r.barcodes.is_empty() {
+        return Err(t("ocr.noText").into());
+    }
+    eprintln!(
+        "[ocr] 识别成功：len={} barcodes={}",
+        r.text.len(),
+        r.barcodes.len()
+    );
+    Ok(r)
+}
+
+/// 用助手子进程只解码二维码（截图胶囊「二维码」动作）：`--qr` 模式不跑
+/// 文字识别——用户点了码就不关心框选区域里的杂文字，且解码快（百毫秒级），
+/// 不用陪 OCR 等待。无码 = Err（提示话术由调用方出）
+pub fn decode_qr_file(path: &Path) -> Result<OcrText, String> {
+    eprintln!("[ocr] 启动助手进程（--qr）：{}", helper_path()?.display());
+    let r = run_helper(&["--qr".into(), path.to_string_lossy().into_owned()])?;
+    if r.barcodes.is_empty() {
+        return Err(t("toast.noQrHint").into());
+    }
+    eprintln!("[ocr] 解码成功：barcodes={}", r.barcodes.len());
+    Ok(r)
+}
+
+/// 助手调用的公共段：拉起进程、收割 stderr/stdout、解析 JSON 协议。
+/// 失败以 "ERR:<原因>" 报告，去掉前缀直接作为提示展示（如「未识别到文字」，
+/// 不需要「文本识别失败: ERR:」包装）；stdout 按纯文本兼容旧输出（仅手工
+/// 调试场景会碰到，正常链路 helper 与主应用同版本发布）
+fn run_helper(args: &[String]) -> Result<OcrText, String> {
     let helper = helper_path()?;
-    eprintln!("[ocr] 启动助手进程：{}", helper.display());
     let output = Command::new(&helper)
-        .arg(path)
+        .args(args)
         .output()
         .map_err(|e| format!("{}: {e}", t("err.ocrHelperLaunch")))?;
     eprintln!("[ocr] 助手退出：status={}", output.status);
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        // 助手以 "ERR:<原因>" 报告失败原因，去掉前缀直接作为提示展示
-        //（如「未识别到文字」，不需要「文本识别失败: ERR:」包装）
         if let Some(reason) = stderr.strip_prefix("ERR:") {
             return Err(reason.to_string());
         }
@@ -48,12 +83,29 @@ pub fn recognize_file(path: &Path) -> Result<String, String> {
         ));
     }
 
-    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if text.is_empty() {
-        return Err(t("ocr.noText").into());
-    }
-    eprintln!("[ocr] 识别成功：len={}", text.len());
-    Ok(text)
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok(match serde_json::from_str::<serde_json::Value>(&stdout) {
+        Ok(v) => OcrText {
+            text: v
+                .get("text")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            barcodes: v
+                .get("barcodes")
+                .and_then(|x| x.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|s| s.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default(),
+        },
+        Err(_) => OcrText {
+            text: stdout,
+            barcodes: Vec::new(),
+        },
+    })
 }
 
 /// 「未识别到文字」的自愈重截（2026-10-27）：快速框选手势下，交互式
@@ -61,12 +113,12 @@ pub fn recognize_file(path: &Path) -> Result<String, String> {
 /// 笔画重影，Vision 直接返回空——失败截图已在用户日志留证）。此处按事件
 /// 钩子记录的拖选矩形（last_snip_rect）延迟静默重截一次（`screencapture -R`
 /// 无交互遮罩，此时画面已稳定）再识别。
-/// 返回 Some((文本, 新截图路径))：文本有效且原图应替换为重截图（钉图用清晰版）；
-/// None = 无可用矩形 / 重截失败 / 仍为空（沿用原失败处理）。
+/// 返回 Some((识别结果, 新截图路径))：结果有效且原图应替换为重截图（钉图用
+/// 清晰版）；None = 无可用矩形 / 重截失败 / 仍为空（沿用原失败处理）。
 /// 仅 macOS：Windows 框选是自家遮罩窗 + BitBlt 一次成帧，无过渡帧问题，
 /// 不做无据修复
 #[cfg(target_os = "macos")]
-pub fn retry_region_capture() -> Option<(String, PathBuf)> {
+pub fn retry_region_capture() -> Option<(OcrText, PathBuf)> {
     let Some(rect) = crate::capture::macos::last_snip_rect(std::time::Duration::from_millis(5000))
     else {
         eprintln!("[ocr] 无可用框选矩形（事件钩子未记录），跳过重截");
@@ -99,12 +151,13 @@ pub fn retry_region_capture() -> Option<(String, PathBuf)> {
     }
     eprintln!("[ocr] 首次识别为空，重截 {w}x{h} @({x},{y}) 后重试");
     match recognize_file(&retry) {
-        Ok(text) => {
+        Ok(r) => {
             crate::user_log(&format!(
-                "[ocr] 重截自愈成功：{w}x{h} @({x},{y}) → len={}",
-                text.len()
+                "[ocr] 重截自愈成功：{w}x{h} @({x},{y}) → len={} barcodes={}",
+                r.text.len(),
+                r.barcodes.len()
             ));
-            Some((text, retry))
+            Some((r, retry))
         }
         Err(e) => {
             let _ = std::fs::remove_file(&retry);
@@ -114,8 +167,8 @@ pub fn retry_region_capture() -> Option<(String, PathBuf)> {
     }
 }
 
-/// 识别完成，一次性推送结果（文本 + 原图 + 可选自动执行动作）：面板出现即有
-/// 完整内容，原图随 pending 保留供「钉图」。run = (动作 id, 服务)，
+/// 识别完成，一次性推送结果（文本 + 二维码 + 原图 + 可选自动执行动作）：面板
+/// 出现即有完整内容，原图随 pending 保留供「钉图」。run = (动作 id, 服务)，
 /// 传 (id, None) 时由前端按该动作既有的默认服务逻辑选择。
 /// vision = 视觉分流标志（true = 文本未识别，前端直接看图驱动模型）。
 /// 事件用全局广播而不是 emit_to：JS listen() 注册的是 Any 目标，
@@ -124,11 +177,12 @@ pub fn retry_region_capture() -> Option<(String, PathBuf)> {
 pub fn push_ocr_result(
     app: &tauri::AppHandle,
     text: String,
+    barcodes: Vec<String>,
     image: PathBuf,
     run: Option<(String, Option<String>)>,
     vision: bool,
 ) {
-    super::floating::ocr_set_pending(text, Some(image), run, String::new(), vision);
+    super::floating::ocr_set_pending(text, barcodes, Some(image), run, String::new(), vision);
     let _ = app.emit(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
@@ -173,7 +227,7 @@ pub fn try_push_vision_pending(
     eprintln!("[magpie:ocr] 视觉分流：识图交由模型直接处理");
     crate::user_log("[ocr] 视觉分流：识图交由模型直接处理");
     let run = action.map(|a| (a, service));
-    push_ocr_result(app, String::new(), image, run, true);
+    push_ocr_result(app, String::new(), Vec::new(), image, run, true);
     true
 }
 
@@ -202,10 +256,14 @@ pub async fn recognize_and_push(
     let run = action.map(|a| (a, service.clone()));
     let img = image.clone(); // 识别在闭包内消费，image 留给失败清理与钉图
     match tauri::async_runtime::spawn_blocking(move || recognize_file(&img)).await {
-        Ok(Ok(text)) => {
-            eprintln!("[magpie:ocr] 成功：len={}", text.len());
+        Ok(Ok(r)) => {
+            eprintln!(
+                "[magpie:ocr] 成功：len={} barcodes={}",
+                r.text.len(),
+                r.barcodes.len()
+            );
             crate::toast::hide_toast(app);
-            push_ocr_result(app, text, image, run, false);
+            push_ocr_result(app, r.text, r.barcodes, image, run, false);
         }
         Ok(Err(e)) => {
             eprintln!("[magpie:ocr] 失败：{e}");
@@ -213,9 +271,9 @@ pub async fn recognize_and_push(
             // BitBlt 一次成帧，无过渡帧问题，不做无据修复）
             #[cfg(target_os = "macos")]
             if e == t("ocr.noText") {
-                if let Some((text, retry_image)) = retry_region_capture() {
+                if let Some((r, retry_image)) = retry_region_capture() {
                     crate::toast::hide_toast(app);
-                    push_ocr_result(app, text, retry_image, run, false);
+                    push_ocr_result(app, r.text, r.barcodes, retry_image, run, false);
                     let _ = std::fs::remove_file(&image); // 原糊图已无价值
                     return;
                 }
@@ -237,6 +295,38 @@ pub async fn recognize_and_push(
                 e.clone()
             };
             crate::toast::show_toast(app, &msg, "err");
+        }
+        Err(e) => eprintln!("[magpie:ocr] 任务失败: {e}"),
+    }
+}
+
+/// 二维码动作（截图胶囊「二维码」）：只解码不识别文字，无码时给明确提示
+/// ——用户显式点了「二维码」，静默会变成「点了没反应」，这与被动划词的
+/// 「捕获失败静默」边界不同。解码快（百毫秒级），进度提示与结果面板几乎
+/// 同时出现，失败 toast 的两段话术给出重试方向
+pub async fn qr_decode_and_push(app: AppHandle, image: PathBuf) {
+    crate::toast::show_toast_sticky(&app, t("toast.recognizing"), "progress");
+    let img = image.clone(); // 解码在闭包内消费，image 留给失败清理与钉图
+    match tauri::async_runtime::spawn_blocking(move || decode_qr_file(&img)).await {
+        Ok(Ok(r)) => {
+            crate::toast::hide_toast(&app);
+            push_ocr_result(&app, r.text, r.barcodes, image, None, false);
+        }
+        Ok(Err(e)) => {
+            crate::toast::hide_toast(&app);
+            let dims = image::image_dimensions(&image)
+                .map(|(w, h)| format!("{w}x{h}"))
+                .unwrap_or_else(|_| "?".into());
+            crate::user_log(&format!(
+                "[ocr] 二维码解码失败：{e}；截图 {dims} {}",
+                image.display()
+            ));
+            // 无码保留截图供事后复核（删文件 = 删证据，与 noText 同口径）；
+            // 其他错误（启动失败等）删除临时截图
+            if e != t("toast.noQrHint") {
+                let _ = std::fs::remove_file(&image);
+            }
+            crate::toast::show_toast(&app, &e, "err");
         }
         Err(e) => eprintln!("[magpie:ocr] 任务失败: {e}"),
     }
@@ -284,8 +374,13 @@ pub fn warmup() {
 /// 事件用全局广播而不是 emit_to：JS listen() 注册的是 Any 目标，
 /// emit_to 的按窗口过滤不匹配 Any 监听器（此前识别面板因此永不出现）。
 /// 其他窗口收到后按 app=="ocr" 忽略。
-pub fn push_text_to_ocr_window(app: &tauri::AppHandle, text: String, image: Option<PathBuf>) {
-    super::floating::ocr_set_pending(text, image, None, String::new(), false);
+pub fn push_text_to_ocr_window(
+    app: &tauri::AppHandle,
+    text: String,
+    barcodes: Vec<String>,
+    image: Option<PathBuf>,
+) {
+    super::floating::ocr_set_pending(text, barcodes, image, None, String::new(), false);
     let _ = app.emit(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
@@ -297,6 +392,8 @@ pub fn push_text_to_ocr_window(app: &tauri::AppHandle, text: String, image: Opti
 #[serde(rename_all = "camelCase")]
 pub struct OcrLocalResult {
     pub text: String,
+    /// 截图里解出的二维码载荷（无码为空数组）
+    pub barcodes: Vec<String>,
     /// 自愈重截成功时的新截图路径（原糊图已删）：前端应把面板预览/后续引用
     /// 切到此图，Rust 侧 OCR_IMAGE 已同步替换（钉图取走的是新图）
     pub image: Option<String>,
@@ -312,16 +409,21 @@ pub async fn ocr_recognize_local(path: String) -> Result<OcrLocalResult, String>
     tauri::async_runtime::spawn_blocking(move || {
         eprintln!("[ocr] 视觉回退：本地识别 {}", p.display());
         match recognize_file(&p) {
-            Ok(text) => Ok(OcrLocalResult { text, image: None }),
+            Ok(r) => Ok(OcrLocalResult {
+                text: r.text,
+                barcodes: r.barcodes,
+                image: None,
+            }),
             Err(e) => {
                 // 「未识别到文字」先走自愈重截（仅 macOS；Windows 无过渡帧问题）
                 #[cfg(target_os = "macos")]
                 if e == t("ocr.noText") {
-                    if let Some((text, retry)) = retry_region_capture() {
+                    if let Some((r, retry)) = retry_region_capture() {
                         let _ = std::fs::remove_file(&p);
                         super::floating::ocr::replace_ocr_image(Some(retry.clone()));
                         return Ok(OcrLocalResult {
-                            text,
+                            text: r.text,
+                            barcodes: r.barcodes,
                             image: Some(retry.to_string_lossy().into_owned()),
                         });
                     }

@@ -10,6 +10,9 @@ export type ExtractGroups = {
   tel: string[];
   email: string[];
   link: string[];
+  /** 二维码载荷（识图来源）：截图里解码出的码内容，Rust 侧 rqrr 解出后随
+   *  识别结果透传；划词路径恒空 */
+  qr: string[];
   /** 本机路径（Windows）：整段选区就是一个路径时独占这一组（见 textContext.extractPath） */
   path: string[];
   code: string[];
@@ -23,6 +26,7 @@ export const EXTRACT_GROUPS: Array<{ id: keyof ExtractGroups; label: string }> =
   { id: "tel", label: "floating.group.tel" },
   { id: "email", label: "floating.group.email" },
   { id: "link", label: "floating.group.link" },
+  { id: "qr", label: "floating.group.qr" },
   { id: "path", label: "floating.group.path" },
   { id: "code", label: "floating.group.code" },
   { id: "date", label: "floating.group.date" },
@@ -30,7 +34,8 @@ export const EXTRACT_GROUPS: Array<{ id: keyof ExtractGroups; label: string }> =
 ];
 
 // 状态机：Bar（胶囊） → Result（流式面板）/ Extract（多值列表）；dismiss/新选区回收
-// Snip（截图胶囊）：框选完成、动作未选——四件套动作点击走 snip_execute（识别
+// Snip（截图胶囊）：框选完成、动作未选——固定动作组（识别文字/二维码/识图
+// AI 三件）点击走 snip_execute（识别
 // 后再执行），不走 runAction（无文本源）；dismiss/新划词由 useCaptureSession 清理
 export type Phase =
   | { kind: "bar" }
@@ -45,6 +50,8 @@ export type Phase =
       text?: string;
       /** AI 语义提取的结构化事件（非空时日期组按此渲染，点击直接写日历，不再重检测） */
       events?: AiEventItem[];
+      /** 二维码载荷（识图来源；划词路径恒空） */
+      barcodes?: string[];
       /** AI 提取进行中：日期/地点的确定性识别暂缓兜底，等 AI 结果定夺 */
       aiPending?: boolean;
       /** 确定性日期/地点识别已回填过（含回填为空），防止 effect 重复拉取 */
@@ -66,6 +73,8 @@ export type Phase =
       expanded: boolean;
       /** 机器翻译结果按纯文本渲染（API 返回即纯文本，不进 markdown 解释） */
       plain?: boolean;
+      /** 二维码载荷（截图里解码出的码内容；划词导流恒空） */
+      barcodes?: string[];
       /** 视觉分流：文本未识别，动作直接看图（imagePath）驱动模型；流前失败
        *  回退本地识别后置 false。划词导流/本地识别结果不带 */
       vision?: boolean;
@@ -76,6 +85,8 @@ export type Phase =
 // Rust ocr_take_pending 回包：识别文本 + 自动执行指令 + 钉住偏好
 export interface PendingView {
   text: string;
+  /** 截图里解出的二维码载荷（无码为空数组） */
+  barcodes: string[];
   fromOcr: boolean;
   /** 视觉分流：true = 文本未识别，前端直接看图驱动模型 */
   vision: boolean;
@@ -94,5 +105,7 @@ export interface PendingView {
 // 可选的自愈重截替换图（原糊图已删，预览/引用需切到新图）
 export interface OcrLocalResult {
   text: string;
+  /** 截图里解出的二维码载荷（无码为空数组） */
+  barcodes: string[];
   image: string | null;
 }

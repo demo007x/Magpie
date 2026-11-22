@@ -337,9 +337,9 @@ pub async fn pin_to_ocr(window: WebviewWindow) -> Result<(), String> {
         .await
         .map_err(|e| format!("{}: {e}", t("err.taskFailed")))?;
     match result {
-        Ok(text) => {
+        Ok(r) => {
             // 原图归钉图窗口所有，不再随 pending 传递
-            ocr::push_text_to_ocr_window(&app, text, None);
+            ocr::push_text_to_ocr_window(&app, r.text, r.barcodes, None);
             Ok(())
         }
         Err(e) => Err(e),

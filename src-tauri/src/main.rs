@@ -258,10 +258,14 @@ fn start_file_ocr_flow(app: tauri::AppHandle) {
             toast::show_toast_sticky(&app, i18n::t("toast.recognizing"), "progress");
             let src = dest.clone(); // 闭包消费副本，外层保留 dest 供成功推送与失败清理
             match tauri::async_runtime::spawn_blocking(move || ocr::recognize_file(&src)).await {
-                Ok(Ok(text)) => {
-                    eprintln!("[magpie:ocr] 成功：len={}", text.len());
+                Ok(Ok(r)) => {
+                    eprintln!(
+                        "[magpie:ocr] 成功：len={} barcodes={}",
+                        r.text.len(),
+                        r.barcodes.len()
+                    );
                     toast::hide_toast(&app);
-                    ocr::push_ocr_result(&app, text, dest, None, false);
+                    ocr::push_ocr_result(&app, r.text, r.barcodes, dest, None, false);
                 }
                 Ok(Err(e)) => {
                     eprintln!("[magpie:ocr] 失败：{e}");

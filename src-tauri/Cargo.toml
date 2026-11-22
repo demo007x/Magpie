@@ -48,6 +48,10 @@ tauri-plugin-updater = "2"
 # 离线词典：只读打开用户本机的兼容词库（ADR-11）。bundled = 自带 SQLite C 源码
 # 编译，不依赖系统与目标机的 SQLite 版本（链接进我们自己的二进制，版本可控）
 rusqlite = { version = "0.37", features = ["bundled"] }
+# 二维码解码（src/bin/ocr_helper/qrdecode.rs，两平台共用）：纯 Rust、零 FFI。
+# 不用系统条码 API——macOS Vision 有 VNDetectBarcodesRequest 但 Windows 没有，
+# 两套实现输出要对齐；屏幕截图是理想输入（清晰、高对比），rqrr 命中率足够
+rqrr = "0.10.1"
 
 # 非 macOS 日期实体：本地规则层（正则 + 本地时区日历运算）。
 # macOS 走 NSDataDetector，零日期依赖；两端同一 DateHit 契约
@@ -124,3 +128,6 @@ wry = { path = "../vendor/wry" }
 strip = true
 lto = true
 codegen-units = 1
+
+[dev-dependencies]
+qrcode = { version = "0.14.1", features = ["image"] }

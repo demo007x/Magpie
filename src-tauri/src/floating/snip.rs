@@ -536,6 +536,12 @@ pub fn snip_execute(app: AppHandle, action_id: String) {
         let r = &session.rect;
         crate::floating::ocr::set_result_anchor((r.0 + r.2 / 2.0, r.1 + r.3 / 2.0));
         crate::floating::ocr::replace_ocr_image(Some(image.clone()));
+        if action_id == "qr" {
+            // 二维码动作：只解码不识别文字——用户点了码就不关心框选区域里的
+            // 杂文字，且解码快（百毫秒级），不用陪 OCR 等待
+            crate::ocr::qr_decode_and_push(app, image).await;
+            return;
+        }
         let (action, service) = match action_id.as_str() {
             "ocr" | "" => (None, None),
             "translate" => (

@@ -4,7 +4,9 @@
 //!
 //! 设计为独立进程：平台 OCR 栈的异常或崩溃只会影响本进程，
 //! 主应用通过 stdout 拿结果，任何失败都优雅降级（绝不波及主应用）。
-//! stdout 协议两平台一致：识别文本直接打印；失败向 stderr 输出 `ERR:<原因>`。
+//! stdout 协议两平台一致：单行 JSON `{"text": ..., "barcodes": [...]}`——
+//! text = OCR 文本，barcodes = 截图里解出的二维码载荷（纯 Rust 解码，见
+//! qrdecode 模块，与文字识别并行跑）；失败向 stderr 输出 `ERR:<原因>`。
 //!
 //! macOS 使用 objc2-vision 官方绑定（不手写 objc_msgSend——选择器写错不会
 //! 编译期发现，运行时 doesNotRecognizeSelector 会 abort）。
@@ -13,7 +15,29 @@
 //! 用法：
 //!   ocr_helper --capture <图片输出路径>   （仅 macOS）框选截图并 OCR
 //!   ocr_helper --snap x,y,w,h <out.png>   （仅 Windows）静默截屏不识别
-//!   ocr_helper <图片路径>                 直接 OCR 指定图片
+//!   ocr_helper --qr <图片路径>            只解码二维码不识别文字
+//!   ocr_helper <图片路径>                 OCR + 二维码（并行）
+
+mod qrdecode;
+
+/// 单次识别的结构化输出：text = OCR 文本（可能为空），barcodes = 图里解出的
+/// 二维码载荷。二者皆空 = 没识别到任何内容（上层按「未识别到文字」处理），
+/// 只有 barcodes 非空 = 纯码截图（没有文字也算成功）
+struct OcrOutput {
+    text: String,
+    barcodes: Vec<String>,
+}
+
+impl OcrOutput {
+    fn has_content(&self) -> bool {
+        !self.text.trim().is_empty() || !self.barcodes.is_empty()
+    }
+    /// stdout 协议：单行 JSON（serde_json Value 的 Display 是紧凑单行）
+    fn print(&self) {
+        let json = serde_json::json!({ "text": self.text, "barcodes": self.barcodes });
+        print!("{json}");
+    }
+}
 
 #[cfg(target_os = "macos")]
 mod macos {
@@ -25,6 +49,9 @@ mod macos {
     use objc2::{msg_send, AnyThread};
     use objc2_foundation::{NSArray, NSMutableDictionary, NSString, NSURL};
     use objc2_vision::{VNImageRequestHandler, VNRecognizeTextRequest};
+
+    use crate::qrdecode;
+    use crate::OcrOutput;
 
     // 屏幕录制权限预检（CoreGraphics）
     extern "C" {
@@ -67,7 +94,7 @@ mod macos {
         unsafe { CGPreflightScreenCaptureAccess() != 0 }
     }
 
-    /// Vision OCR：按行拼接识别结果。
+    /// Vision OCR（按行拼接）+ 二维码解码（qrdecode 模块，并行线程）。
     ///
     /// VNRecognizeTextRequest 正确用法（本项目实测踩坑记录，改回去会复发）：
     /// 1. 识别级别必须 Accurate —— Fast 级别在 macOS 上只内置拉丁语系模型
@@ -78,8 +105,13 @@ mod macos {
     ///    注意显式列表是硬约束：列表外语种（如日文）会被排除，自动检测则无此限制，
     ///    多语种混排场景优先用自动检测。
     /// 3. usesLanguageCorrection 只在 Accurate 下生效，Fast 下静默无效。
-    pub fn ocr_image_file(path: &Path) -> Result<String, String> {
+    pub fn ocr_image_file(path: &Path) -> Result<OcrOutput, String> {
         use objc2_vision::VNRequestTextRecognitionLevel;
+
+        // 二维码解码与 Vision OCR 并行：解码是纯 Rust 像素计算，独立线程跑，
+        // 不拖慢识别文字主路径；Vision 失败而码解出时仍按成功返回码
+        let qr_path = path.to_path_buf();
+        let qr_thread = std::thread::spawn(move || qrdecode::decode_image_file(&qr_path));
 
         unsafe {
             let pool = objc_autoreleasePoolPush();
@@ -120,16 +152,20 @@ mod macos {
                         }
                     }
                 }
-                if lines.is_empty() {
-                    return Err("未识别到文字".into());
-                }
+                // 空文本不再是错误：可能只有二维码，成功与否由外层按
+                // text/barcodes 是否有内容统一判定
                 Ok(lines.join("\n"))
             }));
 
             objc_autoreleasePoolPop(pool);
 
+            let barcodes = qr_thread.join().unwrap_or_default();
             match result {
-                Ok(Ok(text)) => Ok(text),
+                Ok(Ok(text)) => Ok(OcrOutput { text, barcodes }),
+                // Vision 失败但码解出来了：按成功返回（纯码截图场景）
+                Ok(Err(_)) | Err(_) if !barcodes.is_empty() => {
+                    Ok(OcrOutput { text: String::new(), barcodes })
+                }
                 Ok(Err(e)) => Err(e),
                 Err(_) => Err("OCR 过程异常".into()),
             }
@@ -166,6 +202,9 @@ mod windows_impl {
     use windows::Graphics::Imaging::{BitmapDecoder, SoftwareBitmap};
     use windows::Media::Ocr::OcrEngine;
     use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream};
+
+    use crate::qrdecode;
+    use crate::OcrOutput;
 
     /// 选定 OCR 引擎：用户配置语言优先，其次中文，再次任意可用语言。
     /// 全部失败 = 未装语言包，错误信息直接引导安装路径（对应 winVmac #27）。
@@ -340,7 +379,11 @@ mod windows_impl {
         }
     }
 
-    pub fn ocr_image_file(path: &Path) -> Result<String, String> {
+    pub fn ocr_image_file(path: &Path) -> Result<OcrOutput, String> {
+        // 二维码解码与 WinRT OCR 并行：对原图直解（不经 prepare 的放大/缩放，
+        // 那是给文字识别用的），独立线程跑不拖慢主路径
+        let qr_path = path.to_path_buf();
+        let qr_thread = std::thread::spawn(move || qrdecode::decode_image_file(&qr_path));
         let engine = pick_engine()?;
         let png = prepare_png_bytes(path)?;
         let bitmap = png_bytes_to_bitmap(&png).map_err(|e| format!("图片导入失败: {e}"))?;
@@ -375,10 +418,10 @@ mod windows_impl {
             }
         }
         let text = lines_out.join("\n");
-        if text.trim().is_empty() {
-            return Err("未识别到文字".into());
-        }
-        Ok(text)
+        // 空文本不再是错误：可能只有二维码，成功与否由 main 按
+        // text/barcodes 是否有内容统一判定
+        let barcodes = qr_thread.join().unwrap_or_default();
+        Ok(OcrOutput { text, barcodes })
     }
 }
 
@@ -394,6 +437,27 @@ fn main() {
         std::process::exit(2);
     }
     let mode = args[1].as_str();
+
+    // --qr <图片路径>：只解码二维码不识别文字（截图胶囊「二维码」动作）。
+    // rqrr 纯 Rust 无平台栈，两平台同一路径，无需进下面的平台分支。
+    // 无码也正常输出 JSON（text 空、barcodes 空）并退出 0——给不给提示
+    // 话术由主应用决定，helper 不替 UI 做主
+    if mode == "--qr" {
+        let Some(image) = args.get(2) else {
+            usage();
+            std::process::exit(2);
+        };
+        if !std::path::Path::new(image).exists() {
+            eprintln!("ERR:文件不存在");
+            std::process::exit(1);
+        }
+        let out = OcrOutput {
+            text: String::new(),
+            barcodes: qrdecode::decode_image_file(std::path::Path::new(image)),
+        };
+        out.print();
+        return;
+    }
 
     #[cfg(target_os = "macos")]
     {
@@ -418,7 +482,7 @@ fn main() {
             std::process::exit(1);
         }
         match macos::ocr_image_file(std::path::Path::new(&image)) {
-            Ok(t) if !t.trim().is_empty() => print!("{t}"),
+            Ok(r) if r.has_content() => r.print(),
             Ok(_) => {
                 eprintln!("ERR:未识别到文字");
                 std::process::exit(1);
@@ -467,7 +531,11 @@ fn main() {
                 std::process::exit(1);
             }
             match windows_impl::ocr_image_file(std::path::Path::new(mode)) {
-                Ok(t) => print!("{t}"),
+                Ok(r) if r.has_content() => r.print(),
+                Ok(_) => {
+                    eprintln!("ERR:未识别到文字");
+                    std::process::exit(1);
+                }
                 Err(e) => {
                     eprintln!("ERR:{e}");
                     std::process::exit(1);

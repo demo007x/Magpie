@@ -4,8 +4,9 @@
 export const zhFloating = {
   "floating.ocrResultTitle": "识图{action}",
 
-  // 截图胶囊四件套与「提取信息」入口
+  // 截图胶囊动作与「提取信息」入口
   "floating.snipOcr": "识别文字",
+  "floating.snipQr": "二维码",
   "floating.extractEntry": "提取信息",
   "floating.extractTitle": "提取结果",
 
@@ -54,9 +55,11 @@ export const zhFloating = {
   "floating.actMap": "地图",
   "floating.actPath": "打开位置",
   "floating.extractLoading": "正在理解所选内容…",
+  "floating.qrCopyPwd": "复制密码",
   "floating.group.tel": "电话",
   "floating.group.email": "邮箱",
   "floating.group.link": "链接",
+  "floating.group.qr": "二维码",
   "floating.group.code": "验证码",
   "floating.group.date": "日期",
   "floating.group.addr": "地点",

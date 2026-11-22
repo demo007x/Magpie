@@ -51,7 +51,7 @@ export function useCaptureSession(opts: {
       自动回退本地识别。imagePath 为 null/undefined 时回落读 phase（按钮
       触发路径）；actionId null = 识图取字（流式写识别原文区） */
   runVision: (imagePath: string | null | undefined, actionId?: string | null, service?: string) => void;
-  showExtractPanel: (rawText: string, sourcePid?: number) => void;
+  showExtractPanel: (rawText: string, sourcePid?: number, barcodes?: string[]) => void;
   resetGhostStates: () => void;
   /** 截图胶囊会话（snip://captured）挂起标记：dismiss/新划词时据此先调
       snip_cancel 清理挂起截图，防临时文件泄漏 */
@@ -105,11 +105,12 @@ export function useCaptureSession(opts: {
             // 导流带上了来源应用：结果窗存 Obsidian 的「来源」由此取名
             o.sourceAppRef.current = p.app;
             if (p.run?.id === "__extract") {
-              o.showExtractPanel(p.text, p.pid);
+              o.showExtractPanel(p.text, p.pid, p.barcodes ?? []);
             } else {
               o.setPhase({
                 kind: "ocr",
                 text: p.text,
+                barcodes: p.barcodes ?? [],
                 fromOcr: p.fromOcr,
                 actionId: p.run?.id ?? null,
                 output: "",
@@ -171,7 +172,7 @@ export function useCaptureSession(opts: {
 
     // 截图胶囊：框选完成（截图已拍、动作未选）——胶囊浮在选区右下角。
     // payload = 框选矩形（全局逻辑坐标），锚点取右下角；setPhase 驱动胶囊
-    // 渲染四件套动作（snip phase），点击走 snip_execute（识别后再执行）
+    // 渲染固定动作组（snip phase），点击走 snip_execute（识别后再执行）
     listen<{ x: number; y: number; w: number; h: number }>("snip://captured", (e) => {
       // 钉图窗口与划词流无关；OCR 结果窗不参与胶囊选择态（事件也是 emit_to floating 定向的）
       if (IS_PIN || IS_OCR) return;

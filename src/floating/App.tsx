@@ -92,6 +92,7 @@ import {
 import { actionLabel, actionPrompt, actionRegistry, isContextAction } from "../shared/actions";
 import { engineDisplayName } from "../shared/engineNames";
 import { t, useLocale, getLocale } from "../shared/i18n";
+import { qrView } from "../shared/qrPayload";
 import { aiChat } from "../shared/ai";
 import {
   buildExtractPrompt,
@@ -614,7 +615,8 @@ export default function App() {
   // 设置现读而非用 ref 镜像：窗口创建即打开面板时 loadSettings 可能尚未回包，
   // 读默认值会误判「未配置 AI」而静默跳过智能路径
   // sourcePid：划词导流的来源进程（pending 携带；截屏 OCR 为 0，无页面 URL 可查）
-  const showExtractPanel = (rawText: string, sourcePid = 0) => {
+  // barcodes：二维码载荷（识图来源，Rust 侧 rqrr 解出；划词路径恒空）
+  const showExtractPanel = (rawText: string, sourcePid = 0, barcodes: string[] = []) => {
     void (async () => {
       // 来源页面 URL 与设置并行现查（按 pid 直连来源进程 AX，见 pageurl.rs）
       const [s, pageUrl] = await Promise.all([
@@ -635,6 +637,7 @@ export default function App() {
         tel: all.tels,
         email: all.emails,
         link: all.urls,
+        qr: barcodes,
         path: IS_WINDOWS ? all.paths : [],
         code: all.codes,
         date: [],
@@ -714,6 +717,8 @@ export default function App() {
       tel: actions.tel !== false ? all.tels : [],
       email: actions.email !== false ? all.emails : [],
       link: actions.link !== false ? all.urls : [],
+      // 划词路径没有二维码来源（识图专属），恒空
+      qr: [],
       // 盘符是 Windows 的写法：macOS 上选到文档里引用的 E:\a\b 不该给这条动作
       path: wholePath ? all.paths : [],
       code: actions.code !== false ? all.codes : [],
@@ -724,6 +729,7 @@ export default function App() {
       groups.tel.length +
       groups.email.length +
       groups.link.length +
+      groups.qr.length +
       groups.path.length +
       groups.code.length +
       groups.date.length +
@@ -861,10 +867,11 @@ export default function App() {
   // 胶囊固定显示前 4 个动作（顺序 = 设置页 actionOrder），其余收进最右 ⌄N；
   // 不足 5 个时无收纳入口，胶囊自然收窄
   const CAPSULE_MAX = Math.max(2, Math.min(8, capsuleMax));
-  // 截图胶囊会话（snip://captured）：固定四件套，不走动作注册表——动作语义
+  // 截图胶囊会话（snip://captured）：固定动作组，不走动作注册表——动作语义
   // 是「先识别再执行」（snip_execute，Rust 侧识别后导流），与划词胶囊的
   // 「对文本执行」不同源；可用性口径与常驻动作一致（翻译看启用服务、
-  // AI 动作看默认模型）。识别文字无门槛，恒显示
+  // AI 动作看默认模型）。识别文字与二维码无门槛，恒显示（二维码是显式入口：
+  // 纯码区域没有文本，用户不会想到去点「识别文字」，见 release-v0.2.0 二维码条目）
   const snipRun = (actionId: string) => {
     setPhase({ kind: "bar" });
     invoke("snip_execute", { actionId }).catch(() => undefined);
@@ -872,6 +879,7 @@ export default function App() {
   };
   const snipEntries: BarEntry[] = [
     { id: "ocr", label: t("floating.snipOcr"), onClick: () => snipRun("ocr") },
+    { id: "qr", label: t("floating.snipQr"), onClick: () => snipRun("qr") },
   ];
   if (enabledTranslates.length > 0) {
     snipEntries.push({ id: "translate", label: t("action.translate"), onClick: () => snipRun("translate") });
@@ -956,6 +964,7 @@ export default function App() {
           setPhase({
             kind: "ocr",
             text: p.text,
+            barcodes: p.barcodes ?? [],
             fromOcr: p.fromOcr,
             actionId: p.run?.id ?? null,
             output: "",
@@ -966,11 +975,12 @@ export default function App() {
           if (p.run?.id === "__extract") {
             // 提取信息：结果窗口本地从文本计算分组（日期/地点组异步补齐；
             // 智能提取开启时 AI 语义结果优先，见 showExtractPanel）
-            showExtractPanel(p.text, p.pid);
+            showExtractPanel(p.text, p.pid, p.barcodes ?? []);
           } else {
             setPhase({
               kind: "ocr",
               text: p.text,
+              barcodes: p.barcodes ?? [],
               fromOcr: p.fromOcr,
               actionId: p.run?.id ?? null,
               output: "",
@@ -2153,6 +2163,7 @@ export default function App() {
             ? {
                 ...p,
                 text: r.text,
+                barcodes: r.barcodes ?? [],
                 vision: false,
                 imagePath: r.image ?? p.imagePath,
                 streaming: false,
@@ -2717,10 +2728,15 @@ export default function App() {
                   {/* 计数徽标：一眼知道该组提取了几条，不必逐行数 */}
                   <span className="extract-count">{phase.groups[g.id].length}</span>
                 </div>
-                {phase.groups[g.id].map((item, i) => (
+                {phase.groups[g.id].map((item, i) => {
+                  const qr = g.id === "qr" ? qrView(item) : null;
+                  // 局部常量收窄：闭包里 TS 不会跟随对象属性的判空
+                  const qrUrl = qr?.url ?? null;
+                  const qrPwd = qr?.wifiPassword ?? null;
+                  return (
                   <div className="extract-item" key={`${item}-${i}`}>
                     <span className="extract-text">
-                      {g.id === "link" ? renderUrl(item) : item}
+                      {g.id === "link" ? renderUrl(item) : (qr?.display ?? item)}
                     </span>
                     <span className="extract-acts">
                       {g.id === "link" && (
@@ -2730,6 +2746,31 @@ export default function App() {
                           )}
                         >
                           {t("floating.actOpen")}
+                        </button>
+                      )}
+                      {qrUrl && (
+                        <button
+                          onClick={guarded(() =>
+                            invoke("open_url", { url: qrUrl }).catch(() => undefined),
+                          )}
+                        >
+                          {t("floating.actOpen")}
+                        </button>
+                      )}
+                      {qrPwd && (
+                        <button
+                          onClick={guarded(() => {
+                            navigator.clipboard.writeText(qrPwd).catch(() => undefined);
+                            setCopiedItem(item);
+                            if (copiedItemTimerRef.current)
+                              window.clearTimeout(copiedItemTimerRef.current);
+                            copiedItemTimerRef.current = window.setTimeout(
+                              () => setCopiedItem(null),
+                              1200,
+                            );
+                          })}
+                        >
+                          {t("floating.qrCopyPwd")}
                         </button>
                       )}
                       {g.id === "email" && (
@@ -2801,7 +2842,8 @@ export default function App() {
                       </button>
                     </span>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             ))}
             {/* AI 语义提取进行中：确定性组已先出，日期/地点等 AI 定夺后补齐 */}
@@ -2951,8 +2993,9 @@ export default function App() {
                 原文模式（!actionId）：撑满面板全量展示，超长滚动；
                 结果模式（actionId）：折叠 3 行，可展开至 220px，让位结果区。
                 仅截图/钉图识别（fromOcr）展示；划词导流的原文在用户屏幕上，
-                phase.text 仍保留作为动作源 */}
-            {phase.fromOcr && (
+                phase.text 仍保留作为动作源。
+                整帧只有二维码没有文字时隐藏（没有空原文区可展示） */}
+            {phase.fromOcr && (phase.text || !phase.barcodes?.length) && (
             <div
               className={`ocr-source-wrap ${
                 phase.actionId ? "has-result" : "full"
@@ -2986,6 +3029,69 @@ export default function App() {
                 </button>
               )}
             </div>
+            )}
+            {/* 二维码区（识图来源）：截图里解码出的码内容，逐条给打开/复制动作。
+                只在真的解出码时出现；行样式复用 .extract-*（提取面板同一语言）。
+                打开只对 http(s) 载荷出现，绝不自动打开 */}
+            {(phase.barcodes?.length ?? 0) > 0 && (
+              <div className="qr-list">
+                <div className="extract-group">
+                  {t("floating.group.qr")}
+                  <span className="extract-count">{phase.barcodes!.length}</span>
+                </div>
+                {phase.barcodes!.map((item, i) => {
+                  const qr = qrView(item);
+                  // 局部常量收窄：闭包里 TS 不会跟随对象属性的判空
+                  const qrUrl = qr.url;
+                  const qrPwd = qr.wifiPassword;
+                  return (
+                    <div className="extract-item" key={`${item}-${i}`}>
+                      <span className="extract-text">{qr.display}</span>
+                      <span className="extract-acts">
+                        {qrUrl && (
+                          <button
+                            onClick={guarded(() =>
+                              invoke("open_url", { url: qrUrl }).catch(() => undefined),
+                            )}
+                          >
+                            {t("floating.actOpen")}
+                          </button>
+                        )}
+                        {qrPwd && (
+                          <button
+                            onClick={guarded(() => {
+                              navigator.clipboard.writeText(qrPwd).catch(() => undefined);
+                              setCopiedItem(item);
+                              if (copiedItemTimerRef.current)
+                                window.clearTimeout(copiedItemTimerRef.current);
+                              copiedItemTimerRef.current = window.setTimeout(
+                                () => setCopiedItem(null),
+                                1200,
+                              );
+                            })}
+                          >
+                            {t("floating.qrCopyPwd")}
+                          </button>
+                        )}
+                        <button
+                          onClick={guarded(() => {
+                            navigator.clipboard.writeText(item).catch(() => undefined);
+                            setCopiedItem(item);
+                            if (copiedItemTimerRef.current)
+                              window.clearTimeout(copiedItemTimerRef.current);
+                            copiedItemTimerRef.current = window.setTimeout(
+                              () => setCopiedItem(null),
+                              1200,
+                            );
+                          })}
+                        >
+                          {copiedItem === item ? t("floating.copied") : t("floating.copy")}
+                        </button>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             )}
             {phase.actionId && (
               <div className="ocr-result-scroll" ref={ocrBodyRef} onScroll={onOcrResultScroll}>
@@ -3033,7 +3139,11 @@ export default function App() {
                 单行不折行（overflow:hidden），放不下的尾部动作收进行尾「更多 ⌃」，
                 点开在菜单槽位以 chips 呈现——窄窗不挤成多行。
                 AI 动作（翻译/解释/总结 + 用户的自定义动作）结果内嵌滚动区；搜索为本地动作，
-                用识别文本直接打开默认引擎——对识别出的书名/术语等尤其实用 */}
+                用识别文本直接打开默认引擎——对识别出的书名/术语等尤其实用。
+                纯码截图（无文本 + 有码）不渲染：动作都消费 phase.text，没文本可跑，
+                二维码区自带打开/复制；视觉路径（text 空、无码）不受影响，动作行
+                承载其流式状态 */}
+            {(phase.text || !phase.barcodes?.length) && (
             <div className="ocr-actions" ref={attachActionsRow}>
               {/* 溢出测算行：全量动作的隐形副本，覆在真实行上逐项量宽 */}
               <div className="ocr-measure" ref={measureRowRef} aria-hidden="true">
@@ -3082,6 +3192,7 @@ export default function App() {
                 </button>
               )}
             </div>
+            )}
           </div>
           {/* ⌄ 槽位子菜单（§B.5.3 行 ⌄ 同规则）：绝对定位浮层——锚在动作行上方，
               左缘对齐触发槽位（定位 effect 摆位）、底边距行上缘 8px；限宽换行

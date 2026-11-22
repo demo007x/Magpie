@@ -91,6 +91,8 @@ static RESULT_BELOW_ANCHOR: AtomicBool = AtomicBool::new(false);
 /// 识别截图原图不在此保存——见 OCR_IMAGE（钉图数据源）
 struct OcrPending {
     text: String,
+    /// 截图里解出的二维码载荷（无码为空数组；划词导流/钉图取字恒空）
+    barcodes: Vec<String>,
     from_ocr: bool,
     /// 视觉分流标志：true = 文本尚未识别，前端直接把图送模型（请求在流式开始
     /// 前失败时由前端回退本地识别命令）。划词导流/钉图取字恒 false
@@ -143,6 +145,8 @@ pub fn ocr_window_mode(window: WebviewWindow) -> bool {
 #[serde(rename_all = "camelCase")]
 pub struct PendingResult {
     pub text: String,
+    /// 截图里解出的二维码载荷（无码为空数组）
+    pub barcodes: Vec<String>,
     pub from_ocr: bool,
     /// 视觉分流标志：true = 文本未识别，前端直接看图驱动模型（流前失败回退
     /// 本地识别命令 ocr_recognize_local）
@@ -188,6 +192,7 @@ pub fn ocr_take_pending() -> Option<PendingResult> {
         let text = p.text.clone();
         *guard = Some(OcrPending {
             text,
+            barcodes: p.barcodes.clone(),
             from_ocr,
             vision: p.vision,
             run: Some((r.id.clone(), r.service.clone())),
@@ -199,6 +204,7 @@ pub fn ocr_take_pending() -> Option<PendingResult> {
         has_image,
         image: image_path,
         text: p.text,
+        barcodes: p.barcodes,
         from_ocr,
         vision: p.vision,
         pinned: ocr_pinned(),
@@ -222,6 +228,7 @@ pub fn ocr_peek_image() -> Option<std::path::PathBuf> {
 /// 钉住状态沿用用户上次的选择（见 OCR_PINNED 说明），结果本身不改它
 pub fn ocr_set_pending(
     text: String,
+    barcodes: Vec<String>,
     image: Option<std::path::PathBuf>,
     run: Option<(String, Option<String>)>,
     app: String,
@@ -229,7 +236,15 @@ pub fn ocr_set_pending(
 ) {
     replace_ocr_image(image);
     let mut pending = OCR_PENDING.lock().unwrap();
-    *pending = Some(OcrPending { text, from_ocr: true, vision, run, pid: 0, app });
+    *pending = Some(OcrPending {
+        text,
+        barcodes,
+        from_ocr: true,
+        vision,
+        run,
+        pid: 0,
+        app,
+    });
 }
 
 /// 存入划词导流结果（面板弹出后自动执行 run）
@@ -245,6 +260,7 @@ pub fn set_selection_pending(
     let mut pending = OCR_PENDING.lock().unwrap();
     *pending = Some(OcrPending {
         text,
+        barcodes: Vec::new(),
         from_ocr: false,
         vision: false,
         run: Some((action_id, service)),
