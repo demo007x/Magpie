@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- 本文件仅在发版时依据 docs/release/release-vX.Y.Z.md 的已勾选条目生成版本节，开发阶段勿改 -->
 
+## [0.2.0] - 2026-11-22
+
+### Added
+
+- In-app auto-update: new versions are announced in-app with the release notes embedded, and updating downloads, installs and restarts without a trip to GitHub; macOS permissions (accessibility, input monitoring, screen recording) survive the update. Background checks run hourly (24-hour throttle) with an on/off switch in Settings, and the tray menu gains "Check for updates".
+- Vision actions can be delegated to your own model: per-action switches (Recognize text / Translate / Explain / Summarize) let the model read the screenshot directly instead of on-device recognition first, streaming results into the result window. Falls back to on-device recognition automatically when no model service is configured or the request fails.
+- Offline dictionary: selecting an English word shows definitions, usage notes, bilingual examples, phonetics and etymology in milliseconds — fully offline, no API key, no model quota. Chinese selections automatically use the Chinese-English library (CC-CEDICT). Libraries are user-provided; Magpie reads them without ever writing or bundling them.
+- Dictionary settings page: library status at a glance, file pickers for each direction, per-action switches, and source attribution (open-dictionary / CC-CEDICT, CC BY-SA 4.0).
+- Windows compatibility capture: apps that never expose selected text (self-drawn editors like Zed) can be allowlisted per app in Settings; Magpie presses a copy key on your behalf and restores the clipboard right after. Off by default with an empty allowlist, and the trade-offs are spelled out in the UI.
+- Open file locations: a selection that is a single path gains an "Open location" action — folders open, documents open with their default app, executables are only revealed in File Explorer, never launched; WSL paths (`\\wsl.localhost\…`) are supported.
+- Anki onboarding: the first connection offers to create the companion deck and note types; the default deck and note type are picked from live lists fetched from Anki, so a connected Anki always yields a working Anki action.
+- Selection assistant key: optionally require holding a modifier key while dragging before the capsule pops — for people who don't want a popup on every selection. The key is recorded in the Shortcuts page.
+- QR decoding in screenshot capture: a dedicated "QR" action decodes the framed region without OCR noise, and capture results automatically list decoded codes alongside recognized text — URLs open or copy (never auto-opened), Wi-Fi passwords copy in one click. Decoding is fully on-device with a scale ladder for small codes.
+- Embedded tutorials in the Anki, dictionary, selection and vision settings pages — bilingual, offline, with a link to the full guide on the website.
+- Handoff actions (open link, search, email, calendar, map, open location) dismiss the capsule automatically on success; failures keep it on screen with the reason.
+
+### Changed
+- Settings navigation: Translate and Search moved under "Selection"; AI Services keeps Model, Prompts and Read Aloud.
+
+### Fixed
+- Selecting text inside remote-control clients and virtual machines (Sunlogin, ToDesk, TeamViewer, Microsoft RDP, RustDesk, AnyDesk, VMware, Parallels, VirtualBox, UTM…) no longer injects keystrokes into the remote machine.
+- Some apps never produced a capsule: UIA parent chains keep searching across container boundaries instead of giving up, with miss-attribution logging for the remaining cases.
+- Compatibility capture no longer pops a stale capsule when dragging scrollbars, and now captures correctly when the copied word matches what was already in the clipboard; the injected keys also wait for the target app to have focus.
+- The About page now shows the "up to date" result and check time (the state string mismatch kept it silent before).
+- Dictionary attribution now credits open-dictionary as the data source (Aictionary is a client, not the source).
+- One-shot results (machine translation) open at the top of the result window instead of scrolled to the end; AI streaming still follows the bottom.
+- "Add to calendar" feedback in the Extract panel is now visible as a toast (it previously went to the capsule's inline slot, which the panel doesn't render).
+
 ## [0.1.23] - 2026-11-17
 
 ### Added
