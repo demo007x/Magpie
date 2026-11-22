@@ -7,6 +7,9 @@ use tauri::LogicalSize;
 
 use serde_json::json;
 
+// 调用点在下方 #[cfg(debug_assertions)] 块内：release 构建里不导入，
+// 否则报 unused import（2026-11-22 release 流水线首次暴露）
+#[cfg(debug_assertions)]
 use crate::capture::debug_log;
 use super::{clamp_move_window, monitor_rect, show_without_activation, snap_pos, WindowPos};
 use super::bar::{FloatingState, update_hover_feed};
