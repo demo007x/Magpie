@@ -5,7 +5,7 @@
   "identifier": "app.magpie.desktop",
   "mainBinaryName": "Magpie",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "cargo build --manifest-path src-tauri/Cargo.toml --bin ocr_helper && pnpm dev",
     "devUrl": "http://localhost:5174",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"

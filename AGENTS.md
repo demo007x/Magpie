@@ -31,7 +31,7 @@ pnpm build:debug:app    # debug .app 包（macOS 26 下 dev 裸二进制的托�
 
 **坑（Windows ARM64 本机）**：构建需要 clang——ring 的 build script 在 `windows + aarch64` 目标强制用 clang 编译 C/汇编（ring 经 `tauri-plugin-updater` → `reqwest` → `rustls` 进依赖图；MSVC 的 armasm64 不支持它要的 GAS 语法，x64 CI 无此需求）。装原生 ARM64 版：`winget install LLVM.LLVM --architecture arm64`，装完重开终端再跑 cargo。
 
-**坑（ocr_helper 陈旧二进制）**：`pnpm tauri dev` 走 `cargo run`（默认 run = magpie），只重编主程序及其依赖；兄弟 bin `ocr_helper` 不是依赖，改了 `src/bin/ocr_helper/` 源码也不会跟着重编。改 helper 后必须 `cargo build`（或 `cargo build --bin ocr_helper`）再联调，否则主程序新参数配旧 helper 出离谱报错（实例：旧 helper 不认识 `--qr`，把参数字符串当路径做 exists 检查报「文件不存在」，而文件明明存在）。helper 是每次调用现拉起的子进程，重编落盘即生效，无需重启 dev。
+**坑（ocr_helper 陈旧二进制）**：`pnpm tauri dev` 走 `cargo run`（默认 run = magpie），只重编主程序及其依赖；兄弟 bin `ocr_helper` 不是依赖，改了 `src/bin/ocr_helper/` 源码也不会跟着重编。改 helper 后必须 `cargo build`（或 `cargo build --bin ocr_helper`）再联调，否则主程序新参数配旧 helper 出离谱报错（实例：旧 helper 不认识 `--qr`，把参数字符串当路径做 exists 检查报「文件不存在」，而文件明明存在）。helper 是每次调用现拉起的子进程，重编落盘即生效，无需重启 dev。dev 启动的 beforeDevCommand 已带一次 helper 编译（2026-11-22 起，挡跨会话陈旧），会话中途改 helper 源码仍需手动编。
 
 ## 架构：Rust 管不变的，TS 管多变的
 
