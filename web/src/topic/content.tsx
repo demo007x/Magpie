@@ -67,8 +67,8 @@ const zh: TopicCopy = {
   nav: { crumb: "功能专题 · 划词翻译", home: "首页" },
   hero: {
     badge: "拾趣 · 功能专题",
-    h1a: "选中即译，",
-    h1b: "阅读不打断",
+    h1a: "划词翻译——",
+    h1b: "选中即译，阅读不打断",
     lead: "读外文内容遇到生词和难句，老办法是复制、切走、粘贴、查完再切回来——一轮下来，刚才读到哪里都要重新找。拾趣把翻译放进划选这个动作：在任何应用中划选文字，浮动条就地弹出，点「翻译」，译文在旁边实时显示，读完顺手存进 Obsidian。",
     cta1: "下载拾趣",
     cta2: "了解全部功能",
@@ -244,8 +244,8 @@ const en: TopicCopy = {
   nav: { crumb: "Feature · Select & Translate", home: "Home" },
   hero: {
     badge: "Magpie · Feature spotlight",
-    h1a: "Select to translate — ",
-    h1b: "without leaving the page",
+    h1a: "Selection translation — ",
+    h1b: "select to translate without leaving the page",
     lead: "Come across an unfamiliar word while reading, and the old routine kicks in: copy, switch apps, paste, look it up, switch back — then find your place again. Magpie folds all of that into the selection itself: select text in any app, the floating bar appears on the spot, tap Translate, and the translation shows up right beside it — ready to save into Obsidian when you're done.",
     cta1: "Download Magpie",
     cta2: "See all features",

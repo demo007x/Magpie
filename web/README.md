@@ -18,7 +18,11 @@ pnpm preview        # 预览构建产物
 
 **相对路径部署：同一份 `dist/` 可直接发布到任意路径**——GitHub Pages 项目站（`…/Magpie/`）、自建服务器根目录或任意子目录。`/en/` 子页的资源前缀由两处协同：客户端按语言算（`i18n.tsx` 的 `assetBase`），静态 HTML 由预渲染脚本改写（`scripts/prerender.mjs`）。
 
-SEO 元信息（canonical / hreflang / og:url / og:image / sitemap）按正式域名写死为 `https://fm126.top/`；换正式域名时改 `index.html`、`scripts/prerender.mjs`、`public/robots.txt`、`public/sitemap.xml`。下载与更新记录链接指向 `https://github.com/demo007x/Magpie`（`src/data.ts` 的 `REPO` / `RELEASES`），发布新版本无需改代码——页面不写死版本号，具体版本以 Releases 为准。
+SEO 元信息（canonical / hreflang / og:url / og:image / sitemap）按正式域名写死为 `https://fm126.top/`；换正式域名时改**四个 HTML 壳**（`index.html` / `translate.html` / `anki.html` / `dict.html`，各自含 canonical、og:url、og:image、hreflang）+ `scripts/prerender.mjs`（pages 数组与 JSON-LD 里的域名）+ `public/robots.txt` + `public/sitemap.xml`。下载与更新记录链接指向 `https://github.com/demo007x/Magpie`（`src/data.ts` 的 `REPO` / `RELEASES`），发布新版本无需改代码——页面不写死版本号，具体版本以 Releases 为准。
+
+**SEO 关键词与结构化数据**：页面级元信息（title / description / keywords / ogLocale）在 `src/i18n.tsx` 的 `META[page][locale]`（title/description/keywords 前置本页主关键词与泛词——划词翻译、桌面翻译、AI 翻译、翻译软件等，机翻服务名与应用真实支持一致）；预渲染另向每页 head 注入 JSON-LD 结构化数据（首页 SoftwareApplication + FAQPage，FAQ 问答取自 i18n 的 faq 数据；子页 BreadcrumbList）。改关键词只动 META 与壳，不动 prerender。
+
+**部署后动作（代码外，账号操作）**：上线或改版后在 Google Search Console 提交 `https://fm126.top/sitemap.xml` 并请求编入索引；百度侧在「百度搜索资源平台」（ziyuan.baidu.com）提交 sitemap 与普通收录——新站收录慢是常态，专题页靠内链与持续内容逐步积累。
 
 ## 双语言
 
@@ -26,7 +30,7 @@ SEO 元信息（canonical / hreflang / og:url / og:image / sitemap）按正式�
 - **页面**：首页与专题页两套，各两语言——`/` 与 `/translate/`（中文）、`/en/` 与 `/en/translate/`（英文）。专题页入口 `translate.html`，组件与文案自成一体（`src/topic/`，文案在 `src/topic/content.tsx`）；资源都在站点根，页面每深一层资源前缀多退一级（`i18n.tsx` 的 `assetBase`/`root` 按语言 + 目录深度计算，预渲染改写与之对齐）。
 - **预渲染**：`pnpm build` 末尾跑 `scripts/prerender.mjs`，用 `renderToStaticMarkup` 把四个页面各渲染成含完整正文的静态 HTML（爬虫、禁 JS、社交卡片直接读全文），客户端 `hydrateRoot` 接管交互。往页面加内容时**不需要**为预渲染做任何事；只有新加「渲染期就读浏览器状态」的代码才会破坏它（水合会不一致），保持渲染纯由 props/URL 决定即可。
 - **语言按钮 = 真 URL + 软切换**（`Nav.tsx`）：`<a href>` 始终指向对方语言的真地址（爬虫/中键/禁 JS 可达），普通左键点击被拦截为原地换字典 + `pushState`（带当前区块锚点），不刷新、滚动位置不丢；前进/后退由 popstate 按路径恢复语言。
-- 新增文案改 `src/i18n.tsx`（首页）或 `src/topic/content.tsx`（专题页）的 zh / en 两份字典；页面级 `<head>` 元信息（lang/title/description/ogLocale）在 `src/i18n.tsx` 的 `META[page][locale]` 里，供预渲染与运行时共用。
+- 新增文案改 `src/i18n.tsx`（首页）或 `src/topic/content.tsx`（专题页）的 zh / en 两份字典；页面级 `<head>` 元信息（lang/title/description/keywords/ogLocale）在 `src/i18n.tsx` 的 `META[page][locale]` 里，供预渲染与运行时共用。
 
 ## 配色与主题
 

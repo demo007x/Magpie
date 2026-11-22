@@ -80,8 +80,8 @@ export const ANKI: Record<Locale, AnkiCopy> = {
     nav: { crumb: "Anki 使用教程", home: "返回首页" },
     hero: {
       badge: "使用教程",
-      h1a: "从安装到第一张",
-      h1b: "单词卡",
+      h1a: "Anki 划词制卡——",
+      h1b: "从安装到第一张单词卡",
       lead:
         "这篇教程带你把拾趣接进 Anki：安装 Anki 与 AnkiConnect 插件，拾趣一键创建牌组和卡片模板，之后划词即建卡——查词进单词卡，整段内容进内容卡，来源与日期自动带上。复习安排交给 Anki 的间隔重复。",
       cta: "下载拾趣",
@@ -222,8 +222,8 @@ export const ANKI: Record<Locale, AnkiCopy> = {
     nav: { crumb: "Anki tutorial", home: "Back to home" },
     hero: {
       badge: "Tutorial",
-      h1a: "From install to your first",
-      h1b: "word card",
+      h1a: "Anki card clipping — ",
+      h1b: "from install to your first word card",
       lead:
         "This guide walks you through connecting Magpie to Anki: install Anki and the AnkiConnect add-on, let Magpie create the deck and card templates in one click, then clip to add cards — words go to Word cards, longer text to Content cards, with source and date attached. Scheduling is handled by Anki's spaced repetition.",
       cta: "Download Magpie",

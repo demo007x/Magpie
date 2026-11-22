@@ -50,8 +50,8 @@ const zh: DictCopy = {
   nav: { crumb: "词典教程", home: "首页" },
   hero: {
     badge: "离线词典 · 使用教程",
-    h1a: "划词查词，",
-    h1b: "毫秒出释义",
+    h1a: "离线词典——",
+    h1b: "划词查词，毫秒出释义",
     lead: "拾趣的「词典」动作完全离线：不联网、不消耗模型额度，毫秒级给出释义、用法说明、双语例句、音标与词源。词库来自开源项目 open-dictionary——8.4 万学习者词条，CC BY-SA 4.0，装一次永久可用。",
     cta: "下载拾趣",
     note: "已有拾趣？往下看词库获取",
@@ -167,8 +167,8 @@ const en: DictCopy = {
   nav: { crumb: "Dictionary guide", home: "Home" },
   hero: {
     badge: "Offline dictionary · Guide",
-    h1a: "Select a word,",
-    h1b: "get definitions in milliseconds",
+    h1a: "Offline dictionary — ",
+    h1b: "select a word, get definitions in milliseconds",
     lead: "Magpie's Dictionary action is fully offline: no network, no model quota, and definitions in milliseconds — usage notes, bilingual examples, US/UK phonetics and etymology. The word library comes from the open-source open-dictionary project (84k learner entries, CC BY-SA 4.0), set up once and yours forever.",
     cta: "Download Magpie",
     note: "Already have Magpie? See how to get the library below",

@@ -20,7 +20,7 @@ const zh = {
   },
   hero: {
     badge: "拾趣 Magpie · macOS / Windows 划词 AI 工具 · 永久免费",
-    h1a: "文本提取 · 内容翻译 · 信息整理",
+    h1a: "划词翻译 · 截图识别 · 信息整理",
     h1b: "沉浸式自定义",
     h1c: "AI 划词",
     h1d: "工具",
@@ -288,7 +288,7 @@ const en: Dict = {
   },
   hero: {
     badge: "Magpie · AI text-selection tool for macOS & Windows · Free forever",
-    h1a: "Text extraction, content translation, and organization",
+    h1a: "Selection translation, screenshot OCR, and organization",
     h1b: "an immersive, customizable ",
     h1c: "AI selection",
     h1d: " tool",
@@ -537,7 +537,8 @@ const en: Dict = {
   },
 };
 
-const DICTS: Record<Locale, Dict> = { zh, en };
+/** 两份语言字典：页面文案与 FAQ 数据的权威来源（预渲染的 JSON-LD 也从这里取） */
+export const DICTS: Record<Locale, Dict> = { zh, en };
 
 /** 站点页面：首页、功能专题页（/translate/）、Anki 教程页（/anki/）与词典教程页（/dict/），各自有 zh / en 两个语言变体 */
 export type PageKey = "home" | "translate" | "anki" | "dict";
@@ -546,72 +547,94 @@ export interface PageMeta {
   lang: string;
   title: string;
   description: string;
+  keywords: string;
   ogLocale: string;
 }
 
-/** 每页每种语言的 <head> 元信息：预渲染脚本写进静态 HTML，软切换时同步到 document */
+/** 每页每种语言的 <head> 元信息：预渲染脚本写进静态 HTML，软切换时同步到 document。
+    关键词策略：title 关键词前置、品牌词保留；description 覆盖本页主关键词与用户
+    实际会搜的泛词（翻译软件/桌面翻译软件等）；keywords 收录百度仍在用的弱信号词表。
+    机翻服务名（百度/DeepL/Google/有道等 9 家）与应用真实支持一致，不做无中生有 */
 export const META: Record<PageKey, Record<Locale, PageMeta>> = {
   home: {
     zh: {
       lang: "zh-CN",
-      title: "拾趣 Magpie · 划词唤起 AI，翻译直达 Obsidian",
+      title: "拾趣 Magpie - 划词翻译 · AI 翻译 · 截图 OCR，免费桌面翻译软件",
       description:
-        "拾趣是一款 macOS / Windows 划词 AI 工具：选中或框选屏幕上的任何文字，即可翻译、解释、总结、搜索、写入笔记与提取信息；模型服务自选，识别在本机完成，功能永久免费。",
+        "拾趣是免费的桌面翻译软件：划词翻译、AI 翻译、截图 OCR 识别一步到位，支持百度翻译、DeepL、Google 翻译、有道等 9 家机翻服务；译文直达 Obsidian，划词存入 Anki，离线词典毫秒查词。macOS / Windows 双平台，识别在本机完成。",
+      keywords:
+        "划词翻译,桌面翻译,AI翻译,截图翻译,OCR文字识别,屏幕翻译,翻译软件,翻译工具,划词取词,鼠标取词,屏幕取词,离线词典,Anki,Obsidian,拾趣,Magpie",
       ogLocale: "zh_CN",
     },
     en: {
       lang: "en",
-      title: "Magpie · Select to summon AI — straight into Obsidian",
+      title:
+        "Magpie - Selection Translation · AI Translate · Screenshot OCR | Free Translate App for Mac & Windows",
       description:
-        "Magpie is a macOS & Windows text-selection AI tool: select or capture any text on screen to translate, explain, summarize, search or save it into your notes. Bring your own model service — recognition runs on-device, free forever.",
+        "Magpie is a free desktop translation app: selection translation, AI translation and screenshot OCR in one place — works with Baidu, DeepL, Google Translate, Youdao and 5 more machine-translation services; results go straight into Obsidian, clips into Anki, plus an offline dictionary. macOS & Windows, on-device recognition, free forever.",
+      keywords:
+        "selection translation,desktop translation,AI translator,screenshot translation,OCR text recognition,screen capture translate,translate app,Mac translation tool,Windows translation tool,offline dictionary,Anki,Obsidian,Magpie",
       ogLocale: "en_US",
     },
   },
   translate: {
     zh: {
       lang: "zh-CN",
-      title: "划词翻译：选中即译，阅读不打断 · 拾趣 Magpie",
+      title: "划词翻译 · 截图翻译 · AI 翻译 - 拾趣 Magpie（百度/DeepL/Google 翻译可选）",
       description:
-        "拾趣划词翻译专题：划选文字即时翻译，选不了的 PDF、图片与视频字幕按 ⌥T 框选识别；碎片信息随手收集，译文与摘录一键存入 Obsidian。方向自动判断，AI 翻译、百度翻译、DeepL 可切换，识别在本机完成，永久免费。",
+        "拾趣的划词翻译：选中即译，方向自动判断；PDF、图片、视频字幕选不了，按快捷键截图 OCR 翻译。支持 AI 翻译与百度翻译、DeepL、Google 翻译、有道等 9 家机翻服务切换；译文与摘录一键存 Obsidian，不打断阅读，永久免费。",
+      keywords:
+        "划词翻译,桌面翻译,截图翻译,AI翻译,OCR翻译,屏幕翻译,鼠标取词,划词取词,划词翻译软件,截图翻译软件,百度翻译,DeepL,Google翻译,有道翻译",
       ogLocale: "zh_CN",
     },
     en: {
       lang: "en",
-      title: "Select & Translate: translate without leaving your reading · Magpie",
+      title:
+        "Selection Translation · Screenshot Translate - Magpie (AI / Baidu / DeepL / Google Translate)",
       description:
-        "Magpie's select & translate guide: translate any selected text on the spot; capture what can't be selected — PDFs, images, video subtitles — with ⌥T; gather fragments and save everything straight into Obsidian. Automatic direction, AI / Baidu / DeepL services, on-device recognition, free forever.",
+        "Selection translation with Magpie: translate any selected text on the spot with automatic direction; capture what can't be selected — PDFs, images, video subtitles — with a hotkey and screenshot OCR. Switch between AI, Baidu, DeepL, Google Translate, Youdao and more; save results straight into Obsidian. Free forever.",
+      keywords:
+        "selection translation,desktop translation,screenshot translation,AI translation,OCR translation,screen translation,select to translate,translate software,Baidu Translate,DeepL,Google Translate,Youdao",
       ogLocale: "en_US",
     },
   },
   anki: {
     zh: {
       lang: "zh-CN",
-      title: "拾趣 × Anki 使用教程：从安装到第一张单词卡 · 拾趣 Magpie",
+      title: "Anki 划词制卡教程 - 划词存入 Anki 单词卡 | 拾趣 Magpie",
       description:
-        "拾趣 × Anki 完整使用教程：下载安装 Anki 与 AnkiConnect 插件，拾趣一键创建「拾趣」牌组与单词卡、内容卡模板；划词即建卡，短划词进单词卡、长内容进内容卡，自动带来源与日期；配合 AnkiWeb 多端同步与间隔重复安排复习。",
+        "拾趣 × Anki 划词制卡教程：安装 Anki 与 AnkiConnect 插件，一键创建牌组与单词卡、内容卡模板；划词即建卡，自动带来源与日期，AnkiWeb 多端同步配合间隔重复安排复习。",
+      keywords:
+        "Anki,Anki教程,Anki划词,划词制卡,Anki单词卡,AnkiConnect,Anki模板,间隔重复,记忆卡片,生词本",
       ogLocale: "zh_CN",
     },
     en: {
       lang: "en",
-      title: "Magpie × Anki tutorial: from install to your first word card · Magpie",
+      title: "Anki Clip Cards Tutorial - Save selections as Anki cards | Magpie",
       description:
-        "The complete Magpie × Anki tutorial: install Anki and AnkiConnect, let Magpie create the Magpie deck with Word and Content card templates in one click; clip to add cards — words go to Word cards, longer text to Content cards, with source and date attached. Review anywhere via AnkiWeb sync and spaced repetition.",
+        "The Magpie × Anki card-clipping tutorial: install Anki and AnkiConnect, create the deck and Word/Content card templates in one click; clip to add cards with source and date attached, and review anywhere via AnkiWeb sync and spaced repetition.",
+      keywords:
+        "Anki,Anki tutorial,Anki word card,AnkiConnect,clip to Anki,spaced repetition,flashcards,vocabulary",
       ogLocale: "en_US",
     },
   },
   dict: {
     zh: {
       lang: "zh-CN",
-      title: "拾趣 × 离线词典教程：划词查词，毫秒出释义 · 拾趣 Magpie",
+      title: "离线词典 · 划词查词 - 英汉词典教程 | 拾趣 Magpie",
       description:
-        "拾趣 × 离线词典完整教程：两条路径获取 open-dictionary 的 8.4 万词条离线词库（安装 Aictionary 自动接入，或手动下载 SQLite 文件），划英文单词毫秒出释义——用法、双语例句、音标与词源，完全离线、不消耗模型额度。",
+        "拾趣离线词典教程：8.4 万词条英汉词典离线词库，两条路径获取（安装 Aictionary 自动接入，或手动下载 SQLite 词库文件）；划英文单词毫秒出释义——用法、双语例句、音标与词源，完全离线、不消耗模型额度。",
+      keywords:
+        "离线词典,英汉词典,划词查词,离线词库,词典软件,离线翻译,划词翻译词典,生词查询",
       ogLocale: "zh_CN",
     },
     en: {
       lang: "en",
-      title: "Magpie × offline dictionary guide: select a word, read the entry · Magpie",
+      title: "Offline Dictionary - Select a word, get definitions | Magpie",
       description:
-        "The complete Magpie × offline dictionary guide: two paths to the 84k-entry offline library from open-dictionary (install Aictionary for automatic setup, or download the SQLite file manually); select an English word and read definitions in milliseconds — usage, bilingual examples, phonetics and etymology. Fully offline, no model quota.",
+        "The Magpie offline dictionary guide: an 84k-entry English-Chinese offline dictionary, two paths to set it up (install Aictionary for automatic integration, or download the SQLite library manually); select an English word and read definitions in milliseconds — usage, bilingual examples, phonetics and etymology. Fully offline, no model quota.",
+      keywords:
+        "offline dictionary,English-Chinese dictionary,select to look up,offline dictionary app,dictionary software,instant definitions",
       ogLocale: "en_US",
     },
   },
