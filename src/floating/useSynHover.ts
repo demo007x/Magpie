@@ -366,6 +366,7 @@ export function useSynHover(opts: {
             msg: `SYN ${hitDesc} @(${cx.toFixed(0)},${cy.toFixed(0)}) el=${el?.tagName.toLowerCase() ?? "null"}.${(el?.className ?? "").toString().split(" ")[0]}`,
           }).catch(() => undefined);
         }
+        // 原生 :hover 的样式通道已在 floating.css 摘除，这里只管合成类
         synHoverRef.current?.classList.remove("syn-hover");
         if (btn) btn.classList.add("syn-hover");
         synHoverRef.current = btn;
@@ -390,6 +391,9 @@ export function useSynHover(opts: {
       else unlisteners.push(un);
     });
 
+    // 原生 :hover 残留的根治在样式层：floating.css 已摘除 .action/.chip/.tool
+    // 等的原生 :hover（2026-11-22 双亮实测），.syn-hover 是唯一着色通道，
+    // 这里的摘挂只管类，不再需要 pointer-events 强刷
     // Rust 侧离开边沿：光标划出全部 hover 目标窗口的瞬间补发给最后命中的
     // 窗口（本窗口若非目标则收不到；Windows 分离卡下胶囊文档看不到弹层窗口
     // 边界，光标从弹层直接划走时收不到 mouseleave）。mouseleave 已先记过
