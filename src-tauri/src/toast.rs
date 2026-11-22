@@ -433,6 +433,11 @@ fn roll_out(app: &AppHandle, done: Option<Box<dyn FnOnce() + Send + 'static>>) {
         }
         return;
     }
+    // 序号快照：收尾延迟（ANIM_MS）期间来了更新的 toast/hide 则放弃收尾——
+    // hide_toast 后紧跟 show_toast 时（二维码解码失败：sticky 撤场 → 错误提示
+    // 滚入，全程 <500ms），本收尾会落在新提示滚入之后，无条件 hide = 新提示
+    // 闪现即逝。try_roll_in 与自动隐藏排期都有同款守卫，唯此处曾漏
+    let seq = TOAST_SEQ.load(Ordering::Relaxed);
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         let Some(win) = handle.get_webview_window("toast") else {
@@ -463,6 +468,9 @@ fn roll_out(app: &AppHandle, done: Option<Box<dyn FnOnce() + Send + 'static>>) {
             let recv = handle.clone();
             let cb = handle.clone();
             let _ = recv.run_on_main_thread(move || {
+                if TOAST_SEQ.load(Ordering::Relaxed) != seq {
+                    return;
+                }
                 if let Some(w) = cb.get_webview_window("toast") {
                     let _ = w.set_position(LogicalPosition::new(x, ty));
                     let _ = w.hide();

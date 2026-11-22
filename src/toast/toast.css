@@ -157,7 +157,8 @@ body,
 .toast-text {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 3px; /* 两行行距：1px 时中文方块字几乎贴在一起（用户反馈紧凑），3px
+               给主次行呼吸缝；单行 toast 无间距行，不受影响 */
   /* 内在宽度（max-content）：不参考视口，理由同 .toast-pop；
      容器封顶 420 时靠 flex-shrink 收缩，触发子元素折行 */
   width: max-content;
@@ -167,6 +168,8 @@ body,
 /* 主行：发生了什么；次行：该怎么办（原生通知的 title/subtitle 层级）。
    宽度策略：正常文案单行放完；超长的先折行（至多 2 行），再长才省略号截断 */
 .toast-main {
+  font-size: 14px; /* 与次行拉开 2px 字号差（次行 12px 已是中文清晰下限，
+                   不再缩小；主次靠字号差 + 次行灰度双通道，1px 差不可感） */
   font-weight: 510; /* 半档字重：醒目但不突兀（中文加字重优于加字号） */
   display: -webkit-box;
   -webkit-box-orient: vertical;

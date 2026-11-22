@@ -3050,9 +3050,16 @@ export default function App() {
                       <span className="extract-acts">
                         {qrUrl && (
                           <button
-                            onClick={guarded(() =>
-                              invoke("open_url", { url: qrUrl }).catch(() => undefined),
-                            )}
+                            onClick={guarded(() => {
+                              invoke("open_url", { url: qrUrl }).catch(() => undefined);
+                              // 纯码单条面板：打开即任务完成，结果窗自动收场
+                              // （浏览器已成前台，面板留着只是清理负担）；多码
+                              // 或带文本的面板保留（还有后续动作）。钉图窗不
+                              // 渲染码行（PinView 只出图片视图），无误关问题
+                              if (IS_OCR && !phase.text?.trim() && phase.barcodes?.length === 1) {
+                                closeResultWindow();
+                              }
+                            })}
                           >
                             {t("floating.actOpen")}
                           </button>
