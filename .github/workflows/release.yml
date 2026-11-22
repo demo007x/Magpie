@@ -57,6 +57,13 @@ jobs:
           echo "$MACOS_CERTIFICATE" | base64 --decode > /tmp/magpie-dev.p12
           KC_PWD=$(openssl rand -hex 16)
           security create-keychain -p "$KC_PWD" build.keychain
+          # 显式解锁 + 关自动锁定：keychain 建好默认可自动锁定，锁定后
+          # codesign 会等授权 UI，无头 runner 上永远没人点 → 整个签名步骤
+          # 挂死（2026-11-22 v0.2.0 两次 run 卡死在 ocr_helper 签名的实证；
+          # 旧镜像 11-19 前未触发，macos-latest 滚动镜像后暴露）。unlock 在
+          # import 之前做，分区列表授权才落得实
+          security unlock-keychain -p "$KC_PWD" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
           security import /tmp/magpie-dev.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PWD" build.keychain
           # 追加而非替换搜索列表：保留 runner 默认 keychain，避免影响后续工具
