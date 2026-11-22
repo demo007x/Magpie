@@ -129,8 +129,10 @@ export function OcrDemo() {
         </div>
       </div>
 
-      {/* 识别与翻译结果：同一容器内的浮层 */}
-      <div className="mt-4 min-h-[104px]">
+      {/* 识别与翻译结果：同一容器内的浮层。不回显英文原文——框选句在上面的
+          PDF 里已有虚线高亮，回显一遍是营销演示里的纯噪音（真机里回显是为了
+          校验 OCR，演示场景不需要） */}
+      <div className="mt-4 min-h-[76px]">
         <AnimatePresence initial={false}>
           {recognized && (
             <motion.div
@@ -152,8 +154,7 @@ export function OcrDemo() {
                   </span>
                 )}
               </div>
-              <p className="mt-2 text-[12px] leading-relaxed text-mute">{SCENE.sentence}</p>
-              <p className="mt-1.5 min-h-[1.6em] text-[13px] leading-relaxed text-ink">
+              <p className="mt-2 min-h-[1.6em] text-[13px] leading-relaxed text-ink">
                 {typed}
                 {stage === "typing" && (
                   <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] bg-accent" />
