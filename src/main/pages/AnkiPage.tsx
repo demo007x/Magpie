@@ -327,7 +327,7 @@ export default function AnkiPage({ settings, patch, save, saved, saveNow }: Page
         </div>
         {test && (
           <div className="row-between">
-            <span className="row-sub">
+            <span className={`row-sub ${test.ok ? "ok" : "warn"}`}>
               {test.ok
                 ? t("anki.testOk")
                 : test.msg || (test.auto ? t("anki.autoFail") : t("anki.testFail"))}

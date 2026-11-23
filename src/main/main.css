@@ -20,6 +20,7 @@
   --danger: #d92f2f;
   --ok: #1f9d4d;
   --bad: #d92f2f;
+  --warn: #b45309;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -38,6 +39,7 @@
     --danger: #ff6b61;
     --ok: #32ad62;
     --bad: #ff6b61;
+    --warn: #f5a623;
     /* 暗底上整体提亮一档，保住色相可辨 */
                         }
 }
@@ -62,6 +64,7 @@
   --danger: #d92f2f;
   --ok: #1f9d4d;
   --bad: #d92f2f;
+  --warn: #b45309;
 }
 
 :root.theme-dark {
@@ -80,6 +83,7 @@
   --danger: #ff6b61;
   --ok: #32ad62;
   --bad: #ff6b61;
+  --warn: #f5a623;
   /* 与系统暗色（媒体查询块）同款提亮 */
 }
 
@@ -780,6 +784,21 @@ input[type="radio"] {
 /* 说明行的危险语气（如兼容取词的「会中断正在运行的命令」）：同一字号，只换色 */
 .row-sub.bad {
   color: var(--bad);
+}
+
+/* 状态行语气分级：warn=出错/告警（可恢复，琥珀轻于 danger），ok=成功确认，
+   lead=待配置空状态（不是错误，只加重不加色） */
+.row-sub.warn {
+  color: var(--warn);
+}
+
+.row-sub.ok {
+  color: var(--ok);
+}
+
+.row-sub.lead {
+  color: var(--text);
+  font-weight: 500;
 }
 
 /* 动作行：说明跟在动作名后面（同行弱化展示） */

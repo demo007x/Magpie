@@ -144,7 +144,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "model.thinking": "Thinking mode",
   "model.thinkingSub": "On: answers are more accurate but slower. Off: faster.",
   "vision.hint":
-    "When on, the model reads the image directly for the matching action (the screenshot is sent to your configured model service); needs a configured model service, and local recognition is used if the request fails. Vision translate always uses the model, not machine-translation services.",
+    "When on, the actions below are done by the model, falling back to local recognition when no service is configured.",
   "vision.ocr": "Recognize text",
   "vision.translate": "Translate",
   "vision.explain": "Explain",
@@ -240,7 +240,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // 词典页（离线查词，ADR-12）
   "dict.hint":
-    "Select English for Chinese meanings, or Chinese for English meanings — instant, offline, no model credits. Both word lists stay on your computer; Magpie only reads them. Selections with Chinese characters use the Chinese-English list; everything else uses English-Chinese. Changes apply after saving.",
+    "Select English for a Chinese definition, Chinese for an English definition; instant and offline, no AI credits. Selections with Chinese characters use the Chinese-English list, everything else the English-Chinese one.",
   "dict.stateReady": "Dictionary ready — {count} entries",
   "dict.stateUnset": "No dictionary found yet",
   "dict.stateMissing": "This dictionary file can't be found — it may have moved or been deleted",
@@ -254,18 +254,17 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "dict.chosenManually": "Chosen manually",
   "dict.useAuto": "Use auto-detection",
   "dict.autoHint":
-    "Detects the open-dictionary list used by compatible apps by default; choose a file to use a different EN→ZH list on your computer.",
+    "Detects the open-dictionary file bundled with dictionary apps by default; you can also choose another English-Chinese file.",
   "dict.zhHint":
-    "Defaults to a list converted from the official CC-CEDICT text. Magpie never downloads or bundles it; choose a file to use a different ZH→EN list.",
+    "Uses a list converted from the official CC-CEDICT by default; you can also choose another Chinese-English file.",
   "dict.enOnly": "The dictionary covers English entries only; use Translate for Chinese or long passages.",
-  "dict.routeHint": "Chinese characters use the ZH→EN list; other selections use EN→ZH. Use Translate for full sentences.",
-  "dict.tutorialLead": "Full setup steps (two ways):",
-  "dict.tutorialLink": "Open the setup guide",
+  "dict.tutorialLead": "Get a dictionary (two ways):",
+  "dict.tutorialLink": "View the tutorial",
   "dict.sourceTitle": "Where the entries come from",
   "dict.credit":
-    "English-Chinese entries come from the open-dictionary project (built on a Wiktionary snapshot), licensed CC BY-SA 4.0. Aictionary is only one client of that dictionary.",
+    "English-Chinese entries come from the open-dictionary project (built on a Wiktionary snapshot), licensed CC BY-SA 4.0.",
   "dict.zhCredit":
-    "Chinese-English entries come from CC-CEDICT (published by MDBG), licensed CC BY-SA 4.0. Magpie only reads your local converted file and never bundles it.",
+    "Chinese-English entries come from CC-CEDICT (published by MDBG), licensed CC BY-SA 4.0. Magpie doesn't bundle it; it only reads files you convert locally.",
   "dict.sourceLink": "open-dictionary page",
   "dict.zhSourceLink": "CC-CEDICT page",
 

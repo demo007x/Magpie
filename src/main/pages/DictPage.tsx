@@ -19,6 +19,13 @@ function stateLine(s: DictStatus | null): string {
   return t("dict.stateUnset");
 }
 
+/** 状态语气：ready=成功（绿）/ missing·unknown=出错（琥珀）/ unset=待配置空状态（加重） */
+function stateTone(s: DictStatus | null): "ok" | "warn" | "lead" {
+  if (s?.state === "ready") return "ok";
+  if (s?.state === "missing" || s?.state === "unknown") return "warn";
+  return "lead";
+}
+
 function LibraryRow({
   title,
   status,
@@ -43,7 +50,7 @@ function LibraryRow({
       <div className="row-between">
         <div>
           <div className="row-title">{title}</div>
-          <div className="row-sub">{stateLine(status)}</div>
+          <div className={`row-sub ${stateTone(status)}`}>{stateLine(status)}</div>
         </div>
         <div className="row-ctl">
           <button className="btn sm" onClick={onPick}>
@@ -119,7 +126,6 @@ export default function DictPage({ settings, patch, saveNow }: PageProps) {
       <p className="page-hint">
         {t("dict.hint")} <TutorialButton id="dict" />
       </p>
-      <p className="page-hint">{t("dict.routeHint")}</p>
 
       <LibraryRow
         title={t("dict.enZhTitle")}
