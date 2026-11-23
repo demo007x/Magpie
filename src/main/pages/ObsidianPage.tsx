@@ -18,6 +18,7 @@ const TEMPLATE_VARS = {
   fDue: "{due}",
   fDueTag: "{dueTag}",
   fLink: "{link}",
+  fTitle: "{title}",
 };
 
 export default function ObsidianPage({ settings, patch, save, saved }: PageProps) {

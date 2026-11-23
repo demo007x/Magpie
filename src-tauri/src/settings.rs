@@ -303,7 +303,9 @@ impl Default for ObsidianConfig {
             card_folder: "Cards".into(),
             excerpt_template: "- **{time}** · {source}\n  > {text}\n  > {link}".into(),
             task_template: "- [ ] {text} {dueTag}".into(),
-            card_template: "- **{time}** · {source}\n  > {text}\n  > {link}".into(),
+            // 知识卡用 Obsidian callout（[!quote] 素色框）：词头作标题，正文与链接
+            // 逐行带 > 前缀落在框内；变量 {title}/{text}/{date}/{time}/{source}/{link}
+            card_template: "> [!quote] {title}\n> {text}\n> {link}".into(),
         }
     }
 }
