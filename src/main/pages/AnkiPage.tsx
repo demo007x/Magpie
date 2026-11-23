@@ -209,24 +209,35 @@ export default function AnkiPage({ settings, patch, save, saved, saveNow }: Page
           invoke<string[]>("anki_model_names", { url }),
         ])
           .then(([decks, models]) => {
+            // 配套牌组 + 类型是否都已存在于 Anki 侧。用本次实拉结果判定，
+            // 不依赖可能与真实集合漂移的本地缓存——这是「用户已经在 Anki 里
+            // 建过配套、却仍被追问要不要创建」的根因：此前只看本地 deck 为空
+            const companionExists = COMPANION_ITEMS.every(
+              (i) => decks.includes(i.deck) && models.includes(i.model),
+            );
             patch((s) => ({
               anki: {
                 ...s.anki,
                 connectUrl: url,
                 decks,
                 models,
+                // 配套已在 Anki 侧、但本地默认牌组为空（换机/清配置/升级）：
+                // 视为已接入，直接沿用第一个子牌组，不再重复询问创建
+                deck: !s.anki.deck && companionExists ? COMPANION_ITEMS[0].deck : s.anki.deck,
               },
               actionOrder: s.actionOrder.includes("anki")
                 ? s.actionOrder
                 : [...s.actionOrder, "anki"],
             }));
+            // 自动补填的默认牌组要落盘，避免下次打开又被当作未接入
+            if (!anki.deck && companionExists) saveNow?.();
             // 连接就绪后顺带做配套样式卫生升级（静默，失败不进连接状态）
             upgradeCompanionCss(url, models);
             setTest({ ok: true });
-            // 主动接入：连上了但没设默认牌组 = 用户还没接入，弹确认问是否
-            // 让拾趣创建配套牌组（也可取消后自己在下方下拉选已有牌组）。
-            // deck 非空或本次会话问过就不再打扰
-            if (!anki.deck && !askedRef.current) {
+            // 主动接入：连上了、本地没设默认牌组、且 Anki 侧确实没有配套，
+            // 才弹确认问是否创建（也可取消后自己在下方下拉选已有牌组）。
+            // deck 非空 / 配套已存在 / 本次会话问过，都不再打扰
+            if (!anki.deck && !companionExists && !askedRef.current) {
               askedRef.current = true;
               setAskSetup(true);
             }
