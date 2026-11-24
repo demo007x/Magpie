@@ -11,7 +11,7 @@
     "tauri": "tauri",
     "build:mac": "tauri build --target universal-apple-darwin",
     "build:mac:native": "tauri build",
-    "build:debug:app": "tauri build --debug --bundles app"
+    "build:debug:app": "tauri build --debug --bundles app --no-sign"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

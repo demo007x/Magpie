@@ -845,6 +845,31 @@ mod tests {
         assert_eq!(assist_key_mask(""), MOD_ALT);
     }
 
+    /// issue #26：快捷键清除后存的是空串，空串 = 禁用。它必须能原样活过一次
+    /// 写盘再读回——serde 的 default 只在字段**缺失**时生效，不能把显式的空串
+    /// 换回出厂键位（否则清除在下次启动时静默失效）。
+    #[test]
+    fn cleared_shortcut_survives_save_and_reload() {
+        let mut cleared = Settings::default();
+        cleared.ocr_translate_shortcut = "".into();
+        cleared.ocr_explain_shortcut = "  ".into();
+        let json = serde_json::to_string(&cleared).unwrap();
+        let reloaded: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(reloaded.ocr_translate_shortcut, "");
+        assert_eq!(reloaded.ocr_explain_shortcut, "  ");
+        // 未清除的槽位不受牵连
+        assert_eq!(reloaded.ocr_shortcut, Settings::default().ocr_shortcut);
+        assert_eq!(reloaded.ocr_summarize_shortcut, "Alt+D");
+
+        // 字段缺失（旧版配置文件）才走 default：出厂键位
+        let legacy = serde_json::json!({
+            "ocrShortcut": "Alt+S",
+            "appBlacklist": []
+        });
+        let from_legacy: Settings = serde_json::from_value(legacy).unwrap();
+        assert_eq!(from_legacy.ocr_translate_shortcut, "Alt+T");
+    }
+
     /// 出厂默认：不启用辅助键 = 选中即弹，与旧 "always" 行为一致
     #[test]
     fn capture_assist_defaults_to_disabled_with_alt_key() {

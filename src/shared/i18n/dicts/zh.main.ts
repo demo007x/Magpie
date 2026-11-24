@@ -94,7 +94,7 @@ export const zhMain = {
 
   // 快捷键页
   "sc.hint":
-    "点击输入框按下新组合键，需含 ⌘ / Ctrl / Alt / Shift 之一，Esc 取消；被其他应用占用的组合键不生效。需保存生效。",
+    "点击输入框按下新组合键，需含 ⌘ / Ctrl / Alt / Shift 之一，Esc 取消；被其他应用占用的组合键不生效。需保存生效。清除后不再占用快捷键，托盘菜单里仍可使用。",
   "sc.ocr.label": "识图取字",
   "sc.ocr.desc": "框选屏幕任意区域，选动作后识别。",
   "sc.ocrTranslate.label": "识图翻译",
@@ -110,6 +110,9 @@ export const zhMain = {
   "sc.needMod": "需至少包含一个修饰键",
   "sc.resetTitle": "重置为默认快捷键",
   "sc.reset": "重置",
+  "sc.unset": "未设置",
+  "sc.clearTitle": "清除快捷键，不再占用它",
+  "sc.clear": "清除",
 
   // 划词辅助键（issue #14）：开关 + 单个修饰键录制
   "sc.assistTitle": "划词辅助键",

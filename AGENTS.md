@@ -17,10 +17,12 @@ pnpm check              # 仅 TS 类型检查（tsc --noEmit）
 pnpm build              # tsc + vite build → dist/
 cargo check             # 在 src-tauri/ 下执行
 cargo build             # 链接验证（FFI 符号错误只有链接时暴露，cargo check 不够）
-pnpm tauri build        # 打包（需 src-tauri/icons/ 齐全，缺失时用 pnpm tauri icon app-icon.png 生成）
+pnpm tauri build        # 打包（需 src-tauri/icons/ 齐全，缺失时用 pnpm tauri icon app-icon.png 生成；
+                        # 需先导出 TAURI_SIGNING_PRIVATE_KEY，见下方「坑（更新签名）」）
 pnpm build:mac          # universal-apple-darwin 通用包
 pnpm build:debug:app    # debug .app 包（macOS 26 下 dev 裸二进制的托盘状态项被系统隐藏、
-                        # Dock 显示 exec 图标——测托盘/程序坞图标必须用 bundle 出的 .app）
+                        # Dock 显示 exec 图标——测托盘/程序坞图标必须用 bundle 出的 .app；
+                        # 带 --no-sign 不需要签名私钥）
 ```
 
 无前端测试框架；Rust 侧有 FFI 烟雾测试（`cargo test`，见 entities/）。常规验证 = `pnpm check` + `cargo check` + `cargo build`，交互验证走 `pnpm tauri dev` 真机划词。
@@ -33,7 +35,7 @@ pnpm build:debug:app    # debug .app 包（macOS 26 下 dev 裸二进制的托�
 
 **坑（ocr_helper 陈旧二进制）**：`pnpm tauri dev` 走 `cargo run`（默认 run = magpie），只重编主程序及其依赖；兄弟 bin `ocr_helper` 不是依赖，改了 `src/bin/ocr_helper/` 源码也不会跟着重编。改 helper 后必须 `cargo build`（或 `cargo build --bin ocr_helper`）再联调，否则主程序新参数配旧 helper 出离谱报错（实例：旧 helper 不认识 `--qr`，把参数字符串当路径做 exists 检查报「文件不存在」，而文件明明存在）。helper 是每次调用现拉起的子进程，重编落盘即生效，无需重启 dev。dev 启动的 beforeDevCommand 已带一次 helper 编译（2026-11-22 起，挡跨会话陈旧），会话中途改 helper 源码仍需手动编。
 
-**坑（更新签名）**：`tauri.conf.json` 的 `bundle.createUpdaterArtifacts: true` 是产出 `.sig` 更新签名的开关（缺了它 CLI 跳过全部 minisign 签名，tauri-action 报「Signature not found for the updater JSON」跳过上传，latest.json 无人挂载，应用内更新检查静默失败，2026-11-22 v0.2.0 发版实证）。开启后本地 `tauri build` 系命令（build:debug:app / build:mac / pnpm tauri build）在 bundle 阶段也要求 `TAURI_SIGNING_PRIVATE_KEY`（没导出就报 "no private key"），`tauri dev` 与 `--no-bundle` 不走签名不受影响；密钥与 GitHub secrets 的 TAURI_SIGNING_PRIVATE_KEY 同源。
+**坑（更新签名）**：`tauri.conf.json` 的 `bundle.createUpdaterArtifacts: true` 是产出 `.sig` 更新签名的开关（缺了它 CLI 跳过全部 minisign 签名，tauri-action 报「Signature not found for the updater JSON」跳过上传，latest.json 无人挂载，应用内更新检查静默失败，2026-11-22 v0.2.0 发版实证）。开启后本地 `tauri build` 系命令（build:mac / build:mac:native / pnpm tauri build）在 bundle 阶段要求 `TAURI_SIGNING_PRIVATE_KEY`（没导出就报 "no private key"）；`tauri dev` 与 `--no-bundle` 不走签名不受影响；密钥与 GitHub secrets 的 TAURI_SIGNING_PRIVATE_KEY 同源。本地自测包用 `build:debug:app`（已带 `--no-sign`，跳过 updater 签名与 tauri 的代码签名，产物靠链接器 adhoc 签名可正常启动）；`--bundles app` **不能**绕过签名（实测仍会产 updater 包并要求私钥）。
 
 ## 架构：Rust 管不变的，TS 管多变的
 

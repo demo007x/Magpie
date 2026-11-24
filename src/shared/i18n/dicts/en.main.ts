@@ -100,7 +100,7 @@ export const enMain: Record<keyof typeof zhMain, string> = {
 
   // Shortcuts page
   "sc.hint":
-    "Click a box and press the new key combination. It must include ⌘ / Ctrl / Alt / Shift; press Esc to cancel. Combinations already used by other apps won't take effect. Save to apply.",
+    "Click a box and press the new key combination. It must include ⌘ / Ctrl / Alt / Shift; press Esc to cancel. Combinations already used by other apps won't take effect. Save to apply. A cleared shortcut frees up the keys; the feature stays available from the tray menu.",
   "sc.ocr.label": "Capture text from screen",
   "sc.ocr.desc": "Frame any area of the screen, then pick an action to recognize it.",
   "sc.ocrTranslate.label": "Capture and translate",
@@ -116,6 +116,9 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "sc.needMod": "Include at least one modifier key",
   "sc.resetTitle": "Reset to the default shortcut",
   "sc.reset": "Reset",
+  "sc.unset": "Not set",
+  "sc.clearTitle": "Clear the shortcut so nothing is assigned",
+  "sc.clear": "Clear",
 
   // Selection modifier (issue #14): toggle + single-key recorder
   "sc.assistTitle": "Selection modifier",

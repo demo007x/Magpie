@@ -80,8 +80,9 @@ const MOD_NAMES_WIN: Record<string, string> = {
   Alt: "Alt",
   Shift: "Shift",
 };
+// 清除后值为空串：显示「未设置」而不是录制占位语，占位语会被读成「点这里开始录制」
 function displayShortcut(v: string): string {
-  if (!v) return "";
+  if (!v) return t("sc.unset");
   return v
     .split("+")
     .map((p) => (IS_MAC ? (MOD_SYMBOLS[p] ?? p) : (MOD_NAMES_WIN[p] ?? p)))
@@ -231,6 +232,15 @@ function AssistKeyRecorder({
                       value={settings[item.key]}
                       onChange={(v) => patch({ [item.key]: v } as Partial<Settings>)}
                     />
+                    {settings[item.key] !== "" && (
+                      <button
+                        className="btn sm"
+                        title={t("sc.clearTitle")}
+                        onClick={() => patch({ [item.key]: "" } as Partial<Settings>)}
+                      >
+                        {t("sc.clear")}
+                      </button>
+                    )}
                     {settings[item.key] !== item.default && (
                       <button
                         className="btn sm"
