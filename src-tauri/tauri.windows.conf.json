@@ -1,0 +1,5 @@
+{
+  "build": {
+    "beforeDevCommand": "cargo build --manifest-path src-tauri/Cargo.toml --bin ocr_helper && start /B node node_modules/vite/bin/vite.js"
+  }
+}
