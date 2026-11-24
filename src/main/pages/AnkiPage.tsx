@@ -66,9 +66,8 @@ function Pick({
   );
 }
 
-/** 配套类型上线时的出厂 CSS（现役出厂值 = 此串 + MD_CSS）。留存为升级指纹：
-    设置页连接探测时若卡型现值与之逐字一致（即用户没改过卡型），静默补上
-    MD_CSS——markdown 渲染改造前的老安装也能拿到新样式 */
+/** 配套类型最初的出厂 CSS（已退役，仅作升级指纹）：现役样式见 FACTORY_CSS_V2。
+    连接探测时若卡型现值与之逐字一致（即用户没改过卡型），静默升到最新出厂值 */
 const FACTORY_CSS_V1: Record<string, string> = {
   [COMPANION_WORD]: `.card {
   font-family: ${SANS};
@@ -114,6 +113,105 @@ const MD_CSS = `
 .card th, .card td { border: 1px solid #ddd; padding: 4px 10px; font-size: 0.92em; }
 .card img { max-width: 100%; }`;
 
+/** 上一版出厂样式（现仍作为升级指纹）：v0.2.0 出厂 = FACTORY_CSS_V1 + MD_CSS。
+    保留它用于识别「用户没改过卡型」——升级到 V2 时须认得这个旧值，否则
+    已建好的卡型会被当成用户自定义而永不升级 */
+const FACTORY_CSS_V2_PREV: Record<string, string> = {
+  [COMPANION_WORD]: FACTORY_CSS_V1[COMPANION_WORD] + MD_CSS,
+  [COMPANION_CONTENT]: FACTORY_CSS_V1[COMPANION_CONTENT] + MD_CSS,
+};
+
+/** 现役出厂样式 V2：向权威双解词典类卡片的观感靠拢——白色圆角卡面、分区
+    小标题（灰色大字距）、浅灰圆角释义面板、蓝色强调词与链接。单词卡额外给
+    词头框（背面 markdown 首个 p，音标灰、单词蓝）、释义左对齐、例句去框中框。
+    内容仍是拾趣自己的 AI markdown（无音标等结构化字段，故不追求与某家卡片
+    逐像素一致）。注意 Anki 渲染字段时会在内容与 .card 之间插容器，词头框
+    必须用后代选择器 .card p:first-of-type（不能用 > 直接子选择器，否则落空） */
+const FACTORY_CSS_V2: Record<string, string> = {
+  [COMPANION_WORD]: `.card {
+  font-family: ${SANS};
+  font-size: 15px;
+  line-height: 1.75;
+  text-align: center;
+  color: #1f2937;
+  background-color: #ffffff;
+  border-radius: 12px;
+  padding: 20px 22px;
+  word-break: break-word;
+}
+.front {
+  display: inline-block; background: #ffffff;
+  border-radius: 12px; padding: 12px 22px;
+  box-shadow: 0 2px 8px rgba(31, 41, 55, 0.10);
+  font-size: 27px; font-weight: 600; color: #1a1a1a;
+}
+hr#answer { border: none; border-top: 1px solid #e8eaed; margin: 14px auto; width: 58%; }
+.card p { text-align: left; }
+.card p:first-of-type {
+  display: inline-block; background: #ffffff; text-align: center;
+  border-radius: 12px; padding: 12px 22px; margin: 0 auto 14px;
+  box-shadow: 0 2px 8px rgba(31, 41, 55, 0.10);
+  min-width: 60%;
+  color: #8a8f98;
+}
+.card p:first-of-type strong { color: #2a6db0; }
+.card h2, .card h3 {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.18em;
+  text-transform: uppercase; color: #9aa0a6; margin: 18px 0 8px;
+}
+.card blockquote {
+  margin: 10px 0; padding: 12px 16px; background: #f6f7f9;
+  border-radius: 10px; color: #2f3542;
+}
+.card blockquote p:first-of-type { margin: 0; background: none; box-shadow: none; display: block; padding: 0; border-radius: 0; min-width: 0; text-align: center; color: #2f3542; }
+.card strong, .card b { color: #2a6db0; }
+.card a { color: #2a6db0; text-decoration: none; }
+.card pre { background: #f6f7f9; border-radius: 8px; padding: 10px 12px; overflow-x: auto; text-align: left; font-size: 13px; }
+.card code { background: #f6f7f9; border-radius: 4px; padding: 1px 5px; font-size: 0.9em; }
+.card pre code { background: none; padding: 0; }
+.card ul, .card ol { margin: 8px 0; padding-left: 1.4em; text-align: left; }
+.card blockquote ul, .card blockquote ol { text-align: left; }
+.card table { border-collapse: collapse; margin: 8px auto; }
+.card th, .card td { border: 1px solid #e6e8eb; padding: 4px 10px; font-size: 0.92em; }
+.card img { max-width: 100%; }
+.meta { font-size: 11px; color: #9aa0a6; margin-top: 16px; letter-spacing: 0.02em; }
+.meta:empty { display: none; }
+.meta a { color: #9aa0a6; }`,
+  [COMPANION_CONTENT]: `.card {
+  font-family: ${SANS};
+  font-size: 16px;
+  line-height: 1.7;
+  text-align: left;
+  color: #1f2937;
+  background-color: #ffffff;
+  border-radius: 12px;
+  padding: 20px 22px;
+  word-break: break-word;
+}
+.card h2, .card h3 {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.16em;
+  text-transform: uppercase; color: #9aa0a6; margin: 16px 0 8px;
+}
+.card blockquote {
+  margin: 10px 0; padding: 12px 16px; background: #f6f7f9;
+  border-radius: 10px; color: #2f3542;
+}
+.card blockquote p { margin: 0; }
+.card strong, .card b { color: #2a6db0; }
+.card a { color: #2a6db0; text-decoration: none; }
+hr#answer { border: none; border-top: 1px solid #e8eaed; margin: 12px 0; }
+.card pre { background: #f6f7f9; border-radius: 8px; padding: 10px 12px; overflow-x: auto; text-align: left; font-size: 13px; }
+.card code { background: #f6f7f9; border-radius: 4px; padding: 1px 5px; font-size: 0.9em; }
+.card pre code { background: none; padding: 0; }
+.card ul, .card ol { margin: 8px 0; padding-left: 1.4em; }
+.card table { border-collapse: collapse; margin: 8px 0; }
+.card th, .card td { border: 1px solid #e6e8eb; padding: 4px 10px; font-size: 0.92em; }
+.card img { max-width: 100%; }
+.meta { font-size: 11px; color: #9aa0a6; margin-top: 14px; }
+.meta:empty { display: none; }
+.meta a { color: #9aa0a6; }`,
+};
+
 /** 配套笔记类型的出厂 createModel 定义（样式/模板归笔记类型）。
     模板语法用 Anki 条件替换（{{#字段}}…{{/字段}}）包裹溯源行，字段为空时整块
     省略，不留孤儿括号；.meta:empty 兜底整行隐藏。两类型字段同构，只差排版：
@@ -123,14 +221,14 @@ const COMPANION_MODELS = [
     def: {
       modelName: COMPANION_WORD,
       inOrderFields: ["正面", "背面", "来源", "链接", "日期"],
-      css: FACTORY_CSS_V1[COMPANION_WORD] + MD_CSS,
+      css: FACTORY_CSS_V2[COMPANION_WORD],
       cardTemplates: [
         {
           Name: "划词卡",
           Front: `<div class="front">{{正面}}</div>`,
-          Back: `{{正面}}
-<hr id="answer">
-{{背面}}
+          // 背面不再重复 {{正面}}<hr>：词头与音标由背面字段 markdown 的首个 <p>
+          // 承载，配合 CSS 的 .card p:first-of-type 白底圆角框呈现，避免两处大字
+          Back: `{{背面}}
 <div class="meta">{{#来源}}来源：{{来源}}&ensp;{{/来源}}{{#链接}}<a href="{{链接}}">页面链接</a>&ensp;{{/链接}}{{#日期}}{{日期}}{{/日期}}</div>`,
         },
       ],
@@ -140,7 +238,7 @@ const COMPANION_MODELS = [
     def: {
       modelName: COMPANION_CONTENT,
       inOrderFields: ["正面", "背面", "来源", "链接", "日期"],
-      css: FACTORY_CSS_V1[COMPANION_CONTENT] + MD_CSS,
+      css: FACTORY_CSS_V2[COMPANION_CONTENT],
       cardTemplates: [
         {
           Name: "划词卡",
@@ -155,19 +253,22 @@ const COMPANION_MODELS = [
   },
 ];
 
-/** 配套类型卡片样式静默升级：现值仍为出厂样式（用户没改过卡型）时补上
-    MD_CSS；改过则完全不动。指纹不匹配或请求失败都静默——样式升级是卫生
-    动作，不进连接判定、不弹提示（与连接自动探测同一克制程度） */
+/** 配套类型卡片样式静默升级：现值仍是任一历史出厂值（V1 或 V1+MD_CSS，
+    说明用户没改过卡型）就升到 V2；改过则完全不动。这样 v0.2.0 及更老安装
+    已建好的配套卡型也能拿到新样式，不必删卡重建。指纹不匹配或请求失败都
+    静默——样式升级是卫生动作，不进连接判定、不弹提示（与连接自动探测同一
+    克制程度）。仅升级 CSS：模板结构（单词卡背面删重复 {{正面}}<hr>）只在
+    新建配套类型时应用，存量卡型的模板不自动改写，避免动用户已有笔记结构 */
 const upgradeCompanionCss = (url: string, models: string[]) => {
   COMPANION_ITEMS.forEach(({ model }) => {
     if (!models.includes(model)) return;
     invoke<string>("anki_model_styling", { url, model })
       .then((css) => {
-        if (css !== FACTORY_CSS_V1[model]) return;
+        if (css !== FACTORY_CSS_V1[model] && css !== FACTORY_CSS_V2_PREV[model]) return;
         return invoke("anki_update_model_styling", {
           url,
           model,
-          css: FACTORY_CSS_V1[model] + MD_CSS,
+          css: FACTORY_CSS_V2[model],
         });
       })
       .catch(() => {});

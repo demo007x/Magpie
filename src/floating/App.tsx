@@ -1798,6 +1798,9 @@ export default function App() {
                 .replaceAll("{time}", time)
                 .replaceAll("{source}", src)
                 .replaceAll("{link}", link)
+                // {title} = 卡片文件名（选中文本首行清理后截 20 字），callout 标题用；
+                // 必须在 {text} 之前替换——正文里若含字面量 {title} 不应被误填
+                .replaceAll("{title}", title)
                 .replaceAll("{text}", body.split("\n").join("\n" + cardPrefix));
               invoke("obsidian_append", { relPath: rel, content: content })
                 .then(() => toast(t("floating.savedCard", { title })))
