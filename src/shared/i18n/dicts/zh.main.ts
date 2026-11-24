@@ -192,7 +192,7 @@ export const zhMain = {
   "obsidian.taskTplVars": "变量：{fText} 任务内容 · {fDue} 截止日期 · {fDueTag} 日历标记（无日期时整段省略） · {fLink} 来源页面链接（非网页为空）",
   "obsidian.cardTpl": "知识卡模板",
   "obsidian.cardTplVars":
-    "变量：{fText} 选中文本 · {fSource} 来源应用 · {fTime} 时间 · {fDate} 日期 · {fLink} 来源页面链接（非网页为空）。一卡一文件，文件名取选中文本首行（≤20 字）。",
+    "变量：{fTitle} 卡片标题（=文件名，选中文本首行 ≤20 字） · {fText} 选中文本 · {fSource} 来源应用 · {fTime} 时间 · {fDate} 日期 · {fLink} 来源页面链接（非网页为空）。默认用 [!quote] 素色 callout：词头作标题，正文逐行带 > 落进框内。",
   "obsidian.resetTplTitle": "恢复出厂默认模板",
   "obsidian.excerptNote": "多行选中文本会逐行保持 markdown 引用形态。含 {fLink} 的行在未取到链接时整行省略。",
 

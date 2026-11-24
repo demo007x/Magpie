@@ -13,4 +13,6 @@ export const actionDesc = (id: string): string => t(`actionDesc.${id}`);
     {source} 本身是应用名，无需「来源：」标签（2026-11-07 界面双语化时调整） */
 export const DEFAULT_EXCERPT_TEMPLATE = "- **{time}** · {source}\n  > {text}\n  > {link}";
 export const DEFAULT_TASK_TEMPLATE = "- [ ] {text} {dueTag}";
-export const DEFAULT_CARD_TEMPLATE = "- **{time}** · {source}\n  > {text}\n  > {link}";
+/** 知识卡默认用 Obsidian callout（[!quote] 素色框）：词头作标题、正文逐行带 >
+    前缀落在框内。与 settings.rs 的 ObsidianConfig::default 保持一致 */
+export const DEFAULT_CARD_TEMPLATE = "> [!quote] {title}\n> {text}\n> {link}";
