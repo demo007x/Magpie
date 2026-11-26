@@ -14,7 +14,9 @@ name: CI
 #（tag 触发）。仓库公开，标准 runner 分钟数免费不限量。
 on:
   push:
-    branches: [main, win_pc]
+    # release-v* 也在列：维护者直推发版分支（不经 PR）时同样获得双平台
+    # 编译验证——否则 Windows 侧改动要到发版 PR 时才首次过编译器
+    branches: [main, "release-v*"]
   pull_request:
 
 # 同一分支的新 push 到来时取消未跑完的旧任务，排队不积压
