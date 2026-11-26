@@ -102,8 +102,11 @@ export function useCaptureSession(opts: {
             o.setUsedTranslate(null); // 选中态回落到默认服务
             o.setUsedEngine(null);
             o.setHoverSuppress(true);
-            // 导流带上了来源应用：结果窗存 Obsidian 的「来源」由此取名
+            // 导流带上了来源应用：结果窗存 Obsidian 的「来源」由此取名。
+            // pid 同理：识图框选携带触发时的前台应用，存笔记/建卡/日历据此
+            // 反查页面链接；文件选图/钉图再识别为 0（与「无来源」同口径）
             o.sourceAppRef.current = p.app;
+            o.sourcePidRef.current = p.pid;
             if (p.run?.id === "__extract") {
               o.showExtractPanel(p.text, p.pid, p.barcodes ?? []);
             } else {

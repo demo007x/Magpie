@@ -181,8 +181,17 @@ pub fn push_ocr_result(
     image: PathBuf,
     run: Option<(String, Option<String>)>,
     vision: bool,
+    source_pid: i32,
 ) {
-    super::floating::ocr_set_pending(text, barcodes, Some(image), run, String::new(), vision);
+    super::floating::ocr_set_pending(
+        text,
+        barcodes,
+        Some(image),
+        run,
+        String::new(),
+        vision,
+        source_pid,
+    );
     let _ = app.emit(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
@@ -213,12 +222,14 @@ fn vision_ready(s: &settings::Settings, action: Option<&str>) -> bool {
 
 /// 视觉分流推送：就绪则以空文本 + vision 标志推送 pending（前端直接看图驱动
 /// 模型，请求流前失败由前端回退本地识别命令），返回 true；未就绪返回 false，
-/// 调用方继续本地识别管线。截图（recognize_and_push）与访达选图共用
+/// 调用方继续本地识别管线。截图（recognize_and_push）与访达选图共用。
+/// source_pid：框选截图传触发时的前台应用；访达选图（文件对话框）传 0
 pub fn try_push_vision_pending(
     app: &tauri::AppHandle,
     image: PathBuf,
     action: Option<String>,
     service: Option<String>,
+    source_pid: i32,
 ) -> bool {
     let s = settings::current(app);
     if !vision_ready(&s, action.as_deref()) {
@@ -227,7 +238,7 @@ pub fn try_push_vision_pending(
     eprintln!("[magpie:ocr] 视觉分流：识图交由模型直接处理");
     crate::user_log("[ocr] 视觉分流：识图交由模型直接处理");
     let run = action.map(|a| (a, service));
-    push_ocr_result(app, String::new(), Vec::new(), image, run, true);
+    push_ocr_result(app, String::new(), Vec::new(), image, run, true, source_pid);
     true
 }
 
@@ -239,16 +250,24 @@ pub fn try_push_vision_pending(
 /// 拖选矩形延迟静默重截再识别，成功即正常展示。
 /// 自愈未成（或非空识别错误）：证据落用户日志（stderr 仅 dev 可见）：尺寸 +
 /// 路径。「未识别到文字」时**保留**截图供事后复核（删文件 = 删证据）。
-/// run = 识别后自动执行的动作（None = 只出文本面板）
+/// run = 识别后自动执行的动作（None = 只出文本面板）。
+/// source_pid = 触发识图时的前台应用（0 = 无来源），随结果带入 pending
 pub async fn recognize_and_push(
     app: &tauri::AppHandle,
     image: PathBuf,
     action: Option<String>,
     service: Option<String>,
+    source_pid: i32,
 ) {
     // 视觉分流：对应能力开关开启且默认模型服务已配置 → 跳过本地识别与
     // 「正在识别」toast，前端直接看图驱动模型（流前失败由前端回退本地）
-    if try_push_vision_pending(app, image.clone(), action.clone(), service.clone()) {
+    if try_push_vision_pending(
+        app,
+        image.clone(),
+        action.clone(),
+        service.clone(),
+        source_pid,
+    ) {
         return;
     }
     eprintln!("[magpie:ocr] 截图完成，开始识别");
@@ -263,7 +282,7 @@ pub async fn recognize_and_push(
                 r.barcodes.len()
             );
             crate::toast::hide_toast(app);
-            push_ocr_result(app, r.text, r.barcodes, image, run, false);
+            push_ocr_result(app, r.text, r.barcodes, image, run, false, source_pid);
         }
         Ok(Err(e)) => {
             eprintln!("[magpie:ocr] 失败：{e}");
@@ -273,7 +292,7 @@ pub async fn recognize_and_push(
             if e == t("ocr.noText") {
                 if let Some((r, retry_image)) = retry_region_capture() {
                     crate::toast::hide_toast(app);
-                    push_ocr_result(app, r.text, r.barcodes, retry_image, run, false);
+                    push_ocr_result(app, r.text, r.barcodes, retry_image, run, false, source_pid);
                     let _ = std::fs::remove_file(&image); // 原糊图已无价值
                     return;
                 }
@@ -310,7 +329,8 @@ pub async fn qr_decode_and_push(app: AppHandle, image: PathBuf) {
     match tauri::async_runtime::spawn_blocking(move || decode_qr_file(&img)).await {
         Ok(Ok(r)) => {
             crate::toast::hide_toast(&app);
-            push_ocr_result(&app, r.text, r.barcodes, image, None, false);
+            // 二维码动作从截图胶囊进入，此时会话已清、无来源上下文：pid 传 0
+            push_ocr_result(&app, r.text, r.barcodes, image, None, false, 0);
         }
         Ok(Err(e)) => {
             crate::toast::hide_toast(&app);
@@ -380,7 +400,8 @@ pub fn push_text_to_ocr_window(
     barcodes: Vec<String>,
     image: Option<PathBuf>,
 ) {
-    super::floating::ocr_set_pending(text, barcodes, image, None, String::new(), false);
+    // 钉图是拾趣自己的窗口，没有「来源应用」：pid 传 0
+    super::floating::ocr_set_pending(text, barcodes, image, None, String::new(), false, 0);
     let _ = app.emit(
         "selection://captured",
         serde_json::json!({ "text": "", "x": -1.0, "y": -1.0, "app": "ocr" }),
@@ -516,8 +537,11 @@ mod win_region {
     use crate::i18n::t;
     use std::time::Duration;
 
-    /// 待续流程：(自动执行动作, 翻译服务)。region_selected 后消费
-    static PENDING: Mutex<Option<(Option<&'static str>, Option<String>)>> = Mutex::new(None);
+    /// 待续流程：(自动执行动作, 翻译服务, 来源应用 pid)。region_selected 后消费。
+    /// 来源 pid = 触发时的前台应用（0 = 拾趣自己或读不到），识图结果据此反查
+    /// 页面链接，与 macOS snip 的 SelectState.source_pid 同口径
+    type PendingFlow = (Option<&'static str>, Option<String>, i32);
+    static PENDING: Mutex<Option<PendingFlow>> = Mutex::new(None);
     /// 选区交互期间的捕获静音守卫（AGENTS.md：模态鼠标操作期间须静音划词
     /// 管线）；region_selected 解除、异常路径 end_session 释放
     static SNAP_MUTE: Mutex<Option<CaptureMuteGuard>> = Mutex::new(None);
@@ -529,7 +553,13 @@ mod win_region {
             debug_log("capture/windows: snap 遮罩窗已存在，忽略重复触发");
             return;
         }
-        *PENDING.lock().unwrap() = Some((action, service));
+        // 来源应用必须在遮罩创建之前记下：遮罩窗一建，前台就成了拾趣自己。
+        // 本函数经 run_on_main_thread 派发，首行即在主线程
+        let source_pid = {
+            let pid = crate::capture::front_source_pid();
+            if pid == std::process::id() as i32 { 0 } else { pid }
+        };
+        *PENDING.lock().unwrap() = Some((action, service, source_pid));
         // 静音守卫：选区交互期间持有——region_selected 解除（胶囊 hover 依赖
         // 捕获管线的 hover 转发），异常路径经 end_session 释放
         *SNAP_MUTE.lock().unwrap() = Some(CaptureMuteGuard::new());
@@ -648,8 +678,9 @@ mod win_region {
                 Ok(image) => match pending {
                     // 自动动作槽位（识图翻译/解释/总结）：截图即识别执行，会话
                     // 结束。结果窗落屏锚点 = 选区矩形中心（结果落操作发生的屏）
-                    //（PENDING 是双层 Option：外层 = 有待续流程，内层 = 槽位动作）
-                    Some((Some(action), service)) => {
+                    //（PENDING 是双层 Option：外层 = 有待续流程，内层 = 槽位动作；
+                    // 第三项 = 来源应用 pid）
+                    Some((Some(action), service, source_pid)) => {
                         finish_session(&app2);
                         crate::floating::ocr::set_result_anchor((
                             org.x as f64 / s + x + w / 2.0,
@@ -661,12 +692,15 @@ mod win_region {
                                 image,
                                 Some(action.to_string()),
                                 service,
+                                source_pid,
                             )
                             .await;
                         });
                     }
                     // 识图取字（None 槽位）或无待续流程：截图挂起进胶囊会话
-                    _ => {
+                    other => {
+                        // 来源 pid 从待续流程取；流程已被异常清空（None）时来源未知，按 0
+                        let source_pid = other.as_ref().map_or(0, |(_, _, pid)| *pid);
                         // 会话段开始：遮罩降回普通层——胶囊（置顶层）必须恒在其
                         // 上，遮罩被点击置前也盖不住它（见 show_snap_window 注释：
                         // 置顶只为保证选区段在前台锁下可见，会话段无胶囊竞争后
@@ -685,7 +719,13 @@ mod win_region {
                             size.height as f64 / s,
                         );
                         let lrect = (org.x as f64 / s + x, org.y as f64 / s + y, w, h);
-                        crate::floating::snip::store_session(image, lrect, mon_logical, s);
+                        crate::floating::snip::store_session(
+                            image,
+                            lrect,
+                            mon_logical,
+                            s,
+                            source_pid,
+                        );
                         let _ = app2.emit_to(
                             "floating",
                             "snip://captured",

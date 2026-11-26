@@ -37,3 +37,8 @@ pub fn open_accessibility_settings() {}
 pub fn prompt_accessibility() -> bool {
     true
 }
+
+/// 能力位：本平台无划词能力，也没有「来源应用」可报
+pub fn front_source_pid() -> i32 {
+    0
+}

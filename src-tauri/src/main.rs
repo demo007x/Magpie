@@ -251,7 +251,8 @@ fn start_file_ocr_flow(app: tauri::AppHandle) {
         tauri::async_runtime::spawn(async move {
             // 视觉分流：「识别文字」开关开启且默认模型服务已配置 → 跳过本地
             // 识别与 toast，前端直接看图驱动模型（流前失败回退本地识别命令）
-            if ocr::try_push_vision_pending(&app, dest.clone(), None, None) {
+            // 文件来自文件对话框，没有「来源应用」：pid 传 0
+            if ocr::try_push_vision_pending(&app, dest.clone(), None, None, 0) {
                 return;
             }
             eprintln!("[magpie:ocr] 文件识别开始：{}", dest.display());
@@ -265,7 +266,8 @@ fn start_file_ocr_flow(app: tauri::AppHandle) {
                         r.barcodes.len()
                     );
                     toast::hide_toast(&app);
-                    ocr::push_ocr_result(&app, r.text, r.barcodes, dest, None, false);
+                    // 文件来自文件对话框，没有「来源应用」：pid 传 0
+                    ocr::push_ocr_result(&app, r.text, r.barcodes, dest, None, false, 0);
                 }
                 Ok(Err(e)) => {
                     eprintln!("[magpie:ocr] 失败：{e}");

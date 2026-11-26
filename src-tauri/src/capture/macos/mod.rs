@@ -23,7 +23,7 @@ mod ffi;
 mod query;
 
 pub use compat::force_fetch_via_copy;
-pub use query::{request_screen_capture_access, screen_capture_access};
+pub use query::{front_source_pid, request_screen_capture_access, screen_capture_access};
 use ffi::*;
 use query::{
     ax_selected_text, control_drag_gained_selection, drag_starts_on_control,

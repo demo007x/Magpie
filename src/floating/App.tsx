@@ -42,8 +42,10 @@ import {
 } from "../shared/anki";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import ReactMarkdown, { type Components } from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import { renderToStaticMarkup } from "react-dom/server";
 
 // AI 输出里的图片不自动加载：远程图片会在渲染时向第三方服务器发起请求
@@ -54,15 +56,47 @@ const mdComponents: Components = {
   img: ({ src, alt }) => (src ? <a href={src}>{alt || src}</a> : null),
 };
 
-/** markdown → HTML 字符串：与结果窗完全同一渲染管线（remarkGfm + remarkBreaks +
-    mdComponents），面板里渲染成什么样、Anki 卡里就是什么样。静态串行渲染
-    （react-dom/server）不挂 React 树，仅供「要 HTML 字符串」的场景取结果 */
+// markdown 插件组（结果窗与原文预览共用）：gfm 表格 / 数学公式（$...$、
+// $$...$$，KaTeX 排版）/ 换行即 <br>。mdToHtml（Anki 卡）刻意不含公式插件：
+// KaTeX 的 HTML 离开本应用的 CSS 就散架，Anki 卡走 MathJax（见 ankiMathHtml）
+const mdPlugins = [remarkGfm, remarkMath, remarkBreaks];
+const mdRehype = [rehypeKatex];
+
+/** markdown → HTML 字符串：与结果窗同一渲染管线但**不含公式插件**（KaTeX 的
+    HTML 离开本应用的 CSS 就散架）。Anki 桌面端自带 MathJax，公式经 ankiMathHtml
+    换成 \(…\) 定界符由 Anki 自己渲染。静态串行渲染（react-dom/server）不挂
+    React 树，仅供「要 HTML 字符串」的场景取结果 */
 const mdToHtml = (md: string) =>
   renderToStaticMarkup(
-    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>
+    <ReactMarkdown remarkPlugins={mdPlugins} rehypePlugins={mdRehype} components={mdComponents}>
       {md}
     </ReactMarkdown>,
   );
+
+/** Anki 卡片用的 markdown → HTML：公式（$…$ 与 $$…$$）换成 Anki MathJax 的
+    定界符占位后再渲染。不能直接写 \(…\) 进 markdown——remark 会把 \( 当转义
+    括号吃掉反斜杠；也不能让 mdToHtml 出 KaTeX HTML——卡片里没有 KaTeX CSS。
+    占位绕开 markdown 管线后在成品 HTML 里还原，Anki 打开卡片时 MathJax 接手 */
+function ankiMathHtml(md: string): string {
+  const stash: string[] = [];
+  const stashed = md.replace(
+    /\$\$([^$]+)\$\$|\$([^\s$](?:[^$\n]*[^\s$])?)\$/g,
+    (_, disp: string, inline: string) => {
+      const math = (disp ?? inline ?? "").trim();
+      stash.push(disp !== undefined ? `\\[${math}\\]` : `\\(${math}\\)`);
+      return `%%MGZ${stash.length - 1}%%`;
+    },
+  );
+  const html = mdToHtml(stashed);
+  return html.replace(/%%MGZ(\d+)%%/g, (_, i: string) => {
+    const math = stash[Number(i)] ?? "";
+    // MathJax 读的是 HTML 文本节点：HTML 特殊字符要转义，反斜杠原样保留
+    return math
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  });
+}
 
 /** 纯文本 → 字段 HTML：只把换行换成 <br>（Anki 字段按 HTML 渲染，多行不转
     会被挤成一行）。逐字材料（正面划词原文、机器翻译结果）走此路，不做
@@ -101,8 +135,13 @@ import {
 } from "../shared/aiExtract";
 import { TRANSLATE_SERVICES, translateMissingReason, translateService } from "../shared/translate";
 import {
+  hasMarkdownTable,
+  hasMathExpression,
+  normalizeMarkdownTables,
+  visionMightSayNoText,
   visionOcrPrompt,
   visionOcrUserText,
+  visionSaysNoText,
   visionSplit,
   visionUserText,
 } from "../shared/aiVision";
@@ -288,12 +327,22 @@ function splitTranslate(output: string): { main: string; notes: string | null } 
 function plainForSpeech(md: string): string {
   return md
     .replace(/```[\s\S]*?```/g, " ")
+    // 公式整段剥掉：LaTeX 命令念出来是天书（$ 也常是价格符号，别让朗读含进去）
+    .replace(/\$\$[^$\n]*\$\$/g, " ")
+    .replace(/\$[^\s$](?:[^$\n]*[^\s$])?\$/g, " ")
     .replace(/`([^`]*)`/g, "$1")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/^\s{0,3}#{1,6}\s+/gm, "")
     .replace(/^\s{0,3}[-*+]\s+/gm, "")
     .replace(/^\s{0,3}>\s?/gm, "")
+    // 表格：分隔线整行删掉，其余行的单元格竖线换成停顿空格——不处理的话
+    // 朗读会把竖线和横线当内容念出来。竖线两侧只吃行内空白：吃换行的话
+    // 上一行行尾与下一行行首的两个竖线连同换行会被并成一个空格；
+    // 行首行尾的竖线直接删掉，不留悬空空格
+    .replace(/^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(\|[ \t]*:?-{3,}:?[ \t]*)*\|?[ \t]*$/gm, "")
+    .replace(/^[ \t]*\|[ \t]*|[ \t]*\|[ \t]*$/gm, "")
+    .replace(/[ \t]*\|[ \t]*/g, " ")
     .replace(/(\*\*|__|~~|\*)/g, "")
     .replace(/\n{2,}/g, "\n")
     .trim();
@@ -959,8 +1008,11 @@ export default function App() {
           setUsedTranslate(null); // 选中态回落到默认服务
           setUsedEngine(null);
           setHoverSuppress(true);
-          // 导流带上了来源应用：结果窗存 Obsidian 的「来源」由此取名
+          // 导流带上了来源应用：结果窗存 Obsidian 的「来源」由此取名。
+          // pid 同理：识图框选携带触发时的前台应用，存笔记/建卡/日历据此
+          // 反查页面链接；文件选图/钉图再识别为 0（与「无来源」同口径）
           sourceAppRef.current = p.app;
+          sourcePidRef.current = p.pid;
           setPhase({
             kind: "ocr",
             text: p.text,
@@ -1857,9 +1909,9 @@ export default function App() {
             backHtml = nl2br(phase.output);
           } else if (phase.actionId === "translate") {
             const tr = splitTranslate(phase.output);
-            backHtml = mdToHtml(tr.main) + (tr.notes ? mdToHtml(tr.notes) : "");
+            backHtml = ankiMathHtml(tr.main) + (tr.notes ? ankiMathHtml(tr.notes) : "");
           } else {
-            backHtml = mdToHtml(phase.output);
+            backHtml = ankiMathHtml(phase.output);
           }
         }
         // 牌组由下方「牌组×类型」路由决定（⌄ 显式指定或按划词长短）
@@ -2184,8 +2236,18 @@ export default function App() {
         invoke("ui_debug_log", { msg: `[vision] 本地识别回退失败: ${String(e)}` }).catch(
           () => undefined,
         );
+        // 「未识别到文字」换成说清下一步的话术：原因串本身像一句识别结果，
+        // 摆在原文区会被读成图里的内容。其余错误原样展示
+        const msg = String(e);
         setPhase((p) =>
-          p.kind === "ocr" ? { ...p, streaming: false, error: String(e), vision: false } : p,
+          p.kind === "ocr"
+            ? {
+                ...p,
+                streaming: false,
+                error: visionSaysNoText(msg) ? t("floating.ocrNoText") : msg,
+                vision: false,
+              }
+            : p,
         );
       });
   };
@@ -2259,6 +2321,9 @@ export default function App() {
         deltaTimer = undefined;
       }
       if (runIdRef.current !== runId) return;
+      // 取字路径的流式片段可能是「未识别到文字」的开头：先不渲染，等流结束
+      // 定性（是报告就转本机识别，不是再照常显示），否则这几个字会闪现一下
+      if (isExtract && visionMightSayNoText(full)) return;
       setPhase((p) => {
         if (p.kind !== "ocr") return p;
         // 取字：单段纯文本，同一拆分兜底（洗掉模型未守协议时输出的标记）
@@ -2310,10 +2375,25 @@ export default function App() {
                 deltaTimer = undefined;
               }
               streamingRef.current = false;
+              // 模型报告「没有文字」不是识别结果：转本机识别。模型看走眼而
+              // 本机认得出字时照样出结果；本机也没有时，错误文案与自愈重截
+              // 都由回退命令给出（与不经模型的识图路径同一套提示）。这句话
+              // 不进缓存：存了的话重试会命中缓存，又原样吐回这五个字
+              if (visionSaysNoText(full)) {
+                invoke("ui_debug_log", {
+                  msg: `[vision] 模型报告无文字，转本机识别: action=${id ?? "ocr提取"}`,
+                }).catch(() => undefined);
+                fallback();
+                return;
+              }
               cachePut(cacheKey, full);
               // done=true：无结果标记时全文按结果容错，见 visionSplit；取字经
               // 同一拆分兜底（守协议时纯文本走 result 段，异常标记走 source 段）
+              // 修正模型的表格分隔线（列数偶尔与表头不齐，不齐则整段不被视为
+              // 表格，复制/存 Obsidian 都拿不到表格）
               const sp = visionSplit(full, true);
+              sp.source = normalizeMarkdownTables(sp.source);
+              sp.result = normalizeMarkdownTables(sp.result);
               setPhase((p) =>
                 p.kind === "ocr"
                   ? isExtract
@@ -3004,13 +3084,51 @@ export default function App() {
                 phase.actionId ? "has-result" : "full"
               } ${phase.actionId && phase.expanded ? "expanded" : ""}`}
             >
-              <EditableSource
-                text={phase.text}
-                sourceRef={sourceRef}
-                onEdit={(t) =>
-                  setPhase((p) => (p.kind === "ocr" ? { ...p, text: t } : p))
-                }
-              />
+              {/* 原文含齐整表格时默认渲染表格预览（原始竖线源码不直观，也没人
+                  手改表格源码）；「编辑原文」切回可编辑文本，改完再切回预览。
+                  预览态不渲染 EditableSource，其 onEdit 只在编辑态触发 */}
+              {(hasMarkdownTable(phase.text) || hasMathExpression(phase.text)) &&
+              !phase.sourceRaw ? (
+                <>
+                  <div className="md ocr-source-preview">
+                    <ReactMarkdown
+                      remarkPlugins={mdPlugins}
+                      rehypePlugins={mdRehype}
+                      components={mdComponents}
+                    >
+                      {phase.text}
+                    </ReactMarkdown>
+                  </div>
+                  <button
+                    className="btn sm ocr-source-toggle"
+                    onClick={guarded(() =>
+                      setPhase((p) => (p.kind === "ocr" ? { ...p, sourceRaw: true } : p)),
+                    )}
+                  >
+                    {t("floating.editSource")}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <EditableSource
+                    text={phase.text}
+                    sourceRef={sourceRef}
+                    onEdit={(t) =>
+                      setPhase((p) => (p.kind === "ocr" ? { ...p, text: t } : p))
+                    }
+                  />
+                  {(hasMarkdownTable(phase.text) || hasMathExpression(phase.text)) && (
+                    <button
+                      className="btn sm ocr-source-toggle"
+                      onClick={guarded(() =>
+                        setPhase((p) => (p.kind === "ocr" ? { ...p, sourceRaw: false } : p)),
+                      )}
+                    >
+                      {t("floating.previewTable")}
+                    </button>
+                  )}
+                </>
+              )}
               {/* 视觉提取中：识别原文区尚无文本，占位提示（流式输出开始即让位） */}
               {phase.vision && phase.streaming && !phase.text && !phase.actionId && (
                 <div className="ocr-vision-hint">{t("floating.visionRunning")}</div>
@@ -3112,7 +3230,7 @@ export default function App() {
                     <div className="plain-text">{phase.output}</div>
                   ) : (
                     <>
-                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>
+                      <ReactMarkdown remarkPlugins={mdPlugins} rehypePlugins={mdRehype} components={mdComponents}>
                         {(phase.actionId === "translate"
                           ? splitTranslate(phase.output).main
                           : phase.output) + (phase.streaming ? " ▍" : "")}
@@ -3121,7 +3239,7 @@ export default function App() {
                         splitTranslate(phase.output).notes &&
                         !phase.streaming && (
                           <div className="notes md">
-                            <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>
+                            <ReactMarkdown remarkPlugins={mdPlugins} rehypePlugins={mdRehype} components={mdComponents}>
                               {splitTranslate(phase.output).notes}
                             </ReactMarkdown>
                           </div>
@@ -3134,12 +3252,21 @@ export default function App() {
                 {phase.error && (
                   <div className="error">
                     <p>{phase.error}</p>
-                    <button
-                      className="retry"
-                      onClick={() => phase.actionId && runAction(phase.actionId)}
-                    >
-                      {t("floating.retry")}
-                    </button>
+                    {/* 重试：有动作按动作重来；识图取字没有动作（actionId 为空），
+                        重新识别这张截图——此前按钮只在有动作时才响应，取字失败
+                        后点了没反应 */}
+                    {(phase.actionId || phase.imagePath) && (
+                      <button
+                        className="retry"
+                        onClick={() =>
+                          phase.actionId
+                            ? runAction(phase.actionId)
+                            : runVision(phase.imagePath, null)
+                        }
+                      >
+                        {t("floating.retry")}
+                      </button>
+                    )}
                   </div>
                 )}
                 </div>

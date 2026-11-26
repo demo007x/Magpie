@@ -44,6 +44,7 @@ pub use macos::start;
 use macos::{
     ax_service_probe as platform_ax_service_probe,
     capture_available as platform_capture_available,
+    front_source_pid as platform_front_source_pid,
     is_accessibility_granted,
     listen_event_access as platform_listen_event_access,
     open_accessibility_settings as open_platform_settings,
@@ -62,6 +63,7 @@ pub use windows::start;
 use windows::{
     ax_service_probe as platform_ax_service_probe,
     capture_available as platform_capture_available,
+    front_source_pid as platform_front_source_pid,
     is_accessibility_granted,
     listen_event_access as platform_listen_event_access,
     open_accessibility_settings as open_platform_settings,
@@ -78,6 +80,7 @@ pub use other::start;
 use other::{
     ax_service_probe as platform_ax_service_probe,
     capture_available as platform_capture_available,
+    front_source_pid as platform_front_source_pid,
     is_accessibility_granted,
     listen_event_access as platform_listen_event_access,
     open_accessibility_settings as open_platform_settings,
@@ -200,6 +203,13 @@ pub fn open_accessibility_settings() {
 #[tauri::command]
 pub fn prompt_accessibility() -> bool {
     prompt_platform_accessibility()
+}
+
+/// 当前前台应用的进程号（读不到为 0）。供划词之外的入口在「刚开始、还没建
+/// 自己的窗口」时记下来源：识图框选用它在存笔记/建卡时反查页面链接，与划词
+/// 事件自带的 pid 走同一条链路。必须在自家窗口抢到前台之前调用
+pub fn front_source_pid() -> i32 {
+    platform_front_source_pid()
 }
 
 /// 过滤 + 转发（docs/03 §3.4，顺序即优先级）：

@@ -7,6 +7,8 @@ import PopCard from "./pops";
 import { interceptExternalLinks } from "../shared/external-links";
 import { initLocale, t } from "../shared/i18n";
 import "./floating.css";
+// KaTeX 公式排版样式与字体（字体经 Vite 打进产物，离线可用、零外联）
+import "katex/dist/katex.min.css";
 
 // dev 专用自愈：结果窗/胶囊窗常驻后台，隐藏时 WebView2 被系统节流，vite 的
 // HMR websocket 会断连——之后所有样式/代码更新都收不到，窗口再显示就一直跑

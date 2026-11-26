@@ -52,6 +52,9 @@ struct SnipSession {
     /// 仅 Windows 读写（macOS 编译下无读取方，门控防 dead_code 告警）
     #[cfg(target_os = "windows")]
     scale: f64,
+    /// 触发识图时的前台应用（0 = 拾趣自己或读不到）：识别结果带上它作「来源」，
+    /// 存笔记/建卡/加日历时据此反查页面链接（见 SelectState::source_pid）
+    source_pid: i32,
 }
 
 static SNIP: Mutex<Option<SnipSession>> = Mutex::new(None);
@@ -60,6 +63,9 @@ static SNIP: Mutex<Option<SnipSession>> = Mutex::new(None);
 struct SelectState {
     action: Option<&'static str>,
     mon: (f64, f64, f64, f64),
+    /// 触发时的前台应用（0 = 拾趣自己或读不到）：识图结果的「来源」。存笔记/
+    /// 建卡/加日历时据此反查页面链接，与划词事件自带的 pid 汇入同一条链路
+    source_pid: i32,
 }
 
 static SELECT: Mutex<Option<SelectState>> = Mutex::new(None);
@@ -141,6 +147,13 @@ pub fn begin_selection(app: &AppHandle, action: Option<&'static str>) {
     }
     *SNIP_APP.lock().unwrap() = Some(app.clone());
     debug_log("[snip] 选区流程开始（后台线程）");
+    // 来源应用必须在遮罩创建之前记下：遮罩 webview 一创建就会激活拾趣自己，
+    // 之后取到的前台永远是本应用。前台是拾趣自己时（在主窗口里按快捷键）
+    // 记 0 = 无来源，与文件选图/钉图再识别同口径
+    let source_pid = {
+        let pid = crate::capture::front_source_pid();
+        if pid == std::process::id() as i32 { 0 } else { pid }
+    };
     let app = app.clone();
     std::thread::spawn(move || {
         #[cfg(target_os = "macos")]
@@ -164,7 +177,7 @@ pub fn begin_selection(app: &AppHandle, action: Option<&'static str>) {
             "[snip] 遮罩落屏：origin=({:.0},{:.0}) size={:.0}x{:.0}",
             mon.0, mon.1, mon.2, mon.3
         ));
-        *SELECT.lock().unwrap() = Some(SelectState { action, mon });
+        *SELECT.lock().unwrap() = Some(SelectState { action, mon, source_pid });
         *SNIP_MUTE.lock().unwrap() = Some(CaptureMuteGuard::new());
         // 先隐藏主窗口再建遮罩（同在主队列 FIFO 执行，顺序保证）：遮罩 webview
         // 创建会激活本应用，主窗口若可见会被整组提到遮罩上面
@@ -340,13 +353,20 @@ pub fn snip_region_selected(
                 } else {
                     None
                 };
-                crate::ocr::recognize_and_push(&app2, image, Some(action.to_string()), service)
-                    .await;
+                crate::ocr::recognize_and_push(
+                    &app2,
+                    image,
+                    Some(action.to_string()),
+                    service,
+                    state.source_pid,
+                )
+                .await;
             }
             None => {
                 // 识图取字：截图挂起进胶囊会话——遮罩原位切到会话模式
                 //（固定洞 + 选区可拖动），胶囊浮在选区右下角
                 let mon = state.mon;
+                let source_pid = state.source_pid;
                 {
                     let mut slot = SNIP.lock().unwrap();
                     if let Some(old) = slot.as_ref() {
@@ -359,6 +379,7 @@ pub fn snip_region_selected(
                         mon,
                         #[cfg(target_os = "windows")]
                         scale: 1.0,
+                        source_pid,
                     });
                 }
                 debug_log("[snip] 胶囊会话建立");
@@ -488,6 +509,8 @@ pub fn snip_execute(app: AppHandle, action_id: String) {
     let Some(session) = SNIP.lock().unwrap().take() else {
         return;
     };
+    // 来源 pid 先拷出：下方重截会把 session 的部分字段移进闭包/异步块
+    let source_pid = session.source_pid;
     tauri::async_runtime::spawn(async move {
         // 拖动过 → 重截新矩形（先等遮罩窗异步关闭、画面还原）
         let image = if session.rect != session.origin {
@@ -550,7 +573,7 @@ pub fn snip_execute(app: AppHandle, action_id: String) {
             ),
             other => (Some(other.to_string()), None),
         };
-        crate::ocr::recognize_and_push(&app, image, action, service).await;
+        crate::ocr::recognize_and_push(&app, image, action, service, source_pid).await;
     });
 }
 
@@ -558,7 +581,8 @@ pub fn snip_execute(app: AppHandle, action_id: String) {
 /// 交由胶囊动作驱动——与 macOS snip_region_selected 的会话建立同一状态池）。
 /// mon 传遮罩所在显示器的逻辑矩形（页面坐标 ↔ 全局逻辑换算基准，
 /// snip_frame_move 的钳制依赖它）；scale 为该屏缩放（执行时按新矩形
-/// BitBlt 重截的逻辑 → 物理换算用）。
+/// BitBlt 重截的逻辑 → 物理换算用）。source_pid = 触发时的前台应用，
+/// 识别时作为结果的「来源」带入（存笔记/建卡据此反查页面链接）
 /// 仅 Windows 消费（macOS 在 snip_region_selected 内联填充 SNIP）
 #[cfg(target_os = "windows")]
 pub fn store_session(
@@ -566,6 +590,7 @@ pub fn store_session(
     rect: (f64, f64, f64, f64),
     mon: (f64, f64, f64, f64),
     scale: f64,
+    source_pid: i32,
 ) {
     let mut slot = SNIP.lock().unwrap();
     if let Some(old) = slot.as_ref() {
@@ -577,6 +602,7 @@ pub fn store_session(
         origin: rect,
         mon,
         scale,
+        source_pid,
     });
 }
 

@@ -1108,3 +1108,9 @@ pub(super) fn frontmost_pid() -> Option<i32> {
         (pid > 0).then_some(pid as i32)
     }
 }
+
+/// 划词之外的入口（如识图框选）开始时的「来源应用」：此刻遮罩还没建、前台仍是
+/// 用户正在看的应用。识图结果存笔记/建卡时据此反查页面链接，与划词路径同一套
+pub fn front_source_pid() -> i32 {
+    frontmost_pid().unwrap_or(0)
+}

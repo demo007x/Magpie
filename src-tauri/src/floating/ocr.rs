@@ -101,11 +101,11 @@ struct OcrPending {
     /// 前失败时由前端回退本地识别命令）。划词导流/钉图取字恒 false
     vision: bool,
     run: Option<(String, Option<String>)>,
-    /// 选区来源进程 pid（划词导流时携带）：智能提取/日历路径反查页面 URL 用；
-    /// 截屏 OCR 无来源进程，置 0
+    /// 来源进程 pid（划词导流与框选识图携带；文件选图、钉图再识别置 0）：
+    /// 智能提取/日历/存笔记路径反查页面 URL 用
     pid: i32,
-    /// 选区来源应用路径（划词导流时携带）：结果窗存 Obsidian 时「来源」展示用；
-    /// 截屏 OCR 无来源应用，置空
+    /// 来源应用路径（划词导流时携带）：结果窗存 Obsidian 时「来源」展示用；
+    /// 识图流程无来源应用，置空
     app: String,
 }
 
@@ -160,9 +160,9 @@ pub struct PendingResult {
     /// 截图路径（前端 convertFileSrc 预览用；不参与钉图所有权移交）
     pub image: Option<String>,
     pub run: Option<PendingRun>,
-    /// 选区来源进程 pid（0 = 无来源，如截屏 OCR）
+    /// 来源进程 pid（划词与框选识图携带；0 = 无来源，如文件选图、钉图再识别）
     pub pid: i32,
-    /// 选区来源应用路径（空 = 无来源，如截屏 OCR）
+    /// 来源应用路径（空 = 无来源，如识图流程）
     pub app: String,
 }
 
@@ -224,9 +224,11 @@ pub fn ocr_peek_image() -> Option<std::path::PathBuf> {
     OCR_IMAGE.lock().unwrap().clone()
 }
 
-/// 存入待显示识别结果（托盘「识图取字」与识图快捷键流程调用）。
+/// 存入待显示识别结果（识图快捷键与截图胶囊流程调用）。
 /// run = (动作 id, 服务)：Some 时面板弹出后自动执行该动作（识图翻译/解释/总结）；
 /// None 时只展示识别文本等用户操作。
+/// pid = 触发识图时的前台应用（框选截图携带；文件选图、钉图再识别传 0）：
+/// 结果窗存笔记/建卡/加日历时据此反查页面链接，与划词导流汇入同一条链路
 /// 截图原图存入独立的 OCR_IMAGE（替换时顺带清理旧文件）。
 /// 钉住状态沿用用户上次的选择（见 OCR_PINNED 说明），结果本身不改它
 pub fn ocr_set_pending(
@@ -236,6 +238,7 @@ pub fn ocr_set_pending(
     run: Option<(String, Option<String>)>,
     app: String,
     vision: bool,
+    pid: i32,
 ) {
     replace_ocr_image(image);
     let mut pending = OCR_PENDING.lock().unwrap();
@@ -245,7 +248,7 @@ pub fn ocr_set_pending(
         from_ocr: true,
         vision,
         run,
-        pid: 0,
+        pid,
         app,
     });
 }

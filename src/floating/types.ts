@@ -80,6 +80,9 @@ export type Phase =
       vision?: boolean;
       /** 识别截图路径（视觉分流的模型输入与预览源；回退重截成功时更新） */
       imagePath?: string | null;
+      /** 识别原文含表格时默认渲染表格预览；true = 用户切到了编辑模式（显示
+       *  原始 Markdown 文本）。无表格时无意义 */
+      sourceRaw?: boolean;
     };
 
 // Rust ocr_take_pending 回包：识别文本 + 自动执行指令 + 钉住偏好
