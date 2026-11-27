@@ -153,8 +153,14 @@ export interface Settings {
   actions: ActionFlags;
   /** 识图用模型处理：四个能力分别开关（识别文字/翻译/解释/总结直接看图）。
    *  默认全关 = 恒走本地识别；开启且默认模型服务已配置密钥即生效，请求失败
-   *  自动回退本地识别 */
-  vision: { ocr: boolean; translate: boolean; explain: boolean; summarize: boolean };
+   *  自动回退本地识别。qr 例外：纯本机解码开关，只控制二维码入口显隐（默认开） */
+  vision: {
+    ocr: boolean;
+    translate: boolean;
+    explain: boolean;
+    summarize: boolean;
+    qr: boolean;
+  };
   /** Obsidian 接入配置（vault 直写；vaultPath 空 = 未接入） */
   obsidian: ObsidianConfig;
   /** Anki 接入配置（AnkiConnect 建卡；deck 空 = 未接入） */

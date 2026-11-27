@@ -42,6 +42,15 @@ export function useFloatingSettings() {
     prompts: Record<string, string>;
   }>({ registry: actionRegistry(), prompts: {} });
   const [capsuleMax, setCapsuleMax] = useState(4);
+  // 识图配置（vision.*）：qr 开关控制截图胶囊「二维码」动作与结果面板二维码区
+  // 显隐（qr 初始 true = 出厂默认，避免加载完成前入口闪烁消失）
+  const [vision, setVision] = useState<Settings["vision"]>({
+    ocr: false,
+    translate: false,
+    explain: false,
+    summarize: false,
+    qr: true,
+  });
   const [translateEnabled, setTranslateEnabled] = useState<string[]>(["ai"]);
   const [translateDefault, setTranslateDefault] = useState("ai");
   const [translateOrder, setTranslateOrder] = useState<string[]>([]);
@@ -70,6 +79,7 @@ export function useFloatingSettings() {
           prompts: s.actionPrompts ?? {},
         };
         setCapsuleMax(Math.max(2, Math.min(8, s.capsuleShowCount ?? 4)));
+        setVision(s.vision);
         setEngines(s.searchEngines ?? []);
         setDefaultSearch(s.defaultSearch ?? "");
         setTranslateEnabled(s.translate?.enabled ?? ["ai"]);
@@ -130,6 +140,7 @@ export function useFloatingSettings() {
     customActions,
     liveRef,
     capsuleMax,
+    vision,
     translateEnabled,
     setTranslateEnabled,
     translateDefault,

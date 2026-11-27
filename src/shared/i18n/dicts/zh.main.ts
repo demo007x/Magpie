@@ -146,6 +146,8 @@ export const zhMain = {
   "vision.translate": "翻译",
   "vision.explain": "解释",
   "vision.summarize": "总结",
+  "vision.qr": "二维码",
+  "vision.qrSub": "识别截图中的二维码；本机解码，不消耗模型额度。",
   "model.setAsDefault": "设为默认",
   "model.delSvcTitle": "删除该服务",
   "model.delConfirmTitle": "删除服务",

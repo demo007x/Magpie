@@ -152,6 +152,8 @@ export const enMain: Record<keyof typeof zhMain, string> = {
   "vision.translate": "Translate",
   "vision.explain": "Explain",
   "vision.summarize": "Summarize",
+  "vision.qr": "QR codes",
+  "vision.qrSub": "Decode QR codes in screenshots locally, without using the model.",
   "model.setAsDefault": "Set as default",
   "model.delSvcTitle": "Delete this service",
   "model.delConfirmTitle": "Delete service",

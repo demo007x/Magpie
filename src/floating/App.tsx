@@ -381,6 +381,7 @@ export default function App() {
     customActions,
     liveRef,
     capsuleMax,
+    vision,
     translateEnabled,
     translateDefault,
     translateOrder,
@@ -919,8 +920,8 @@ export default function App() {
   // 截图胶囊会话（snip://captured）：固定动作组，不走动作注册表——动作语义
   // 是「先识别再执行」（snip_execute，Rust 侧识别后导流），与划词胶囊的
   // 「对文本执行」不同源；可用性口径与常驻动作一致（翻译看启用服务、
-  // AI 动作看默认模型）。识别文字与二维码无门槛，恒显示（二维码是显式入口：
-  // 纯码区域没有文本，用户不会想到去点「识别文字」，见 release-v0.2.0 二维码条目）
+  // AI 动作看默认模型）。识别文字恒显示（显式入口：纯码区域没有文本，用户
+  // 不会想到去点「识别文字」）；二维码显隐随识图配置（vision.qr，纯本机解码）
   const snipRun = (actionId: string) => {
     setPhase({ kind: "bar" });
     invoke("snip_execute", { actionId }).catch(() => undefined);
@@ -928,8 +929,10 @@ export default function App() {
   };
   const snipEntries: BarEntry[] = [
     { id: "ocr", label: t("floating.snipOcr"), onClick: () => snipRun("ocr") },
-    { id: "qr", label: t("floating.snipQr"), onClick: () => snipRun("qr") },
   ];
+  if (vision.qr) {
+    snipEntries.push({ id: "qr", label: t("floating.snipQr"), onClick: () => snipRun("qr") });
+  }
   if (enabledTranslates.length > 0) {
     snipEntries.push({ id: "translate", label: t("action.translate"), onClick: () => snipRun("translate") });
   }
@@ -3152,9 +3155,10 @@ export default function App() {
             </div>
             )}
             {/* 二维码区（识图来源）：截图里解码出的码内容，逐条给打开/复制动作。
-                只在真的解出码时出现；行样式复用 .extract-*（提取面板同一语言）。
+                只在真的解出码时出现；显隐随识图配置 vision.qr（与截图胶囊动作
+                同一开关）。行样式复用 .extract-*（提取面板同一语言）。
                 打开只对 http(s) 载荷出现，绝不自动打开 */}
-            {(phase.barcodes?.length ?? 0) > 0 && (
+            {vision.qr && (phase.barcodes?.length ?? 0) > 0 && (
               <div className="qr-list">
                 <div className="extract-group">
                   {t("floating.group.qr")}

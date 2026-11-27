@@ -347,9 +347,11 @@ impl Default for AnkiConfig {
     }
 }
 
-/// 识图用模型处理的四个能力开关（识图配置页配置）。全 false = 识图恒走本地识别。
-/// 资格判定 = 对应开关开 + 默认模型服务已配置密钥（见 ocr.rs::vision_ready）
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// 识图配置页的能力开关。前四个是「改由模型处理」路由开关（全 false = 识图恒走
+/// 本地识别；资格判定 = 对应开关开 + 默认模型服务已配置密钥，见 ocr.rs::vision_ready），
+/// qr 例外：二维码是纯本机解码（零模型额度），此开关只控制入口显隐。
+/// Default 手写而非 derive：qr 须默认 true（现状行为），其余默认 false
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct VisionFlags {
     /// 识图取字（含访达选图）：模型直接提取图中文字
@@ -360,6 +362,21 @@ pub struct VisionFlags {
     pub explain: bool,
     /// 识图总结：模型看图直接输出要点
     pub summarize: bool,
+    /// 二维码入口显隐（截图胶囊「二维码」动作 + 结果面板二维码区）。
+    /// 不参与 vision_ready 模型路由——解码恒本机执行
+    pub qr: bool,
+}
+
+impl Default for VisionFlags {
+    fn default() -> Self {
+        Self {
+            ocr: false,
+            translate: false,
+            explain: false,
+            summarize: false,
+            qr: true,
+        }
+    }
 }
 
 /// 离线词典配置（ADR-12）：只指向**已存在于用户本机**的词库文件——拾趣只读
