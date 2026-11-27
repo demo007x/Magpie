@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings copy tightened (English and Chinese): the vision page intro is down to one sentence, and the dictionary page explains routing rules once at the top while dropping developer-speak ("Aictionary client") and the outdated "changes apply after saving" (library files are probed as soon as they are picked). Source attribution keeps its CC BY-SA credit.
 - Status lines in Settings speak with color: errors and warnings turn amber (Anki disconnected, dictionary file lost or unreadable), confirmations turn green (connected, library ready), and not-yet-configured states use a heavier ink with no color at all. Red stays reserved for destructive actions, and the new warning color ships in light and dark themes.
 
+### Fixed
+
+- Recording a new shortcut on macOS never accepted the Alt combos the defaults use: the recorder identified the pressed key by its typed character, and holding Option turns letters into special characters (⌥S types "ß", ⌥E is a dead key), so every Alt+letter press was silently dropped and only Reset / Clear did anything. Keys are now identified by their physical key, so ⌥/⌃/⇧/⌘ combined with letters, digits and F-keys all record properly.
+
 ## [0.2.0] - 2026-11-22
 
 ### Added

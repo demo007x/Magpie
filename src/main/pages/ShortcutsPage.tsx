@@ -138,10 +138,13 @@ function ShortcutRecorder({
           setHint(t("sc.needMod"));
           return;
         }
-        let key = e.key;
-        if (/^[a-z]$/i.test(key)) key = key.toUpperCase();
-        else if (/^F\d{1,2}$/.test(key)) key = key.toUpperCase();
-        else if (!/^\d$/.test(key)) return; // 其他主键（符号/空格等）不支持，忽略
+        // 主键按 e.code（物理键）判：macOS 按住 ⌥（Alt）时 e.key 是特殊字符
+        // （⌥S 出「ß」、⌥E 是死键「Dead」），按 e.key 判会吞掉全部 Alt+字母
+        // 组合，五个默认键位恰全是 Alt+字母，录不进新键只剩重置/清除可用。
+        // e.code 不随布局与修饰键变形，录的就是用户按的物理键
+        const m = /^(?:Key([A-Z])|Digit(\d)|F(\d{1,2}))$/.exec(e.code);
+        if (!m) return; // 其他主键（符号/空格等）不支持，忽略
+        const key = (m[1] ?? m[2] ?? `F${m[3]}`).toUpperCase();
         onChange([...mods, key].join("+"));
         e.currentTarget.blur();
       }}
