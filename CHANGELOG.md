@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- 本文件仅在发版时依据 docs/release/release-vX.Y.Z.md 的已勾选条目生成版本节，开发阶段勿改 -->
 
+## [0.2.1] - 2026-11-27
+
+### Added
+
+- Global shortcuts can be cleared individually: the five vision shortcuts (capture text, translate, explain, summarize, and capture from an image file) each gain a "Clear" option, so a conflicting combo can be freed without touching the rest. Cleared entries show "Not set"; tray menu items keep working without a shortcut, and re-recording or "Reset" restores the default.
+- Tables found in screenshots keep their Markdown: recognized text and the source extracted for translate / explain / summarize now carry tables as Markdown instead of run-together tab-separated text, with ragged separator rows corrected automatically. The result window renders them as a real table (with an "Edit source" toggle for the raw text), and copying or saving to Obsidian produces table-ready Markdown.
+- Vision results saved to Obsidian / Anki / calendar now carry the web source link, closing the gap with text selection: framing a screenshot remembers the frontmost app and traces back to the page URL when saving. Links appear only when the shot came from a web page, matching selection behavior; image files and re-recognition from pinned screenshots carry none.
+- Math formulas render in the result window: LaTeX ($…$ inline, $$…$$ on its own line) in recognized text and AI results is typeset with KaTeX, fully offline, instead of showing raw source. Recognitions containing formulas or tables render by default ("Edit source" switches back to the LaTeX text), copying yields the LaTeX source for Word / Markdown / Anki, saved Anki cards render through Anki's own MathJax, and plain prices such as "$5" are never mistaken for math.
+- A proper answer when nothing is recognized: when the model reports no text in the frame, Magpie no longer shows those words as if they were the result. It automatically retries with on-device recognition, and only when both fail does the result window show "No text recognized, try a sharper image" with a working Retry button. The retry button also fixes vision failures that previously did nothing when clicked.
+- The divider between the source and result panes is draggable: hold the line below the source text and drag to rebalance the two panes (the window keeps its size, only the split moves), with the line tinting on hover as the drag affordance. The dragged height stays for the session, and the chevron or a double-click returns to the folded / expanded presets.
+
+### Changed
+
+- Settings copy tightened (English and Chinese): the vision page intro is down to one sentence, and the dictionary page explains routing rules once at the top while dropping developer-speak ("Aictionary client") and the outdated "changes apply after saving" (library files are probed as soon as they are picked). Source attribution keeps its CC BY-SA credit.
+- Status lines in Settings speak with color: errors and warnings turn amber (Anki disconnected, dictionary file lost or unreadable), confirmations turn green (connected, library ready), and not-yet-configured states use a heavier ink with no color at all. Red stays reserved for destructive actions, and the new warning color ships in light and dark themes.
+
 ## [0.2.0] - 2026-11-22
 
 ### Added
