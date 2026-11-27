@@ -81,9 +81,9 @@ export const zhFloating = {
   "floating.retry": "重试",
   // 识图没认出字（模型与本机都没认出）：结果窗的错误话术，说清下一步
   "floating.ocrNoText": "没有认出文字，换一张更清晰的图试试。",
-  // 识别原文含表格：预览/编辑切换
-  "floating.editSource": "编辑原文",
-  "floating.previewTable": "预览表格",
+  // 识别原文含表格/公式：预览/编辑切换
+  "floating.editSource": "编辑",
+  "floating.previewTable": "预览",
 
   // Obsidian 存入目标（胶囊 ⌄ 菜单 / 分离卡菜单共用）
   "floating.targetNote": "笔记",

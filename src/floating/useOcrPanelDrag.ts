@@ -21,7 +21,7 @@ export function useOcrPanelDrag(suppressClickRef: MutableRefObject<boolean>) {
     // 按钮等交互元素：即点即聚焦（不会演变成拖拽，激活无副作用）
     if (
       t.closest(
-        "button, .ocr-source, .ocr-result-scroll, .panel-body, .resize-handle, .resize-handle-v",
+        "button, .ocr-source, .ocr-result-scroll, .panel-body, .resize-handle, .resize-handle-v, .ocr-split",
       )
     ) {
       invoke("focus_ocr_window").catch(() => undefined);

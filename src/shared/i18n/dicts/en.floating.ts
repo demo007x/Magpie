@@ -74,8 +74,8 @@ export const enFloating: Record<keyof typeof zhFloating, string> = {
   "floating.thinking": "Thinking…",
   "floating.retry": "Retry",
   "floating.ocrNoText": "No text was recognized. Try a clearer image.",
-  "floating.editSource": "Edit text",
-  "floating.previewTable": "Preview table",
+  "floating.editSource": "Edit",
+  "floating.previewTable": "Preview",
 
   "floating.targetNote": "Note",
   "floating.targetTask": "Task",

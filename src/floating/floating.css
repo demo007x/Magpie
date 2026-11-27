@@ -1028,6 +1028,28 @@ body,
   max-height: calc(220px + 7px + 0.5px);
 }
 
+/* 分割条：覆在原文区下边线上（border-bottom 处）的透明拖动命中区，
+   跨线两侧各 5px 好按。不新增任何可见线条——可拖提示 = 悬停时把已有的
+   border-bottom 染成品牌色（:has() 让父级响应子命中区的 hover，同一根线
+   只换色不加粗）。z-index 需压过 .ocr-source（内容滚动层）防文本区吃掉命中。
+   右端预留 44px 不作拖动命中：chevron 折叠钮（right:10px，骑在线上）就在
+   那里，命中区让位给它，两种手势互不干扰 */
+.ocr-split {
+  position: absolute;
+  left: 0;
+  right: 44px;
+  bottom: -5px;
+  height: 10px;
+  cursor: row-resize;
+  z-index: 2;
+  touch-action: none;
+}
+
+.ocr-source-wrap.has-result:has(> .ocr-split:hover),
+.ocr-source-wrap.has-result:has(> .ocr-split:active) {
+  border-bottom-color: var(--accent-strong, var(--accent));
+}
+
 /* 系统减弱动态效果时跳过模式切换过渡 */
 @media (prefers-reduced-motion: reduce) {
   .ocr-source-wrap {

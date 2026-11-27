@@ -43,6 +43,8 @@ import {
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeKatex from "rehype-katex";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -57,10 +59,27 @@ const mdComponents: Components = {
 };
 
 // markdown 插件组（结果窗与原文预览共用）：gfm 表格 / 数学公式（$...$、
-// $$...$$，KaTeX 排版）/ 换行即 <br>。mdToHtml（Anki 卡）刻意不含公式插件：
-// KaTeX 的 HTML 离开本应用的 CSS 就散架，Anki 卡走 MathJax（见 ankiMathHtml）
+// $$...$$，KaTeX 排版）/ 换行即 <br>。rehype 顺序有讲究：raw 先放行模型输出
+// 里的 HTML 标记（<u>下划线、上下标、<br> 等 markdown 表达不了的格式），
+// sanitize 白名单消毒随后（默认 GitHub schema：剥 script/事件属性/style，
+// markdown 界不用模型给颜色；className 放行——KaTeX 输出与 math 元素依赖
+// 类名，剥了公式就散架）。react-markdown 官方口径：rehype-raw 处理不可信
+// 输入必须配 rehype-sanitize；CSP（default-src 'self'）是脚本层第二道保险。
+// KaTeX 最后跑，吃消毒后幸存的 math 元素。mdToHtml（Anki 卡）刻意不含公式
+// 插件：KaTeX 的 HTML 离开本应用的 CSS 就散架，Anki 卡走 MathJax（见 ankiMathHtml）
+const mdSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    "*": [...(defaultSchema.attributes?.["*"] ?? []), "className"],
+  },
+};
 const mdPlugins = [remarkGfm, remarkMath, remarkBreaks];
-const mdRehype = [rehypeKatex];
+const mdRehype = [
+  rehypeRaw,
+  [rehypeSanitize, mdSchema] as [typeof rehypeSanitize, typeof mdSchema],
+  rehypeKatex,
+];
 
 /** markdown → HTML 字符串：与结果窗同一渲染管线但**不含公式插件**（KaTeX 的
     HTML 离开本应用的 CSS 就散架）。Anki 桌面端自带 MathJax，公式经 ankiMathHtml
@@ -588,6 +607,9 @@ export default function App() {
   // 比 AXFocusedApplication 可靠（点击瞬间系统焦点处于不定状态）
   const sourcePidRef = useRef(0);
   const [sourceOverflow, setSourceOverflow] = useState(false);
+  // 原文区自定义总高（px，含 7px 下缝 + 0.5px 边线；null = 走 CSS 两档预设）。
+  // 分割条拖动设置，chevron 点预设/双击分割条清除；会话内保持（跨新截图沿用）
+  const [sourceH, setSourceH] = useState<number | null>(null);
   // 上次下发的窗口位置目标（去重：尺寸与位置都没变就不重复调 resize）
   const lastPosKeyRef = useRef("");
   // 上次下发的材质签名（去重：窗口没动、卡片也没变就不重复同步材质视图）
@@ -1528,6 +1550,47 @@ export default function App() {
       window.removeEventListener("mouseup", onUp);
       invoke("persist_result_window_state").catch(() => undefined);
     };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  // 原文区/结果区分割条：拖动改原文区自定义高度（窗口总高不动，结果区 flex
+  // 让位）。方向 = 线跟着光标走：上拖原文减矮、下拖原文增高。写 inline height
+  // 而非 max-height——class 的 max-height 带 240ms 过渡，拖动时高度永远在追
+  // 过渡（橡皮筋滞后，实测很卡）；inline height 无过渡即时跟随，内容短于拖动
+  // 高度时区域也保持拖到的尺寸（分割条的常规手感）。rAF 合帧：mousemove 高频
+  // 触发整树重渲染，按帧合并只渲染最后一次。下限保两行原文，上限保结果区 +
+  // 动作行最少 ≈190px。拖动即脱离两档预设（expanded 归 false），chevron 点
+  // 预设 / 双击分割条清除，回到折叠 75 / 展开 220 两档
+  const startSourceSplit = (e: ReactMouseEvent) => {
+    if (!IS_OCR) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const wrap = (e.currentTarget as HTMLElement).parentElement; // .ocr-source-wrap
+    const main = wrap?.closest(".ocr-main");
+    if (!wrap || !main) return;
+    const sy = e.clientY;
+    const startTotal = wrap.offsetHeight;
+    const maxTotal = Math.max(120, main.clientHeight - 190);
+    let raf = 0;
+    let latest = startTotal;
+    const onMove = (ev: MouseEvent) => {
+      latest = Math.round(Math.min(maxTotal, Math.max(56, startTotal + (ev.clientY - sy))));
+      if (!raf) raf = requestAnimationFrame(() => {
+        raf = 0;
+        setSourceH(latest);
+      });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+        setSourceH(latest);
+      }
+    };
+    setPhase((p) => (p.kind === "ocr" ? { ...p, expanded: false } : p));
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
@@ -3086,9 +3149,14 @@ export default function App() {
               className={`ocr-source-wrap ${
                 phase.actionId ? "has-result" : "full"
               } ${phase.actionId && phase.expanded ? "expanded" : ""}`}
+              style={
+                phase.actionId && sourceH != null
+                  ? { height: `${sourceH}px`, maxHeight: "none" }
+                  : undefined
+              }
             >
               {/* 原文含齐整表格时默认渲染表格预览（原始竖线源码不直观，也没人
-                  手改表格源码）；「编辑原文」切回可编辑文本，改完再切回预览。
+                  手改表格源码）；「编辑」切回可编辑文本，「预览」切回渲染视图。
                   预览态不渲染 EditableSource，其 onEdit 只在编辑态触发 */}
               {(hasMarkdownTable(phase.text) || hasMathExpression(phase.text)) &&
               !phase.sourceRaw ? (
@@ -3136,21 +3204,42 @@ export default function App() {
               {phase.vision && phase.streaming && !phase.text && !phase.actionId && (
                 <div className="ocr-vision-hint">{t("floating.visionRunning")}</div>
               )}
-              {/* 仅结果模式显示折叠切换；原文模式本就是全量，无需切换 */}
-              {phase.actionId && (sourceOverflow || phase.expanded) && (
+              {/* 仅结果模式显示折叠切换；原文模式本就是全量，无需切换。
+                  拖动设置的自定义高度视为展开态（sourceH 非空），chevron
+                  二态只管收起 ↔ 展开：非收起态点一下收（75px），收起态
+                  点一下展（220px），任何状态都一下到位——此前拖动后首次
+                  点击先走「展开」分支到 220（比自定义高度还矮），要第二下
+                  才收起，方向感错乱 */}
+              {phase.actionId && (sourceOverflow || phase.expanded || sourceH != null) && (
                 <button
                   className="ocr-toggle"
-                  onClick={guarded(() =>
-                    setPhase((p) => (p.kind === "ocr" ? { ...p, expanded: !p.expanded } : p)),
-                  )}
+                  onClick={guarded(() => {
+                    const expandedNow = sourceH != null || phase.expanded;
+                    if (expandedNow) {
+                      setSourceH(null);
+                      setPhase((p) => (p.kind === "ocr" ? { ...p, expanded: false } : p));
+                    } else {
+                      setPhase((p) => (p.kind === "ocr" ? { ...p, expanded: true } : p));
+                    }
+                  })}
                   aria-label={t("floating.ariaToggleSource")}
                 >
                   <ChevronDown
                     size={13}
                     strokeWidth={2}
-                    className={`chev-svg ${phase.expanded ? "open" : ""}`}
+                    className={`chev-svg ${sourceH != null || phase.expanded ? "open" : ""}`}
                   />
                 </button>
+              )}
+              {/* 分割条：覆在原文区下边线上拖动调高（仅结果模式；原文模式
+                  本就撑满全量没有分割对象）。双击清除自定义高度回预设 */}
+              {phase.actionId && (
+                <div
+                  className="ocr-split"
+                  onMouseDown={startSourceSplit}
+                  onDoubleClick={() => setSourceH(null)}
+                  aria-hidden="true"
+                />
               )}
             </div>
             )}
