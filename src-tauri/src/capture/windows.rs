@@ -92,7 +92,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GetAncestor, GetCursorInfo, GetForegroundWindow, GetMessageW,
     GetWindowThreadProcessId, LoadCursorW, SetWindowsHookExW, WindowFromPoint, CURSORINFO,
-    GA_ROOT, IDC_IBEAM,
+    GA_ROOT, IDC_HAND, IDC_IBEAM,
     KBDLLHOOKSTRUCT, KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED, MSLLHOOKSTRUCT, WH_KEYBOARD_LL,
     WH_MOUSE_LL, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_SYSKEYDOWN,
 };
@@ -507,7 +507,13 @@ fn query_selection(
             let permitted = crate::settings::compat_allows(&s, &app_path)
                 && !crate::settings::is_blacklisted(app, &app_path, None);
             if permitted {
-                if let Some(text) = compat_fetch(&app_path, down_cursor, up_pid) {
+                if let Some(text) = compat_fetch(
+                    &app_path,
+                    down_cursor,
+                    up_pid,
+                    &s,
+                    held_modifiers,
+                ) {
                     return Some((text, up_pid));
                 }
             } else {
@@ -860,16 +866,41 @@ fn wait_foreground_pid(want: u32) -> bool {
 /// 还原竞态规则与 macOS compat.rs 同源：还原前重读现状，只在「现状仍是我取到的
 /// 那段文本」时物归原主，其余一切保留现状——借用期间第三方可能写入比快照更新的
 /// 内容，盲目还原会把它覆盖掉。没取到一律静默。
-fn compat_fetch(app_path: &str, down_cursor: isize, up_pid: u32) -> Option<String> {
+fn compat_fetch(
+    app_path: &str,
+    down_cursor: isize,
+    up_pid: u32,
+    settings: &crate::settings::Settings,
+    held_modifiers: u8,
+) -> Option<String> {
     // 第四道闸：按下点确实是文本表面。自绘应用（Zed）的滚动条拖动与拖选同形，
-    // UIA 树是空的，只有光标形状能区分——文本区是系统 I-beam，滚动条/标签页是箭头。
+    // UIA 树是空的，只有光标形状能区分——文本区是系统 I-beam，滚动条是箭头。
+    // 手形光标（Zed 的可跳转符号，与标签页共用同一系统 IDC_HAND）单独走一条分支：
+    // 只有「用户明确开了辅助键且正按住它」时才放宽，没开的用户行为与现状完全一致，
+    // 绝不放宽成通用取词——否则拖标签页会误弹（issue #23 方案 B）。
     // 读不到（0）一律拒绝：宁可漏取一次，也不让 stale 选区误弹。
     let ibeam = unsafe { LoadCursorW(None, IDC_IBEAM) }
         .map(|h| h.0 as isize)
         .unwrap_or(0);
-    if ibeam == 0 || down_cursor != ibeam {
+    let is_ibeam = ibeam != 0 && down_cursor == ibeam;
+
+    let hand = unsafe { LoadCursorW(None, IDC_HAND) }
+        .map(|h| h.0 as isize)
+        .unwrap_or(0);
+    let is_hand = hand != 0 && down_cursor == hand && !is_ibeam;
+
+    if is_hand {
+        let want = crate::settings::assist_key_mask(&settings.capture_assist_key);
+        if !settings.capture_assist_enabled || held_modifiers & want == 0 {
+            debug_log(format!(
+                "capture/windows: 兼容取词跳过（手形光标但未按要求按住辅助键 enabled={} held={held_modifiers:#b} want={want:#b} cursor=0x{down_cursor:X}）app={app_path:?}",
+                settings.capture_assist_enabled
+            ));
+            return None;
+        }
+    } else if !is_ibeam {
         debug_log(format!(
-            "capture/windows: 兼容取词跳过（按下点非文本光标 cursor=0x{down_cursor:X} ibeam=0x{ibeam:X}）app={app_path:?}"
+            "capture/windows: 兼容取词跳过（按下点非文本光标 cursor=0x{down_cursor:X} ibeam=0x{ibeam:X} hand=0x{hand:X}）app={app_path:?}"
         ));
         return None;
     }
