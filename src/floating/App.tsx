@@ -599,14 +599,13 @@ export default function App() {
   const [ocrOverflow, setOcrOverflow] = useState(0);
   const [, setOcrTick] = useState(0);
   const actionsRowRef = useRef<HTMLDivElement | null>(null);
-  // 识别原文是否超长（超 3 行折叠高度）——决定展开/收起按钮是否显示
+  // 识别原文 DOM：EditableSource 的 contentEditable 回写（保光标）经此引用
   const sourceRef = useRef<HTMLDivElement | null>(null);
   // 选中发生时来源应用的进程路径（captured 事件带上），供摘录模板 {source} 使用
   const sourceAppRef = useRef("");
   // 选区来源进程 pid（captured 事件携带）：pageurl 反查页面 URL 用，
   // 比 AXFocusedApplication 可靠（点击瞬间系统焦点处于不定状态）
   const sourcePidRef = useRef(0);
-  const [sourceOverflow, setSourceOverflow] = useState(false);
   // 原文区自定义总高（px，含 7px 下缝 + 0.5px 边线；null = 走 CSS 两档预设）。
   // 分割条拖动设置，chevron 点预设/双击分割条清除；会话内保持（跨新截图沿用）
   const [sourceH, setSourceH] = useState<number | null>(null);
@@ -1121,17 +1120,6 @@ export default function App() {
   }, []);
 
   // （OCR 窗口的定位+显示已改由尺寸测量 effect 在 resize 完成后链式触发，见下）
-
-  // 识别原文是否超过折叠高度：决定展开/收起按钮显示与否。
-  // 基准是折叠高度常量（75px，3 行 13px×1.8 + 上下 padding，与 CSS 的折叠基数一致）而非 clientHeight——
-  // flex-basis 有 240ms 过渡，展开→收起瞬间测 clientHeight 仍是动画中间值，
-  // 会把「有溢出」误判成「无溢出」导致切换按钮消失
-  useLayoutEffect(() => {
-    if (phase.kind !== "ocr") return;
-    const el = sourceRef.current;
-    if (!el) return;
-    setSourceOverflow(el.scrollHeight > 75 + 1);
-  }, [phase]);
 
   // 朗读跟着内容走：换动作、重试、切原文都会让「正在听的」和「正在看的」对不上，
   // 一律掐掉（键只取动作 + 内容前缀，够区分又不至于每渲染都变）
@@ -3204,13 +3192,17 @@ export default function App() {
               {phase.vision && phase.streaming && !phase.text && !phase.actionId && (
                 <div className="ocr-vision-hint">{t("floating.visionRunning")}</div>
               )}
-              {/* 仅结果模式显示折叠切换；原文模式本就是全量，无需切换。
-                  拖动设置的自定义高度视为展开态（sourceH 非空），chevron
-                  二态只管收起 ↔ 展开：非收起态点一下收（75px），收起态
-                  点一下展（220px），任何状态都一下到位——此前拖动后首次
-                  点击先走「展开」分支到 220（比自定义高度还矮），要第二下
-                  才收起，方向感错乱 */}
-              {phase.actionId && (sourceOverflow || phase.expanded || sourceH != null) && (
+              {/* 折叠切换钮在结果模式常驻（原文模式本就是全量，无需切换）。
+                  二态只管收起 ↔ 展开：非收起态点一下收（75px 预设），收起态
+                  点一下展（220px 预设），拖出的自定义高度视为展开态、点一下
+                  回预设，任何状态都一下到位（此前拖动后首次点击方向感错乱，
+                  已修）。不随「原文是否溢出」显隐：短原文收起会把三个显隐
+                  来源全部清空，按钮整颗消失、要再拖分割条才回得来，看着像
+                  点没了（2026-11-27 用户反馈为 bug）；常驻也顺带砍掉了
+                  scrollHeight 测量路径（那条路曾因 flex-basis 240ms 过渡的
+                  中间值把「有溢出」误判成「无溢出」丢过按钮）。短原文两档
+                  高度本就一样，点击只旋转箭头，无害冗余 */}
+              {phase.actionId && (
                 <button
                   className="ocr-toggle"
                   onClick={guarded(() => {
